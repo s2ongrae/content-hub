@@ -288,7 +288,10 @@ function handleListContents_(ss, payload, ctx) {
         place_name: r.place_name, blog_title: r.blog_title, quality_score: r.quality_score,
         blog_status: r.blog_status, shorts_status: r.shorts_status,
         reels_status: r.reels_status, clip_status: r.clip_status,
-        growth_tag: r.growth_tag, updated_at: r.updated_at
+        growth_tag: r.growth_tag, updated_at: r.updated_at,
+        target_keywords: r.target_keywords,
+        series_id: r.series_id, episode_no: r.episode_no, hook_variant: r.hook_variant,
+        ig_feed_status: r.ig_feed_status, ig_feed_url: r.ig_feed_url, ig_carousel_count: r.ig_carousel_count
       };
     })
   };
