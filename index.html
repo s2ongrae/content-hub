@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/style.css?v=m2-5">
+<link rel="stylesheet" href="css/style.css?v=m2-7">
 </head>
 <body>
 
@@ -46,13 +46,13 @@
 </header>
 
 <nav class="tabbar" id="tabbar" aria-label="화면 이동">
-  <button type="button" class="tab" data-route="board" aria-label="보드"><span aria-hidden="true">▦</span><em>보드</em></button>
-  <button type="button" class="tab" data-route="approve" aria-label="승인"><span aria-hidden="true">✅</span><em>승인</em></button>
-  <button type="button" class="tab" data-route="capture" aria-label="취재"><span aria-hidden="true">＋</span><em>취재</em></button>
-  <button type="button" class="tab" data-route="review" aria-label="검수"><span aria-hidden="true">🔍</span><em>검수</em></button>
-  <button type="button" class="tab" data-route="series" aria-label="시리즈"><span aria-hidden="true">🎬</span><em>시리즈</em></button>
-  <button type="button" class="tab" data-route="knowhow" aria-label="노하우"><span aria-hidden="true">💡</span><em>노하우</em></button>
-  <button type="button" class="tab" data-route="ops" aria-label="운영"><span aria-hidden="true">🛠</span><em>운영</em></button>
+  <button type="button" class="tab" data-route="board" aria-label="진행 현황" title="전체 진행 단계를 한눈에"><span aria-hidden="true">▦</span><em>현황</em></button>
+  <button type="button" class="tab" data-route="approve" aria-label="빠른 승인" title="카드 한 장씩 읽고 바로 승인"><span aria-hidden="true">✅</span><em>승인</em></button>
+  <button type="button" class="tab" data-route="capture" aria-label="글감 적기" title="다녀온 곳·아이디어를 새로 적기"><span aria-hidden="true">＋</span><em>글감</em></button>
+  <button type="button" class="tab" data-route="review" aria-label="원고 점검" title="올리기 전에 빠진 것 확인"><span aria-hidden="true">🔍</span><em>점검</em></button>
+  <button type="button" class="tab" data-route="series" aria-label="연재 묶음" title="같은 주제로 이어지는 편 관리"><span aria-hidden="true">🎬</span><em>연재</em></button>
+  <button type="button" class="tab" data-route="knowhow" aria-label="참고 노하우" title="잘 된 글의 비결 모아두기"><span aria-hidden="true">💡</span><em>참고</em></button>
+  <button type="button" class="tab" data-route="ops" aria-label="앱 관리" title="연결·백업·시트 점검"><span aria-hidden="true">🛠</span><em>관리</em></button>
 </nav>
 
 <div id="banners" class="banners" aria-live="polite"></div>
@@ -77,14 +77,15 @@
 
     <div class="sheet-body">
       <section class="panel">
-        <h3>GAS 연결</h3>
+        <h3>구글 시트 서버 연결</h3>
+        <p class="hint">한 번만 넣으면 됩니다. 값은 이 기기 브라우저에만 저장됩니다.</p>
         <label class="field">
-          <span class="field-label">Web App URL <code>/exec</code></span>
+          <span class="field-label">서버 주소 <code>/exec</code></span>
           <input id="in-gas-url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
                  placeholder="https://script.google.com/macros/s/AKfy…/exec">
         </label>
         <label class="field">
-          <span class="field-label">API 토큰</span>
+          <span class="field-label">연결 열쇠 (API 토큰)</span>
           <span class="input-row">
             <input id="in-token" type="password" autocomplete="off" spellcheck="false"
                    placeholder="시트 메뉴 → 2. API 토큰 확인">
@@ -92,26 +93,24 @@
           </span>
         </label>
         <p class="hint">
-          두 값은 <b>이 브라우저의 localStorage</b>에만 저장되고, 요청 본문(<code>auth_token</code>)으로만 전송됩니다.
-          깃허브 저장소에는 어떤 형태로도 올라가지 않습니다.
+          두 값은 <b>이 브라우저에만</b> 저장되고, 저장소(깃허브)에는 올라가지 않습니다.
         </p>
         <div class="row">
-          <button type="button" id="btn-test" class="btn">연결 테스트</button>
+          <button type="button" id="btn-test" class="btn" title="주소와 열쇠가 맞는지 확인합니다">연결 확인</button>
           <button type="button" id="btn-save-cfg" class="btn primary">저장</button>
         </div>
         <div id="conn-result" class="result" hidden></div>
       </section>
 
       <section class="panel">
-        <h3>보안</h3>
+        <h3>안전</h3>
         <p class="hint">
-          계정 비밀번호·쿠키·2FA 코드는 이 앱이 저장하지 않습니다. 캡차·2FA는 <code>NEEDS_HUMAN</code>으로 격리되어
-          사람이 브라우저에서 직접 처리합니다.
+          계정 비밀번호·쿠키·인증번호는 이 앱이 저장하지 않습니다. 로그인 확인·인증이 필요하면 카드가 <b>내가 봐야 함</b> 칸으로 갑니다.
         </p>
-        <button type="button" id="btn-clear-token" class="ghost-btn danger">저장된 토큰 삭제</button>
+        <button type="button" id="btn-clear-token" class="ghost-btn danger">연결 열쇠 지우기</button>
       </section>
 
-      <p class="version">Content Hub OS · M1 · <span id="build-label">v2-m6</span></p>
+      <p class="version">Content Hub OS · M1 · <span id="build-label">v2-m7</span></p>
     </div>
   </div>
 </dialog>
@@ -120,7 +119,7 @@
 <dialog id="detail-dialog" class="sheet sheet-wide">
   <div class="sheet-card">
     <header class="sheet-head">
-      <h2 id="detail-title">콘텐츠 상세</h2>
+      <h2 id="detail-title">카드 상세</h2>
       <button type="button" class="icon-btn" data-close="detail-dialog" aria-label="닫기">✕</button>
     </header>
     <div class="sheet-body" id="detail-body"></div>
@@ -131,6 +130,6 @@
   <p style="padding:24px;color:#fff">이 앱은 자바스크립트가 필요합니다.</p>
 </noscript>
 
-<script type="module" src="js/app.js?v=m2-6"></script>
+<script type="module" src="js/app.js?v=m2-7"></script>
 </body>
 </html>

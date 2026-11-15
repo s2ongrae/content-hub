@@ -28,7 +28,7 @@ export class QuickApproveView {
     this.root.classList.add('quick-approve');
 
     const header = el('div', 'qa-header');
-    this.countEl = el('span', 'qa-count', '승인 대기 …');
+    this.countEl = el('span', 'qa-count', '승인할 카드 …');
     const reloadBtn = el('button', 'ghost-btn sm', '새로고침');
     reloadBtn.type = 'button';
     reloadBtn.addEventListener('click', () => this.reload());
@@ -41,8 +41,8 @@ export class QuickApproveView {
     this.root.appendChild(this.cardHost);
 
     this.actionBar = el('div', 'qa-actions');
-    const rejectBtn = el('button', 'qa-btn qa-reject', '반려');
-    const skipBtn = el('button', 'qa-btn qa-skip', '스킵');
+    const rejectBtn = el('button', 'qa-btn qa-reject', '다시 고치기');
+    const skipBtn = el('button', 'qa-btn qa-skip', '다음에 보기');
     const approveBtn = el('button', 'qa-btn qa-approve', '✅ 승인');
     [rejectBtn, skipBtn, approveBtn].forEach((b) => { b.type = 'button'; });
     rejectBtn.addEventListener('click', () => this.reject());
@@ -55,7 +55,7 @@ export class QuickApproveView {
     this.actionBar.appendChild(approveBtn);
     this.root.appendChild(this.actionBar);
 
-    const kbd = el('p', 'qa-kbd', '키보드: ← 승인 · → 스킵 · ↓ 반려');
+    const kbd = el('p', 'qa-kbd', '키보드: ← 승인 · → 미루기 · ↓ 다시 고치기');
     this.root.appendChild(kbd);
 
     this._keyHandler = (ev) => {
@@ -97,10 +97,10 @@ export class QuickApproveView {
     this.cardHost.innerHTML = '';
     const item = this.current();
     const left = this.items.length - this.index;
-    this.countEl.textContent = item ? `승인 대기 ${left}건` : '승인 대기 없음';
+    this.countEl.textContent = item ? `승인할 카드 ${left}장` : '승인할 카드가 없어요';
 
     if (!item) {
-      this.cardHost.appendChild(el('p', 'qa-empty', '검수할 원고가 없습니다.\n취재로 새 콘텐츠를 만들면 여기로 옵니다.'));
+      this.cardHost.appendChild(el('p', 'qa-empty', '지금 승인할 카드가 없어요.\n글감 탭에서 새로 적으면 여기로 옵니다.'));
       this.rejectBtn.disabled = true;
       this.approveBtn.disabled = true;
       return;
@@ -163,7 +163,7 @@ export class QuickApproveView {
       this.onChanged();
     } catch (err) {
       if (err.code === 'ERR_TOS_REVIEW_REQUIRED') {
-        this.toast('검수 기록이 필요합니다. 검수 화면에서 체크리스트를 먼저 완료하세요.', 'err');
+        this.toast('점검 기록이 필요해요. 점검 화면에서 체크리스트를 먼저 끝내 주세요.', 'err');
       } else if (err.code === 'ERR_VERSION_CONFLICT') {
         this.toast('다른 곳에서 먼저 수정됐습니다. 새로고침 후 다시 시도하세요.', 'err');
       } else {
@@ -178,7 +178,7 @@ export class QuickApproveView {
   async reject() {
     if (this.busy || !this.current()) return;
     const item = this.current();
-    const reason = prompt('반려 사유 (한 줄) — 예: 말투, 팩트 오류, 훅이 약함') || '대표님 반려';
+    const reason = prompt('어떤 점을 고칠까요? (한 줄) — 예: 말투, 사실관계, 첫 문장이 약함') || '대표님 반려';
     this.busy = true;
     this.actionBar.classList.add('busy');
     try {
@@ -186,10 +186,10 @@ export class QuickApproveView {
       this.items.splice(this.index, 1);
       if (this.index >= this.items.length) this.index = Math.max(0, this.items.length - 1);
       this.render();
-      this.toast(`반려: ${reason}`, 'ok');
+      this.toast(`다시 고치기: ${reason}`, 'ok');
       this.onChanged();
     } catch (err) {
-      this.toast(`반려 실패: ${err.code || ''} ${err.message || ''}`, 'err');
+      this.toast(`되돌리지 못했어요: ${err.code || ''} ${err.message || ''}`, 'err');
     } finally {
       this.busy = false;
       this.actionBar.classList.remove('busy');
@@ -215,7 +215,7 @@ function channelLine(item) {
 
 function statusKo(s) {
   if (!s) return '-';
-  if (s === 'SKIPPED') return '제외';
+  if (s === 'SKIPPED') return '건너뜀';
   if (s === 'PENDING') return '대기';
   if (s === 'UPLOADED') return '완료';
   if (s === 'PUBLISHED') return '발행';

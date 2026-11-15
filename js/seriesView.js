@@ -22,7 +22,7 @@ let abTarget = null;     // 체크리스트 대상 편
 export async function loadPack(force) {
   if (packCache && !force) return packCache;
   const res = await fetch(`${PACK_URL}?v=2026w47`, { cache: 'no-cache' });
-  if (!res.ok) throw new Error(`시드 파일을 불러오지 못했습니다 (HTTP ${res.status})`);
+  if (!res.ok) throw new Error(`기획 파일을 불러오지 못했습니다 (HTTP ${res.status})`);
   packCache = await res.json();
   return packCache;
 }
@@ -88,13 +88,13 @@ export function renderSeriesView(main, ctx) {
   main.replaceChildren();
   main.appendChild(h('div', { class: 'page-head' },
     h('div', null,
-      h('h1', { text: '🎬 시리즈 · 키워드팩' }),
-      h('p', { class: 'sub', text: '10편 대본 · 네이버 자동완성 실측 · 첫 2초 훅 A/B' })),
+      h('h1', { text: '🎬 연재 기획' }),
+      h('p', { class: 'sub', text: '10편 대본 · 네이버 자동완성 실측 · 첫 2초 문장 비교' })),
     h('div', { class: 'head-actions' },
       h('span', { class: 'tag', text: brand === 'ppiyak_kimmary' ? '삐약 김메리' : '대전 청년' }))));
 
   const seg = h('div', { class: 'seg', role: 'tablist', 'aria-label': '시리즈 화면 전환' });
-  [['series', '시리즈 10편'], ['keywords', '키워드팩'], ['hooks', '훅 A/B']].forEach(([key, label]) => {
+  [['series', '연재 10편'], ['keywords', '검색어 모음'], ['hooks', '첫 문장 비교']].forEach(([key, label]) => {
     seg.appendChild(h('button', {
       type: 'button', class: 'seg-btn', role: 'tab', 'data-sub': key,
       'aria-selected': subTab === key ? 'true' : 'false',
@@ -105,7 +105,7 @@ export function renderSeriesView(main, ctx) {
   main.appendChild(seg);
 
   const host = h('div', { id: 'series-host' },
-    h('div', { class: 'panel' }, h('p', { class: 'hint', text: '시드 불러오는 중…' })));
+    h('div', { class: 'panel' }, h('p', { class: 'hint', text: '기획 파일 불러오는 중…' })));
   main.appendChild(host);
 
   ctx.main = main;
@@ -116,7 +116,7 @@ export function renderSeriesView(main, ctx) {
     else renderHooks(host, pack, brand, ctx);
   }).catch((err) => {
     host.replaceChildren(h('div', { class: 'panel' },
-      h('h3', null, '시드를 불러오지 못했습니다'),
+      h('h3', null, '기획 파일을 불러오지 못했습니다'),
       h('p', { class: 'hint', text: friendlyError(err) || String(err) }),
       h('p', { class: 'hint', text: '주소가 https://s2ongrae.github.io/content-hub/ 인지, seeds/series_pack_2026w47.json 이 함께 배포됐는지 확인하세요.' })));
   });
@@ -128,14 +128,14 @@ function renderSeries(host, pack, brand, ctx) {
   const { h, toast, friendlyError } = ctx;
   const list = pack.series.filter((s) => s.brand === brand);
   if (!list.length) {
-    host.appendChild(h('div', { class: 'panel' }, h('p', { class: 'hint', text: '이 브랜드의 시리즈가 시드에 없습니다.' })));
+    host.appendChild(h('div', { class: 'panel' }, h('p', { class: 'hint', text: '이 브랜드의 연재 기획이 아직 없습니다.' })));
     return;
   }
 
   host.appendChild(h('div', { class: 'panel' },
-    h('h3', null, '이 시드에 대해'),
+    h('h3', null, '이 기획 묶음에 대해'),
     h('p', { class: 'hint', text: `${pack.meta.pack_id} · ${pack.meta.generated_at.slice(0, 10)} · 원본 문서 ${pack.meta.source_doc}` }),
-    h('p', { class: 'hint', text: '숫자가 [ ] 로 비어 있는 곳은 촬영 당일 채우는 팩트 슬롯입니다. 확인 없이 자막에 숫자를 쓰지 않습니다.' })));
+    h('p', { class: 'hint', text: '숫자가 [ ] 로 비어 있는 곳은 촬영 당일 직접 채우는 빈칸입니다. 확인하지 않은 숫자는 자막에 쓰지 않습니다.' })));
 
   list.forEach((series) => {
     const done = series.episodes.filter((e) => e.status === 'PUBLISHED').length;
@@ -185,11 +185,11 @@ function episodeDetail(series, ep, ctx) {
 
   const facts = h('div', { class: 'kv-grid' },
     kvRow(h, '제목(SEO)', ep.seo_title),
-    kvRow(h, '커버 문구', ep.cover_text.replace(/\n/g, ' / '), true),
-    kvRow(h, '첫 2초 훅', `${ep.hook_2s}  (${ep.hook_type})`),
+    kvRow(h, '표지 제목', ep.cover_text.replace(/\n/g, ' / '), true),
+    kvRow(h, '첫 2초에 띄울 말', `${ep.hook_2s}  (${ep.hook_type})`),
     kvRow(h, '첫 2초 자막', ep.hook_subtitle ? ep.hook_subtitle.replace(/\n/g, ' / ') : '', true),
-    kvRow(h, '위치 앵커', ep.position_anchor),
-    kvRow(h, '숨긴 단서', ep.open_loop),
+    kvRow(h, '중간에 넣을 편 번호', ep.position_anchor),
+    kvRow(h, '다음 편 궁금하게 남기는 힌트', ep.open_loop),
     kvRow(h, '해시태그', ep.hashtags.join(' '), true));
   box.appendChild(facts);
 
@@ -207,12 +207,12 @@ function episodeDetail(series, ep, ctx) {
     kvRow(h, '블로그', ep.cross.blog),
     kvRow(h, '인스타', ep.cross.instagram),
     kvRow(h, '클립', ep.cross.clip),
-    kvRow(h, '팩트 슬롯', ep.fact_slots.join(' · '), true),
+    kvRow(h, '촬영 때 채울 칸', ep.fact_slots.join(' · '), true),
     kvRow(h, '다음 할 일', ep.next_action));
   box.appendChild(cross);
 
   const createBtn = h('button', {
-    class: 'btn sm primary', type: 'button', text: '＋ 취재 보드에 DRAFT로 넣기',
+    class: 'btn sm primary', type: 'button', title: '이 편을 현황 보드의 글감·초안 칸에 카드로 만듭니다', text: '＋ 현황 보드에 초안 카드로 넣기',
     onclick: async () => {
       createBtn.disabled = true;
       try {
@@ -224,7 +224,7 @@ function episodeDetail(series, ep, ctx) {
           target_keywords: ep.keywords.join(', '),
           allow_partial_shortform: false
         });
-        toast('보드에 DRAFT로 넣었습니다 — 취재 탭에서 이어서 채우세요', 'ok');
+        toast('현황 보드에 초안 카드로 넣었어요 — 글감 탭에서 이어서 채우세요', 'ok');
       } catch (err) {
         toast(friendlyError(err) || String(err), 'err');
       } finally {
@@ -267,7 +267,7 @@ function connectionPanel(list, h) {
 function renderKeywords(host, pack, brand, ctx) {
   const { h, toast } = ctx;
   const kp = pack.keyword_pack[brand];
-  if (!kp) { host.appendChild(h('div', { class: 'panel' }, h('p', { class: 'hint', text: '키워드팩이 없습니다.' }))); return; }
+  if (!kp) { host.appendChild(h('div', { class: 'panel' }, h('p', { class: 'hint', text: '검색어 모음이 없습니다.' }))); return; }
 
   host.appendChild(h('div', { class: 'panel' },
     h('h3', null, '읽는 법'),
@@ -317,7 +317,7 @@ function renderHooks(host, pack, brand, ctx) {
   const panel = h('div', { class: 'panel' },
     h('h3', null, '발행 전 체크리스트', h('span', { class: 'tag', text: '10초' })),
     h('label', { class: 'field' }, h('span', { class: 'field-label', text: '편 선택' }), select),
-    h('p', { class: 'hint', text: `훅: ${target.e.hook_2s}` }));
+    h('p', { class: 'hint', text: `첫 문장: ${target.e.hook_2s}` }));
 
   const list = h('div', { class: 'check-list' });
   ab.checklist.forEach((item, i) => {
@@ -360,7 +360,7 @@ function renderHooks(host, pack, brand, ctx) {
       kvRow(h, '방법', ab.ab_design.method),
       kvRow(h, '잠그는 변수', ab.ab_design.locked_variables.join(', ')),
       kvRow(h, '지표', ab.ab_design.metrics.join(' · ')),
-      kvRow(h, '기록 규칙', ab.ab_design.record_rule),
-      kvRow(h, '판정 규칙', ab.ab_design.decision_rule)),
-    h('p', { class: 'hint', style: 'margin-top:8px', text: '쇼츠 한 영상에 훅 두 개를 걸어 나눠 보여줄 수 없습니다. 같은 포맷·같은 길이의 짝 편에 다른 훅을 배치해 24h 시점의 3초 잔존율을 비교합니다.' })));
+      kvRow(h, '기록 방법', ab.ab_design.record_rule),
+      kvRow(h, '어느 쪽이 나은지 정하는 법', ab.ab_design.decision_rule)),
+    h('p', { class: 'hint', style: 'margin-top:8px', text: '한 영상에 첫 문장 두 개를 걸 수는 없습니다. 같은 포맷·같은 길이의 짝 편에 서로 다른 첫 문장을 놓고, 올린 지 24시간 뒤 3초 잔존율을 비교합니다.' })));
 }
