@@ -128,11 +128,25 @@ function chanDots(item) {
 /* ────────────────────────── 부트 ────────────────────────── */
 
 async function boot() {
-  wireChrome();
-  applyBrand(loadConfig().activeBrand || 'daejeon_youth', { silent: true });
-  await refresh();
-  renderRoute();
-  loadHealth();
+  try {
+    wireChrome();
+    applyBrand(loadConfig().activeBrand || 'daejeon_youth', { silent: true });
+    await refresh();
+    renderRoute();
+    loadHealth();
+  } catch (err) {
+    // 화면이 비어 버리면 원인을 알 수 없으니, 실패는 화면에 남긴다
+    const main = $('#main');
+    if (!main) return;
+    clear(main);
+    main.appendChild(h('div', { class: 'panel' },
+      h('h3', null, '화면을 그리지 못했습니다'),
+      h('p', { class: 'hint', text: friendlyError(err) }),
+      h('div', { class: 'row', style: 'margin-top:12px' },
+        h('button', { class: 'btn sm', type: 'button', text: '설정 열기', onclick: openSettings }),
+        h('button', { class: 'btn sm primary', type: 'button', text: '새로고침', onclick: () => location.reload() }))));
+    console.error('[contenthub] boot failed', err);
+  }
 }
 
 function wireChrome() {
