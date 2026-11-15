@@ -1006,12 +1006,12 @@ async function openDetail(contentId) {
     clear(body);
     body.appendChild(h('div', { class: 'row', style: 'margin-bottom:10px' }, badge(d.status), h('span', { class: 'cc-id', text: 'v' + d.version })));
     body.appendChild(h('dl', { class: 'kv' },
-      h('dt', { text: '상호·주제' }), h('dd', { text: m.place_name || '-' }),
+      h('dt', { text: '가게·주제' }), h('dd', { text: m.place_name || '-' }),
       h('dt', { text: '제목' }), h('dd', { text: m.blog_title || '(미정)' }),
       h('dt', { text: '지역·분류' }), h('dd', { text: [m.region_dong, m.category].filter(Boolean).join(' · ') || '-' }),
       h('dt', { text: '키워드' }), h('dd', { text: m.target_keywords || '-' }),
-      h('dt', { text: '품질점수' }), h('dd', { text: m.quality_score ? m.quality_score + '점' : '미채점' }),
-      h('dt', { text: '채널' }), h('dd', { text: [['블로그', m.blog_status], ['쇼츠', m.shorts_status], ['릴스', m.reels_status], ['피드', m.ig_feed_status], ['클립', m.clip_status]].map(([n, v]) => `${n} ${statusLabel(v)}`).join(' · ') }),
+      h('dt', { text: '품질 점수' }), h('dd', { text: m.quality_score ? m.quality_score + '점' : '아직 없음' }),
+      h('dt', { text: '채널' }), h('dd', { text: [['블로그', m.blog_status], ['쇼츠', m.shorts_status], ['릴스', m.reels_status], ['피드', m.ig_feed_status], ['클립', m.clip_status]].map(([n, v]) => `${n} ${v ? statusLabel(v) : '아직 없음'}`).join(' · ') }),
       h('dt', { text: '수정' }), h('dd', { text: `${relTime(m.updated_at)} · ${m.updated_by || '-'}` })));
 
     // 채널별 발행 링크 — 시트에 기록된 실제 URL 을 그대로 보여 준다
