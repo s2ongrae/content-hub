@@ -245,6 +245,11 @@ function updateApproveBadge() {
 function updateConnDot() {
   const dot = $('#conn-dot');
   const mode = api.mode;
+  if (state.connError) {
+    dot.className = 'conn-dot off';
+    dot.title = '연결 실패 — ⚙︎ 설정에서 주소·토큰을 확인하세요';
+    return;
+  }
   dot.className = 'conn-dot ' + (mode === 'live' ? 'live' : mode === 'demo' ? 'demo' : 'off');
   dot.title = mode === 'live' ? 'GAS 실서버 연결됨' : mode === 'demo' ? '데모 모드 (GAS 미연결)' : '연결 설정 필요';
 }
@@ -356,6 +361,18 @@ function renderBoard(main) {
     oninput: (e) => { state.search = e.target.value; paintBoard(); }
   });
   main.appendChild(h('div', { class: 'panel', style: 'padding:10px' }, search));
+
+  if (!state.contents.length && !state.connError) {
+    main.appendChild(h('div', { class: 'panel' },
+      h('h3', null, api.mode === 'demo' ? '데모 데이터가 비었습니다' : '아직 콘텐츠가 0건입니다'),
+      h('p', { class: 'hint', text: api.mode === 'demo'
+        ? '운영 → 데모 데이터 초기화를 누르면 예시 10건이 다시 채워집니다.'
+        : '운영 → 콜드스타트 온보딩을 한 번 돌리면 훅 · 포맷 · 키워드가 시드되고 2주 캘린더 10건(DRAFT)이 자동으로 생깁니다.' }),
+      h('div', { class: 'row', style: 'margin-top:10px' },
+        h('button', { class: 'btn sm', type: 'button', text: '운영 열기', onclick: () => { location.hash = '#/ops'; } }),
+        h('button', { class: 'btn sm primary', type: 'button', text: '＋ 취재 등록', onclick: () => { location.hash = '#/capture'; } }))));
+    return;
+  }
 
   const boardHost = h('div', { class: 'board', id: 'board' });
   main.appendChild(boardHost);
