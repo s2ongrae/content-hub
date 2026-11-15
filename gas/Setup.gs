@@ -271,9 +271,10 @@ function setupContentHubOS() {
         '반려묘 숏폼 (고양이 일상·패러디·챌린지, 다운비트 박자 싱크)',
         JSON.stringify({
           youtube_shorts: '@s2ongrae',
-          instagram_reels: '@m2ow.mari'
+          instagram_reels: '@m2ow.mari',
+          naver_clip: ''   // 2026-11-16: 메리 트랙도 클립 업로드 대상. 채널 ID는 업로드 단계에서 채운다
         }),
-        JSON.stringify(['naver_blog', 'naver_clip']),
+        JSON.stringify(['naver_blog']),
         'ONE_STAGE_SHORTFORM',
         JSON.stringify({
           character: '삐약 김메리',

@@ -1,0 +1,132 @@
+{
+  "version": "v2-2026w47",
+  "generated_at": "2026-11-16T02:40:00+09:00",
+  "note": "hub-agent media/ 프리셋 로더가 읽는 렌더 표준. 숫자는 docs/CONTENT_STANDARD_v2.md 및 seeds/prompt_rules_2026w47.json과 1:1이어야 한다. 바꿀 때 세 곳을 같이 고친다.",
+  "canvas": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "framing": "full_frame_9x16",
+    "letterbox": false,
+    "video": { "codec": "libx264", "crf": 18, "preset": "veryfast", "pix_fmt": "yuv420p", "movflags": "+faststart" },
+    "audio": { "codec": "aac", "bitrate": "192k", "sample_rate": 48000, "channels": 2 }
+  },
+  "safe_area": { "top": 240, "bottom_max_y": 1420, "left": 96, "right": 140, "effective_width": 844 },
+  "subtitles": {
+    "common": {
+      "play_res_x": 1080,
+      "play_res_y": 1920,
+      "wrap_style": 2,
+      "scaled_border_and_shadow": true,
+      "max_lines": 2,
+      "max_cps": 17,
+      "min_cue_sec": 0.9,
+      "linebreak": "word_boundary",
+      "pyramid": true,
+      "forbid_tags": ["\\k", "\\kf"],
+      "highlight_close_tag": "{\\r}",
+      "hook_position": "\\an8\\pos(540,260)",
+      "font_family_note": "libass는 패밀리명으로 매칭한다 — A는 Fontname=Pretendard + Bold=-1, B는 Fontname=NanumSquareRound + Bold=-1. 훅은 Pretendard ExtraBold / NanumSquareRound ExtraBold(미설치면 굵은 지정체로 대체)"
+    },
+    "presets": {
+      "daejeon_youth": {
+        "font": "Pretendard",
+        "font_bold": -1,
+        "hook_font": "Pretendard ExtraBold",
+        "size": 68,
+        "hook_size": 86,
+        "primary_colour": "&H00FFFFFF",
+        "highlight_colour": "&H0018D8FF",
+        "highlight_scale_pct": 108,
+        "outline": 4.5,
+        "outline_colour": "&H00101010",
+        "shadow": 2.5,
+        "shadow_colour": "&H80000000",
+        "body_anchor": "\\an2\\pos(540,1380)",
+        "max_chars_per_line": 12,
+        "enter": "{\\fad(60,40)\\t(0,90,\\fscx100\\fscy100)}",
+        "style_line": "Style: Cap,Pretendard,68,&H00FFFFFF,&H0018D8FF,&H00101010,&H80000000,-1,0,0,0,100,100,0,0,1,4.5,2.5,2,96,96,480,1"
+      },
+      "ppiyak_kimmary": {
+        "font": "NanumSquareRound",
+        "font_bold": -1,
+        "hook_font": "NanumSquareRound ExtraBold",
+        "size": 64,
+        "hook_size": 82,
+        "primary_colour": "&H00F8FFFF",
+        "highlight_colour": "&H00B4A5FF",
+        "highlight_scale_pct": 108,
+        "outline": 4.0,
+        "outline_colour": "&H002B2238",
+        "shadow": 2.0,
+        "shadow_colour": "&H66000000",
+        "body_anchor": "\\an8\\pos(540,280)",
+        "max_chars_per_line": 11,
+        "enter": "{\\fad(80,50)\\move(540,295,540,280,0,100)}",
+        "hook_to_body_gap_s": 0.05,
+        "style_line": "Style: Cap,NanumSquareRound,64,&H00F8FFFF,&H00B4A5FF,&H002B2238,&H66000000,-1,0,0,0,100,100,0,0,1,4.0,2.0,8,96,96,160,1"
+      }
+    }
+  },
+  "audio_chain": {
+    "scene": "highpass=f=80,lowpass=f=14000,afftdn=nf=-25:tn=1,acompressor=threshold=-20dB:ratio=3:attack=10:release=100,loudnorm=I=-18:TP=-2:LRA=9",
+    "scene_split": "asplit=2",
+    "bgm": "highpass=f=100,loudnorm=I=-24:TP=-3:LRA=7",
+    "ducking": "sidechaincompress=threshold=0.03:ratio=4:attack=15:release=250:makeup=1",
+    "mix": "amix=inputs=2:normalize=0:duration=first:dropout_transition=0",
+    "master": "loudnorm=I=-14:TP=-1.5:LRA=7,alimiter=limit=0.841:level=false:attack=5:release=50",
+    "target_lufs": -14.0,
+    "target_lufs_tolerance": 0.5,
+    "target_true_peak_dbtp": -1.5,
+    "order_rule": "loudnorm 먼저, limiter 마지막"
+  },
+  "edit": {
+    "hook_cut_sec": [0.8, 1.2],
+    "body_cut_sec": [1.5, 2.5],
+    "max_static_sec": 3.0,
+    "kenburns": "zoompan=z='min(zoom+0.0012,1.08)':d=60:s=1080x1920:fps=30",
+    "kenburns_alternate_direction": true,
+    "speed_ramp": { "in": "setpts=0.6*PTS", "accent": "setpts=1.25*PTS" },
+    "stabilize": { "detect": "vidstabdetect", "transform": "vidstabtransform=smoothing=12:optzoom=1:zoom=3", "sharpen": "unsharp" }
+  },
+  "modes": {
+    "default": "no_narration",
+    "no_narration": { "timing": "cut_timecode+vad", "cue_gap_check": false },
+    "narration": {
+      "timing": ["word_boundary", "sentence_vad"],
+      "cue_gap_check": true,
+      "max_sentences_20s": 5,
+      "max_sentences_per_10s": 2,
+      "sentence_chars": [18, 32],
+      "inter_sentence_silence_sec": [0.25, 0.4]
+    }
+  },
+  "tts": {
+    "budget": "free_only",
+    "priority": ["gemini-3.8-flash-tts", "edge-tts>=7.3.1"],
+    "rate_pct": [0, 8],
+    "forbidden_rate_pct": [18, 20],
+    "edge_voices": { "ppiyak_kimmary": "ko-KR-SunHiNeural", "daejeon_youth": "ko-KR-HyunsuMultilingualNeural" }
+  },
+  "quality_gate": {
+    "subtitle_out_of_safe_area": "FAIL",
+    "subtitle_overlap": "FAIL",
+    "subtitle_cue_gap": { "level": "WARN", "gap_sec": 0.12, "max_count": 2, "only_mode": "narration" },
+    "loudness_out_of_range": { "level": "WARN", "range_lufs": [-15.0, -13.0], "fail_true_peak_above": -1.0 },
+    "script_translationese": { "level": "WARN", "patterns": ["~에 대해", "~에 있어(서)", "~되어진다", "가지고 있다", "~에 의해"] },
+    "subtitle_line_limit": "FAIL",
+    "gate_effect": "통과한 렌더만 Drive 미리보기·발행 오더 허용"
+  },
+  "channels": {
+    "daejeon_youth": ["naver_blog", "youtube_shorts", "instagram_reels", "naver_clip"],
+    "ppiyak_kimmary": ["youtube_shorts", "instagram_reels", "naver_clip"],
+    "optional": ["ig_feed", "threads"],
+    "skipped_by_default": { "ppiyak_kimmary": ["naver_blog"] }
+  },
+  "ai_disclosure": {
+    "youtube_shorts": "no",
+    "instagram_reels": "yes_ai_label",
+    "naver_clip": "ai_used_on",
+    "blog": "embed_plus_original_photos"
+  }
+}

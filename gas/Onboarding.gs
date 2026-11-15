@@ -192,7 +192,7 @@ function seedCalendar_(ss, ctx) {
       shorts_url: '',
       reels_status: 'PENDING',
       reels_url: '',
-      clip_status: isKm ? 'SKIPPED' : 'PENDING',
+      clip_status: 'PENDING',   // 2026-11-16 사용자 확정 — 메리 트랙도 클립 포함(블로그만 SKIPPED)
       clip_url: '',
       allow_partial_shortform: false,
       growth_tag: 'NONE',

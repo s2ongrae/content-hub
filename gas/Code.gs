@@ -396,7 +396,7 @@ function handleCreateContent_(ss, payload, ctx) {
     shorts_url: '',
     reels_status: 'PENDING',
     reels_url: '',
-    clip_status: isKimmary ? 'SKIPPED' : 'PENDING',
+    clip_status: 'PENDING',   // 2026-11-16 사용자 확정 — 메리 트랙도 네이버 클립을 올린다(3채널 완주)
     clip_url: '',
     allow_partial_shortform: payload.allow_partial_shortform === true,
     growth_tag: 'NONE',

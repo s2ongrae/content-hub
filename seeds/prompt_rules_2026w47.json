@@ -1,0 +1,76 @@
+{
+  "note": "content-hub Prompt_Rules 시트 시드 (설계 v2 · 2026-11-16). rule_payload_json은 시트에 넣을 때 문자열 그대로 붙인다. status=DRAFT → 실제 2~3편 렌더·검수 뒤 ACTIVE로 올린다. 숫자는 downloads/콘텐츠허브_노트북자동화_설계.md §3과 1:1이며, seeds/render_standard_v2.json(코드가 읽는 프리셋)과 같은 값이어야 한다.",
+  "sheet": "Prompt_Rules",
+  "columns": [
+    "rule_id", "brand", "rule_scope", "version_tag", "status", "rule_payload_json",
+    "source_benchmark_id", "experiment_id", "control_avg_score", "variant_avg_score",
+    "prev_active_rule_id", "approved_by", "created_at", "activated_at"
+  ],
+  "generated_at": "2026-11-16T02:40:00+09:00",
+  "rows": [
+    {
+      "rule_id": "R-SUB-DY-01",
+      "brand": "daejeon_youth",
+      "rule_scope": "subtitle_style",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"font\":\"Pretendard Bold (OFL)\",\"hook_font\":\"Pretendard ExtraBold (OFL)\",\"size_px\":68,\"hook_size_px\":86,\"fill\":\"#FFFFFF\",\"keyword\":\"#FFD818\",\"keyword_hex_ass\":\"&H0018D8FF\",\"keyword_scale_pct\":108,\"outline_px\":4.5,\"outline_color\":\"#101010\",\"shadow_px\":2.5,\"shadow_color\":\"#000000\",\"shadow_alpha\":\"80\",\"position\":\"bottom-center y1380 (MarginV 480)\",\"hook_position\":\"top-center \\\\an8\\\\pos(540,260)\",\"max_chars_per_line\":12,\"max_lines\":2,\"linebreak\":\"어절 단위 \\\\N, 윗줄<=아랫줄, 조사만 남는 줄 금지\",\"highlight\":\"줄당 1어절만 {\\\\c&H0018D8FF&\\\\fscx108\\\\fscy108}…{\\\\r} 로 닫기\",\"enter\":\"{\\\\fad(60,40)\\\\t(0,90,\\\\fscx100\\\\fscy100)} 106%→100%\",\"forbid\":[\"\\\\k\",\"단어 카라오케(단어마다 \\\\c 이동)\",\"3줄 이상\",\"도현체·주아체 예능 톤\",\"검은 레터박스 띠\"]}"
+    },
+    {
+      "rule_id": "R-SUB-KM-01",
+      "brand": "ppiyak_kimmary",
+      "rule_scope": "subtitle_style",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"font\":\"NanumSquareRound ExtraBold (OFL)\",\"size_px\":64,\"hook_size_px\":82,\"fill\":\"#F8FFFF\",\"keyword\":\"#FFA5B4\",\"keyword_hex_ass\":\"&H00B4A5FF\",\"keyword_scale_pct\":108,\"outline_px\":4.0,\"outline_color\":\"#2B2238\",\"shadow_px\":2.0,\"position\":\"top-center y280 (MarginV 160) — 고양이 얼굴 y864~1152 회피\",\"hook_position\":\"top-center \\\\an8\\\\pos(540,260)\",\"hook_to_body_gap_s\":0.05,\"max_chars_per_line\":11,\"max_lines\":2,\"linebreak\":\"어절 단위 \\\\N, 윗줄<=아랫줄\",\"highlight\":\"줄당 1어절만 {\\\\c&H00B4A5FF&\\\\fscx108\\\\fscy108}…{\\\\r}\",\"enter\":\"{\\\\fad(80,50)\\\\move(540,295,540,280,0,100)}\",\"forbid\":[\"\\\\k\",\"단어 카라오케\",\"훅과 본문을 같은 시각에 노출\",\"3줄 이상\"]}"
+    },
+    {
+      "rule_id": "R-SUB-CMN-01",
+      "brand": "*",
+      "rule_scope": "subtitle_safety",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"canvas\":\"1080x1920 (9:16, 풀프레임)\",\"safe_top_px\":240,\"safe_bottom_max_y\":1420,\"safe_left_px\":96,\"safe_right_px\":140,\"effective_width_px\":844,\"reading_speed_max_cps\":17,\"min_cue_sec\":0.9,\"max_overlap_frames\":0,\"forbid\":[\"검은 레터박스 띠\",\"3줄 이상 통짜 자막\",\"단어 사이 빈 구간(깜빡임)\",\"안전영역 밖 자막\"]}"
+    },
+    {
+      "rule_id": "R-SCR-01",
+      "brand": "*",
+      "rule_scope": "script_voice",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"mode_rule\":\"1순위 무내레이션(현장음). 정보 전달이 꼭 필요한 편만 내레이션\",\"narration_budget\":\"20초 5문장 이하, 10초당 2문장 이하\",\"sentence_len\":\"18~32자, 한 문장에 정보 1개\",\"s1_remove\":[\"~에 대해\",\"~에 있어(서)\",\"~되어진다\",\"가지고 있다\",\"~에 의해\",\"그/그녀/그것 남발\"],\"s2_limit_1\":[\"~를 통해\",\"~라는 점에서\",\"~할 수 있다\",\"~을 위해\"],\"ending_mix\":\"~요 / ~죠 / ~는데요 / ~습니다 중 2종 이상\",\"pause\":\"문장 사이 0.25~0.4초\",\"forbid\":[\"결론적으로\",\"시사하는 바가 크다\",\"주목할 만하다\",\"첫째·둘째·셋째 나열\"]}"
+    },
+    {
+      "rule_id": "R-SCR-02",
+      "brand": "*",
+      "rule_scope": "tts_notation",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"check_words\":[\"1·2·3차\",\"5시\",\"60,000원\",\"G80\",\"AI\"],\"rule\":\"합성 뒤 반드시 귀으로 확인. 어색하면 '세 코스'·'육만 원'처럼 풀어 쓴다\",\"abbrev\":\"영어 약어는 소리 나는 대로\",\"no_sensitive\":\"무료 티어(Gemini)는 입력이 제품 개선에 쓰이므로 대본에 고객 실명·연락처·계약 정보 금지\"}"
+    },
+    {
+      "rule_id": "R-TTS-01",
+      "brand": "*",
+      "rule_scope": "tts_policy",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"budget\":\"무료만 (사용자 확정 2026-11-16). 유료 ElevenLabs·타입캐스트 사용 안 함\",\"priority\":[\"gemini-3.8-flash-tts (무료 티어, 상업 약관 허용)\",\"edge-tts >= 7.3.1 (0원, WordBoundary 제공, 상업 보증 없음)\"],\"rate\":\"+0~+8% (18%·20% 금지)\",\"korean_voices_edge\":[\"ko-KR-HyunsuMultilingualNeural(대전청년)\",\"ko-KR-SunHiNeural(메리)\",\"ko-KR-InJoonNeural(예비)\"],\"retry\":\"NoAudioReceived 시 2회 재시도 후 보이스 교체\",\"timing\":\"WordBoundary 필수(offset/duration 100ns → /1e7). Gemini는 문장 경계+VAD 폴백\",\"paragraph_rule\":\"문단 단위 1회 호출 + 문장 사이 0.25~0.4초 무음\"}"
+    },
+    {
+      "rule_id": "R-EDT-01",
+      "brand": "*",
+      "rule_scope": "edit_grammar",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"mode\":\"현장음 우선\",\"framing\":\"풀프레임 9:16 강제, 검은 레터박스 금지\",\"cut_length\":\"훅 0.8~1.2초 2컷, 본문 1.5~2.5초, 3초 이상 정지 금지\",\"kenburns\":\"1.00→1.08, 컷마다 방향 교차\",\"speed_ramp\":\"진입 setpts=0.6*PTS, 강조 1.25*PTS\",\"loudness\":\"-14.0 LUFS (±0.5), TP -1.5 dBTP\",\"bgm\":\"-24 LUFS, sidechaincompress threshold=0.03:ratio=4:attack=15:release=250:makeup=1\",\"filter_chain\":\"현장음 highpass80,lowpass14000,afftdn nf=-25:tn=1,acompressor -20dB 3:1 10/100,loudnorm I=-18 TP=-2,asplit=2 | BGM highpass100,loudnorm I=-24 TP=-3 | amix normalize=0 → loudnorm I=-14 TP=-1.5 → alimiter 0.841 level=false\",\"silence\":\"앞뒤만 silenceremove(중간 무음은 호흡이라 유지)\",\"forbid\":[\"+18%/+20% 배속\",\"무음 위 자막만 3초 이상\",\"같은 BGM 5편 연속\",\"스톡·AI 생성 이미지 남용\"]}"
+    },
+    {
+      "rule_id": "R-PUB-01",
+      "brand": "*",
+      "rule_scope": "publish_check",
+      "version_tag": "v2-2026w47",
+      "status": "DRAFT",
+      "rule_payload_json": "{\"youtube\":\"AI 활용=아니오 (내 TTS 내레이션·자막 생성은 고지 제외 목록). 실제 인물 음성 흉내 금지. 비공개 업로드 → 스튜디오에서 공개 1클릭\",\"instagram\":\"AI 공개 도구 사용. 다른 앱 워터마크 금지\",\"naver_clip\":\"AI 활용 ON + 캡션에 '촬영·편집 직접' 한 줄. 정보태그 부착\",\"blog\":\"숏폼 임베드 + 직접 촬영 사진, 설명글 새로\",\"self_promo\":\"자사 스토어 링크 댓글 바로 위에 '※ 직접 기획·판매하는 자사 스토어 상품입니다'\",\"channels_trackA\":[\"naver_blog\",\"youtube_shorts\",\"instagram_reels\",\"naver_clip\"],\"channels_trackB\":[\"youtube_shorts\",\"instagram_reels\",\"naver_clip\"],\"daily_cap\":{\"youtube_shorts\":2,\"instagram_reels\":2,\"naver_blog\":2,\"naver_clip\":2,\"threads\":2}}"
+    }
+  ]
+}

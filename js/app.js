@@ -14,7 +14,7 @@ import { renderSeriesView } from './seriesView.js';
 
 const BRANDS = {
   daejeon_youth: { name: '대전 청년', emoji: '🍺', channels: '블로그 · 쇼츠 · 인스타(릴스·피드) · 클립' },
-  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 인스타(릴스·피드)' }
+  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 인스타(릴스·피드) · 클립' }
 };
 
 /* 화면에 보이는 말은 쉬운 한국어로. 시트·GAS 코드값(DRAFT·PUBLISHED·LINKED …)은 그대로 둔다. */
@@ -416,7 +416,7 @@ function renderBoard(main) {
           h('span', { class: 'n', text: String(items.length) })),
         h('p', { class: 'hint', style: 'font-size:11px;color:var(--tx-3);margin:-2px 2px 4px',
           text: col.key === 'publishing' && state.brand === 'ppiyak_kimmary'
-            ? '쇼츠·릴스는 올라감 — 발행 끝으로 넘기면 정리돼요'
+            ? '쇼츠·릴스·클립은 올라감 — 발행 끝으로 넘기면 정리돼요'
             : col.hint }));
       if (!items.length) colEl.appendChild(h('div', { class: 'empty', text: '없음' }));
       items.forEach((item) => colEl.appendChild(contentCard(item)));
@@ -550,7 +550,7 @@ function renderCapture(main) {
   main.appendChild(h('div', { class: 'panel' },
     h('h3', null, '이 브랜드는 이렇게 올려요'),
     h('p', { class: 'hint', text: state.brand === 'ppiyak_kimmary'
-      ? '삐약 김메리: 쇼츠·릴스만 올리면 끝이에요. 블로그·클립은 자동으로 건너뜁니다.'
+      ? '삐약 김메리: 쇼츠·릴스·클립을 올리면 끝이에요. 블로그는 자동으로 건너뜁니다.'
       : '대전 청년: ① 쇼츠 · 릴스 · 클립을 먼저 올리고 ② 블로그에 그 영상을 넣고 ③ 숏폼 맨 위 고정댓글에 블로그 주소를 답니다.' })));
 }
 

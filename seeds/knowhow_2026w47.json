@@ -1,0 +1,88 @@
+{
+  "exported_at": "2026-11-16T02:40:00+09:00",
+  "brand": "*",
+  "note": "콘텐츠허브 M1 '노하우' 화면의 ⬇ JSON 내보내기와 같은 형식이다(M3 ingest_benchmark 입력 초안). 앱은 브랜드별로 내보내지만, 이 시드는 두 트랙 공통 규칙이라 brand=* 로 두고 항목마다 brand를 적었다. 그대로 붙여넣어도 되고 필요한 항목만 골라도 된다. source_type=MANUAL_NOTE.",
+  "items": [
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "https://support.google.com/youtube/answer/14328491",
+      "source_title": "유튜브 AI 고지 — 내 TTS 내레이션·자막 생성은 고지 제외, 쇼츠는 영상 위 라벨(2026-05-27~)",
+      "raw_content": "고지 대상은 ① 실제 인물이 하지 않은 말·행동 ② 실제 사건·장소 영상의 변형 ③ 일어나지 않은 현실적 장면 ④ 영상의 주된 요소인 AI 음악. 제외 목록에 '내 목소리 복제로 만든 내레이션', '자막 생성', '대본·개요·썸네일 보조', '색보정·노이즈 제거'가 명시돼 있다. 직접 찍은 가게 영상 + AI 음성 내레이션이면 라벨 불필요. 단 실제 인물 음성을 흉내 내는 보이스는 쓰지 않는다.",
+      "tags": ["유튜브", "AI표시", "쇼츠", "정책"],
+      "collected_at": "2026-11-16T01:10:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "https://blog.hootsuite.com/ai-disclosure-policy-for-instagram/",
+      "source_title": "인스타 릴스 — 사실적 AI 음성도 공개 대상, 다른 앱 워터마크·재업로드는 노출 감점",
+      "raw_content": "Meta는 사실적 영상이나 실제 사람처럼 들리는 음성으로 생성·변형한 콘텐츠에 AI 공개 도구 사용을 요구한다. 촬영은 전부 실제여도 AI 음성 내레이션만 얹으면 공개 대상이라는 해석이 우세하다. AI라는 이유만으로 순위 감점은 없지만 다른 앱·무료 요금제 워터마크가 찍힌 릴스는 노출이 줄고, 2026-04-30부터 재업로드 위주 계정은 추천에서 빠진다. 자막·테두리를 더해도 재업로드가 오리지널이 되지는 않는다.",
+      "tags": ["인스타", "릴스", "AI표시", "워터마크", "오리지널"],
+      "collected_at": "2026-11-16T01:10:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "https://www.etnews.com/20260610000279",
+      "source_title": "네이버 클립 — 'AI 활용' ON 권고, 2026-06-29 수익화 심사에서 자체 제작성 기준 강화",
+      "raw_content": "창작자의 기획·시나리오·편집 기여가 분명하면 AI 보조는 수익화 가능, AI가 만든 영상·음성·자막을 거의 그대로 올리거나 유사 콘텐츠를 단기간 대량 생산하면 불인정. 수익화 조건은 구독자 1,000명 + 최근 90일 유효 조회수 300만 회, 광고 수익 배분 45%. '저품질' 5개 이상이면 1개월 계도 후 프로그램 탈락. 업로드 시 'AI 활용' 설정은 자율이지만 고객센터가 ON을 권고한다.",
+      "tags": ["네이버클립", "수익화", "AI정책", "저품질"],
+      "collected_at": "2026-11-16T01:10:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "https://github.com/rany2/edge-tts/issues/490",
+      "source_title": "edge-tts — 2026-10 엔드포인트 변경으로 7.2.x 이하 전부 403, 한국어 보이스는 3종뿐",
+      "raw_content": "7.3.1 이상으로 고정해야 한다(7.2.x 이하 403). 한국어 보이스는 ko-KR-HyunsuMultilingualNeural(남·친근), ko-KR-SunHiNeural(여·친근), ko-KR-InJoonNeural(남) 3종이며 JiMin·SeoHyeon 등은 목록에서 사라졌다. 없는 보이스로 요청하면 NoAudioReceived 예외. 감정 지시 태그는 없다. 0원이지만 비공식 경로라 상업 이용 보증이 없고 제작자도 언제든 중단될 수 있다고 밝혔다. 대신 boundary='WordBoundary'로 단어별 타임스탬프(offset/duration 100ns 단위 → /1e7)를 무료로 준다.",
+      "tags": ["TTS", "edge-tts", "보이스", "타임스탬프"],
+      "collected_at": "2026-11-16T01:20:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "https://iyakovlev.dev/blog/2026/04/07/forced-alignment-benchmark/",
+      "source_title": "ASR로 자막 타이밍 뽑지 않기 — faster-whisper는 글자가 틀리고, WhisperX 한국어 정렬은 WER 0.946",
+      "raw_content": "같은 TTS 오디오를 faster-whisper tiny로 돌리면 시간은 ±0.2초 안에 맞지만 글자가 틀린다(봉명동→동영동, 술자리→술짜리). 2026-04 공개 벤치마크에서 WhisperX의 한국어 경계 정확도는 중앙 WER 0.946으로 사실상 붕괴했다. 원칙: TTS로 만든 영상은 TTS의 WordBoundary를 쓰고, 직접 찍은 현장음은 컷 타임코드+무음(VAD)으로 발화 시작점만 맞추며 ASR 글자는 자막으로 쓰지 않는다. 실패하면 글자 수 비율로 구간을 가중 등분한다.",
+      "tags": ["자막", "타이밍", "ASR", "WordBoundary"],
+      "collected_at": "2026-11-16T01:20:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "https://github.com/epoko77-ai/im-not-ai",
+      "source_title": "한국어 'AI 티' 분류 — 번역투 S1 패턴부터 지운다",
+      "raw_content": "'~에 대해', '~에 있어(서)', 이중 피동 '~되어진다', '가지고 있다', '~에 의해', '그/그녀/그것' 남발은 한 번만 나와도 AI로 읽히는 S1 패턴. 대본 단계에서 목적격 조사로 직결하거나 '~로/해서'로 분산한다. 문장 길이 표준편차가 낮고 종결어미가 ~습니다로만 끝나는 리듬 균일성도 함께 잡는다(18~32자, 종결어미 2종 이상 섞기).",
+      "tags": ["대본", "AI티", "번역투", "윤문"],
+      "collected_at": "2026-11-16T01:10:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "",
+      "source_title": "자막 안전영역과 줄 규칙 — 3사 UI 교집합은 상240/하1420/좌96/우140",
+      "raw_content": "인스타 릴스 하단 캡션·오디오 UI가 가장 높다(화면 하단 26~28%, 500~540px). 가장 좁은 릴스에 맞추면 쇼츠·클립은 자동으로 안전하다. 그래서 상단 240, 하단 y≤1420, 좌 96, 우 140을 모든 채널 공통 마진으로 쓴다(유효 폭 844px). 자막은 최대 2줄, 줄당 12자(A)/11자(B), 어절 단위 줄바꿈, 윗줄≤아랫줄. 하이라이트는 줄당 1어절만 {\\c…}로 넣고 반드시 {\\r}로 닫는다(안 닫으면 줄바꿈을 넘어 아랫줄 전체가 물든다 — ffmpeg 7.0.2로 재현).",
+      "tags": ["자막", "안전영역", "줄바꿈", "ASS"],
+      "collected_at": "2026-11-16T02:10:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "",
+      "source_title": "음량·덕킹 실측 함정 3개 — asplit 필수, alimiter level=false, 라우드노름 먼저",
+      "raw_content": "ffmpeg 7.0.2로 체인을 실제로 돌려 확인했다. ① 같은 라벨을 덕킹 입력과 믹스 입력 두 곳에 쓰면 'Stream specifier matches no streams'로 죽는다 → 현장음을 asplit=2로 갈라야 한다. ② alimiter의 기본값(level=true)은 리미터 뒤에서 음량을 약 +1dB 올려 -14.0이 -13.0이 된다 → level=false. ③ 리미터 뒤에 라우드노름을 두면 피크가 다시 올라간다 → 라우드노름 먼저, 리미터 마지막. 목표: 통합 -14.0 LUFS(±0.5), TP -1.5 dBTP 이하(limit=0.841), BGM -24 LUFS, 덕킹 threshold=0.03:ratio=4:attack=15:release=250.",
+      "tags": ["오디오", "ffmpeg", "LUFS", "덕킹"],
+      "collected_at": "2026-11-16T02:10:00+09:00"
+    },
+    {
+      "brand": "*",
+      "source_type": "MANUAL_NOTE",
+      "source_url": "https://blog.youtube/news-and-events/youtube-partner-program-updates-2027-new-opportunities-earn/",
+      "source_title": "유튜브 2027-02-01 수익화 문턱 — 신규는 8,000시간 또는 쇼츠 2,000만 회/90일",
+      "raw_content": "신규 YPP 신청자는 8,000 유효 시청시간(365일) 또는 2,000만 유효 쇼츠 조회(90일) + 구독자 1,000명. 쇼츠 수익 배분은 매월 90일 1,000만 회 이상 유지가 필요하다. 기존 가입자는 영향 없음. '양으로 승부'하는 채널이 아니라 '한 편이 오래 남는' 채널이 유리해지는 방향이라, 템플릿 재사용·대량 생산은 더 불리하다.",
+      "tags": ["유튜브", "수익화", "쇼츠"],
+      "collected_at": "2026-11-16T01:10:00+09:00"
+    }
+  ]
+}
