@@ -14,7 +14,7 @@
 | 훅 A/B | 발행 전 체크리스트 11항(편별 localStorage 저장) + A/B 설계·지표·판정 규칙 | 같은 파일 `hook_ab` |
 | 화면 | `#/series` — 시리즈(아코디언 상세 · 대본 복사 · **취재 보드에 DRAFT 생성**), 키워드팩, 훅 A/B | `js/seriesView.js` |
 | 연결 장치 | 배지 N/5 · 중반 위치 앵커 · 숨긴 단서(오픈 루프) · 고정댓글 선택 질문 · 루프 | 시드 `connection` |
-| 문서 | 위 시드에서 자동 생성(문서·앱이 어긋나지 않게) | `scripts/render_series_pack.py` |
+| 문서 | 위 시드에서 자동 생성(문서·앱이 어긋나지 않게) | `tools/render_series_pack.py` |
 
 **왜 서버 없이 먼저 했나**: 시드는 읽기 전용 정적 JSON이라 GAS 배포·쿼터 없이도 폰에서 바로 열린다. 10편은 자주 바뀌지 않고(주 2~3편), 매번 시트를 왕복할 이유가 없다.
 
@@ -65,7 +65,8 @@
 
 - 시리즈를 고칠 때는 **JSON → 렌더러 실행** 순서만 지킨다. 문서를 직접 고치면 앱과 어긋난다.
   ```
-  python3 scripts/render_series_pack.py
+  python3 tools/render_series_pack.py            # 기본 출력: ../downloads/콘텐츠허브_시리즈10편_키워드팩.md
+  python3 tools/render_series_pack.py --out /tmp/check.md
   ```
 - 시드에 **토큰·계정·고객 실명·전화번호를 넣지 않는다**(공개 저장소다). 팩트 슬롯은 `[ ]`로 비워 둔다.
 - 시리즈 JSON은 공개 페이지에서 `fetch`로 읽히므로, 공개되면 곤란한 값(영수증 이미지 URL, 계정 캡처)은 넣지 않는다.
