@@ -151,7 +151,6 @@ a { color: var(--accent-2); }
   background: var(--tx-3); box-shadow: 0 0 0 3px rgba(255, 255, 255, .04);
 }
 .conn-dot.live { background: var(--ok); box-shadow: 0 0 0 3px rgba(53, 208, 127, .18); }
-.conn-dot.demo { background: var(--warn); box-shadow: 0 0 0 3px rgba(255, 194, 71, .18); }
 .conn-dot.off { background: var(--danger); box-shadow: 0 0 0 3px rgba(255, 93, 108, .16); }
 
 /* ───────────── 탭 ───────────── */

@@ -7,10 +7,8 @@
  *  - 요청 1건 30초 타임아웃(AbortController) / 429·5xx·ERR_BUSY 만 3회 재시도(0.8→1.6→3.2s)
  *  - 멱등키는 "동작 1건당 1개" 고정 → 중복 클릭·재시도에도 같은 키. 성공하면 폐기.
  *  - 오프라인/실패 큐(localStorage)에 남겨 두고 온라인 복귀 시 재전송
- *  - 설정이 없거나 데모 모드면 mock.js 가 같은 봉투로 응답한다(화면·기능 체험용).
+ *  - GAS URL/토큰이 없으면 ERR_NO_CONFIG 로 멈춘다(가짜 데이터로 대신하지 않는다).
  */
-
-import { MockBackend } from './mock.js';
 
 const CFG_KEY = 'contenthub.config.v1';
 const QUEUE_KEY = 'contenthub.queue.v1';
@@ -68,7 +66,6 @@ const RETRY_DELAYS = [800, 1600, 3200];
 
 export class ContentHubApi {
   constructor(opts = {}) {
-    this.mock = new MockBackend();
     this.queueKey = QUEUE_KEY;
     this.clientId = 'web-admin';
     this.timeoutMs = 30000;
@@ -83,8 +80,6 @@ export class ContentHubApi {
     this.token = cfg.token || '';
     this.brand = cfg.activeBrand || 'daejeon_youth';
     this.clientId = cfg.clientId || 'web-admin';
-    // demo 값이 없으면 "설정이 비어 있을 때만" 데모로 동작한다.
-    this.demo = cfg.demo !== undefined ? !!cfg.demo : (!cfg.baseUrl || !cfg.token);
     return this;
   }
 
@@ -92,9 +87,8 @@ export class ContentHubApi {
     return !!(this.baseUrl && this.token);
   }
 
-  /** 화면에 표시할 연결 상태: live | demo | unconfigured */
+  /** 화면에 표시할 연결 상태: live | unconfigured */
   get mode() {
-    if (this.demo) return 'demo';
     return this.configured ? 'live' : 'unconfigured';
   }
 
@@ -118,8 +112,6 @@ export class ContentHubApi {
       payload
     };
 
-    if (this.demo) return this._mockOnce(envelope);
-
     if (!this.configured) {
       throw new ApiError('ERR_NO_CONFIG', 'GAS Web App URL과 API 토큰을 먼저 설정하세요(⚙︎ → 연결).');
     }
@@ -142,25 +134,6 @@ export class ContentHubApi {
       }
     }
     throw lastErr;
-  }
-
-  async _mockOnce(envelope) {
-    const t0 = Date.now();
-    try {
-      // GAS 는 본문의 brand 를 ctx.brand 로 넘긴다. 데모도 같은 규칙으로 맞춘다.
-      const payload = Object.assign({ brand: envelope.brand }, envelope.payload || {});
-      const data = await this.mock.handle(envelope.action, payload);
-      return {
-        ok: true,
-        action: envelope.action,
-        brand: envelope.brand || null,
-        data,
-        timestamp: new Date().toISOString(),
-        meta: { server_ms: Date.now() - t0, demo: true, cache_hit: false, quota_degraded: false }
-      };
-    } catch (err) {
-      throw new ApiError(err.code || 'ERR_INTERNAL', err.message, err.details, 0);
-    }
   }
 
   async _fetchOnce(body, timeoutMs) {

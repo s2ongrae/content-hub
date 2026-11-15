@@ -8,7 +8,6 @@
 
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
-import { resetMockData } from './mock.js';
 import { renderSeriesView } from './seriesView.js';
 
 /* ────────────────────────── 상수 ────────────────────────── */
@@ -118,7 +117,7 @@ function chanDots(item) {
   const short = { 블로그: '블', 숏폼: '숏', 릴스: '릴', 클립: '클' };
   map.forEach(([label, st]) => {
     if (!st) return;
-    const on = st === 'UPLOADED' || st === 'PUBLISHED' || st === 'LINKED';
+    const on = st === 'DONE' || st === 'UPLOADED' || st === 'PUBLISHED' || st === 'LINKED';
     wrap.appendChild(h('span', { class: 'ch', title: label + ': ' + st },
       h('i', { class: 'chan-dot ' + (on ? 'on' : st === 'SKIPPED' ? 'skip' : '') }), short[label]));
   });
@@ -208,7 +207,8 @@ async function refresh() {
   } catch (err) {
     state.contents = [];
     state.connError = err;
-    toast(friendlyError(err), 'err');
+    // 미설정은 화면 안내(설정 패널)로 충분하다 — 뜰 때마다 토스트로 재촉하지 않는다
+    if (!(err instanceof ApiError && err.code === 'ERR_NO_CONFIG')) toast(friendlyError(err), 'err');
   } finally {
     state.loading = false;
     updateApproveBadge();
@@ -251,8 +251,8 @@ function updateConnDot() {
     dot.title = '연결 실패 — ⚙︎ 설정에서 주소·토큰을 확인하세요';
     return;
   }
-  dot.className = 'conn-dot ' + (mode === 'live' ? 'live' : mode === 'demo' ? 'demo' : 'off');
-  dot.title = mode === 'live' ? 'GAS 실서버 연결됨' : mode === 'demo' ? '데모 모드 (GAS 미연결)' : '연결 설정 필요';
+  dot.className = 'conn-dot ' + (mode === 'live' ? 'live' : 'off');
+  dot.title = mode === 'live' ? 'GAS 실서버 연결됨' : '연결 설정 필요 — ⚙︎ 설정에서 GAS URL과 API 토큰을 연결하세요';
 }
 
 function renderBanners() {
@@ -260,14 +260,10 @@ function renderBanners() {
   clear(host);
   const mode = api.mode;
 
-  if (mode === 'demo') {
-    host.appendChild(banner('info', '🧪', '데모 모드로 보고 있어요.',
-      '데모 데이터는 이 브라우저에만 있습니다. 실제 콘텐츠허브와 연결하려면 GAS URL·토큰을 넣으세요.',
-      h('button', { class: 'ghost-btn sm', type: 'button', onclick: openSettings, text: '연결하기' })));
-  } else if (mode === 'unconfigured') {
-    host.appendChild(banner('warn', '🔌', 'GAS 연결 전입니다.',
-      '설정에서 Web App URL(/exec)과 API 토큰을 넣거나, 데모 모드로 먼저 둘러보세요.',
-      h('button', { class: 'ghost-btn sm', type: 'button', onclick: openSettings, text: '설정' })));
+  if (mode === 'unconfigured') {
+    host.appendChild(banner('info', '⚙︎', '연결 설정이 필요합니다.',
+      '설정에서 GAS URL과 API 토큰을 연결하세요.',
+      h('button', { class: 'ghost-btn sm', type: 'button', onclick: openSettings, text: '설정 열기' })));
   }
 
   if (state.connError) {
@@ -364,12 +360,19 @@ function renderBoard(main) {
   });
   main.appendChild(h('div', { class: 'panel', style: 'padding:10px' }, search));
 
+  if (api.mode === 'unconfigured' && !state.connError) {
+    main.appendChild(h('div', { class: 'panel setup-guide' },
+      h('h3', null, '⚙︎ 설정에서 GAS URL과 API 토큰을 연결하세요'),
+      h('p', { class: 'hint', text: '연결하면 실제 콘텐츠허브 시트를 읽어 보드를 그립니다. Web App URL(/exec)과 API 토큰은 ⚙︎ 설정에서 넣을 수 있습니다.' }),
+      h('div', { class: 'row', style: 'margin-top:10px' },
+        h('button', { class: 'btn sm primary', type: 'button', text: '설정 열기', onclick: openSettings }))));
+    return;
+  }
+
   if (!state.contents.length && !state.connError) {
     main.appendChild(h('div', { class: 'panel' },
-      h('h3', null, api.mode === 'demo' ? '데모 데이터가 비었습니다' : '아직 콘텐츠가 0건입니다'),
-      h('p', { class: 'hint', text: api.mode === 'demo'
-        ? '운영 → 데모 데이터 초기화를 누르면 예시 10건이 다시 채워집니다.'
-        : '운영 → 콜드스타트 온보딩을 한 번 돌리면 훅 · 포맷 · 키워드가 시드되고 2주 캘린더 10건(DRAFT)이 자동으로 생깁니다.' }),
+      h('h3', null, '아직 콘텐츠가 0건입니다'),
+      h('p', { class: 'hint', text: '운영 → 콜드스타트 온보딩을 한 번 돌리면 훅 · 포맷 · 키워드가 시드되고 2주 캘린더 10건(DRAFT)이 자동으로 생깁니다.' }),
       h('div', { class: 'row', style: 'margin-top:10px' },
         h('button', { class: 'btn sm', type: 'button', text: '운영 열기', onclick: () => { location.hash = '#/ops'; } }),
         h('button', { class: 'btn sm primary', type: 'button', text: '＋ 취재 등록', onclick: () => { location.hash = '#/capture'; } }))));
@@ -781,7 +784,7 @@ function renderOps(main) {
   /* 연결 상태 */
   const cfg = loadConfig();
   const connPanel = h('div', { class: 'panel' },
-    h('h3', null, '연결', h('span', { class: 'tag', text: mode === 'live' ? 'LIVE' : mode === 'demo' ? 'DEMO' : '미설정' })),
+    h('h3', null, '연결', h('span', { class: 'tag', text: mode === 'live' ? 'LIVE' : '미설정' })),
     h('dl', { class: 'kv' },
       h('dt', { text: 'Web App' }), h('dd', { text: cfg.baseUrl ? maskUrl(cfg.baseUrl) : '(없음)' }),
       h('dt', { text: '토큰' }), h('dd', { text: cfg.token ? '설정됨 · ' + cfg.token.length + '자' : '(없음)' }),
@@ -878,8 +881,15 @@ function renderOps(main) {
     h('button', { class: 'btn sm', type: 'button', text: '콜드스타트 온보딩', onclick: (e) => runAction(e.target, async () => {
       const res = await api.runColdstart(false);
       const d = res.data || {};
+      // GAS 는 { created: { hooks, formats, places, keywords, contents } } 로 돌려준다.
+      // (예전 응답처럼 플랫 필드로 오는 경우도 같이 받아 준다 — 표시가 [object Object] 로 깨지지 않게)
+      const c = (d.created && typeof d.created === 'object') ? d.created : d;
+      const num = (v) => Number(v) || 0;
       await refresh();
-      return d.skipped ? `건너뜀 — ${d.reason || '이미 데이터 있음'}` : `시드 완료 · 캘린더 ${d.created || 0}건 (훅 ${d.hooks || 0} · 포맷 ${d.formats || 0} · 플레이스 ${d.places || 0} · 키워드 ${d.keywords || 0})`;
+      return d.skipped
+        ? `건너뜀 — ${d.reason || d.note || '이미 데이터 있음'}`
+        : `시드 완료 · 캘린더 ${num(c.contents != null ? c.contents : c.created)}건`
+          + ` (훅 ${num(c.hooks)} · 포맷 ${num(c.formats)} · 플레이스 ${num(c.places)} · 키워드 ${num(c.keywords)})`;
     }) })));
 
   backupPanel.appendChild(log);
@@ -918,21 +928,6 @@ function renderOps(main) {
     } })));
   secPanel.appendChild(tokenOut);
   main.appendChild(secPanel);
-
-  /* 데모 */
-  if (api.mode === 'demo') {
-    const demoPanel = h('div', { class: 'panel' },
-      h('h3', null, '데모 데이터'),
-      h('p', { class: 'hint', text: '지금 보고 있는 콘텐츠 10건은 브라우저 안의 가짜 데이터입니다. 초기화하면 처음 상태로 돌아갑니다.' }),
-      h('div', { class: 'row', style: 'margin-top:10px' },
-        h('button', { class: 'ghost-btn', type: 'button', text: '데모 데이터 초기화', onclick: async () => {
-          resetMockData();
-          await refresh();
-          renderRoute();
-          toast('데모 데이터를 처음으로 되돌렸습니다', 'ok');
-        } })));
-    main.appendChild(demoPanel);
-  }
 
   async function runAction(btn, fn) {
     if (!btn) return;
@@ -1048,7 +1043,6 @@ function openSettings() {
   $('#in-token').value = cfg.token || '';
   $('#in-token').type = 'password';
   $('#btn-toggle-token').textContent = '보기';
-  $('#in-demo').checked = api.mode === 'demo';
   const r = $('#conn-result');
   r.hidden = true;
   r.className = 'result';
@@ -1078,7 +1072,7 @@ function wireSettings() {
       setConnResult('err', 'URL 형식이 아닙니다. 예: https://script.google.com/macros/s/AKfy…/exec');
       return;
     }
-    saveConfig({ baseUrl: url, token, demo: $('#in-demo').checked });
+    saveConfig({ baseUrl: url, token });
     api.reload();
     setConnResult('ok', '저장했습니다. 이 브라우저(localStorage)에만 보관됩니다.');
     refresh().then(() => { renderRoute(); loadHealth(); });
@@ -1089,10 +1083,10 @@ function wireSettings() {
     const url = $('#in-gas-url').value.trim();
     const token = $('#in-token').value.trim();
     if (!url || !token) {
-      setConnResult('err', 'URL과 토큰을 모두 넣어야 테스트할 수 있습니다. (데모로 보려면 아래 데모 모드를 켜세요)');
+      setConnResult('err', 'URL과 토큰을 모두 넣어야 테스트할 수 있습니다.');
       return;
     }
-    saveConfig({ baseUrl: url, token, demo: false });
+    saveConfig({ baseUrl: url, token });
     api.reload();
     e.target.disabled = true;
     setConnResult('', '연결 확인 중…');
@@ -1116,20 +1110,6 @@ function wireSettings() {
     } finally {
       e.target.disabled = false;
     }
-  });
-
-  $('#in-demo').addEventListener('change', (e) => {
-    saveConfig({ demo: e.target.checked });
-    api.reload();
-    refresh().then(() => { renderRoute(); loadHealth(); });
-    toast(e.target.checked ? '데모 모드로 전환' : '데모 모드 해제', 'ok');
-  });
-
-  $('#btn-reset-demo').addEventListener('click', async () => {
-    resetMockData();
-    await refresh();
-    renderRoute();
-    toast('데모 데이터 초기화 완료', 'ok');
   });
 
   $('#btn-clear-token').addEventListener('click', () => {

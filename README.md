@@ -20,15 +20,14 @@
 5. **취재 등록** — 상호 · 지역 · 키워드 · 플레이스 URL만으로 30초 안에 `DRAFT` 생성(`DY-YYYYMMDD-NNN` / `KM-…` 자동 채번).
 6. **노하우 수집함** — 잘 된 글의 규칙을 적어 두고 JSON으로 내보내기(M3 `ingest_benchmark` 입력 형식 초안).
 7. **운영 패널** — 헬스체크 · 수동 백업 · 무결성 점검 · 스냅샷 복구(2단 확인) · 토큰 회전 · 콜드스타트 온보딩, 백업 지연 · 쿼터 서킷 · NEEDS_HUMAN 적체 배너.
-8. **데모(Mock) 모드** — GAS 연결 전에도 위 기능을 전부 체험. 콘텐츠 10건이 브라우저 안에서 실제처럼 움직입니다(승인 · 반려 · 취재 · 백업 시뮬레이션).
+8. **연결 전 안내** — GAS URL·토큰이 없으면 가짜 데이터 없이 "⚙︎ 설정에서 GAS URL과 API 토큰을 연결하세요" 안내만 보여 줍니다. 연결하는 즉시 실제 시트를 읽습니다.
 
 ## 구조
 
 ```
 index.html              # 앱 (CSP meta, 토큰 마스킹)
 css/style.css           # 브랜드 테마(네이비·오렌지 / 코랄·크림), 상태 배지, 폰·PC 레이아웃
-js/api.js               # 30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 데모 분기
-js/mock.js              # 데모 백엔드 — GAS와 같은 응답 봉투
+js/api.js               # 30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 미설정 시 ERR_NO_CONFIG
 js/quickApprove.js      # 폰 10초 승인 카드 스택
 js/app.js               # 해시 라우터 · 브랜드 스위처 · 화면 6종 (렌더링 textContent 전용)
 gas/Setup.gs            # 23시트 · Drive 폴더 · 토큰(비노출) · 시딩 · 트리거
