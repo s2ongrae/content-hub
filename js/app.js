@@ -988,6 +988,25 @@ async function openDetail(contentId) {
       h('dt', { text: '채널' }), h('dd', { text: `블로그 ${m.blog_status || '-'} · 숏폼 ${m.shorts_status || '-'} · 릴스 ${m.reels_status || '-'} · 클립 ${m.clip_status || '-'}` }),
       h('dt', { text: '수정' }), h('dd', { text: `${relTime(m.updated_at)} · ${m.updated_by || '-'}` })));
 
+    // 채널별 발행 링크 — 시트에 기록된 실제 URL 을 그대로 보여 준다
+    const channels = [
+      ['블로그', 'blog_status', 'blog_url'],
+      ['쇼츠', 'shorts_status', 'shorts_url'],
+      ['릴스', 'reels_status', 'reels_url'],
+      ['클립', 'clip_status', 'clip_url']
+    ].filter(([, , k]) => m[k]);
+    if (channels.length) {
+      body.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '채널 링크' }));
+      const dl = h('dl', { class: 'kv' });
+      channels.forEach(([label, stKey, urlKey]) => {
+        dl.appendChild(h('dt', { text: label }));
+        dl.appendChild(h('dd', null,
+          h('span', { class: 'badge ' + (m[stKey] || 'PENDING'), text: m[stKey] || '-' }), ' ',
+          h('a', { href: m[urlKey], target: '_blank', rel: 'noopener noreferrer', text: m[urlKey] })));
+      });
+      body.appendChild(dl);
+    }
+
     if (d.payload) {
       body.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: 'payload 미리보기' }));
       body.appendChild(h('pre', { class: 'json', text: JSON.stringify(d.payload, null, 2).slice(0, 2400) }));
