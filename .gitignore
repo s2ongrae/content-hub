@@ -1,0 +1,11 @@
+# 비밀 설정은 절대 커밋하지 않는다
+config.local.js
+.env
+.env.*
+*.local.json
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+node_modules/
+*.log
