@@ -51,6 +51,9 @@ html[data-brand="ppiyak_kimmary"] {
 
 * { box-sizing: border-box; }
 
+/* hidden 속성이 display 규칙에 지지 않게 (배지·결과 박스가 0건에도 남는 문제) */
+[hidden] { display: none !important; }
+
 html, body { margin: 0; padding: 0; }
 
 body {
