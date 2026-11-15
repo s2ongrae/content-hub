@@ -206,9 +206,13 @@ async function refresh() {
     state.connError = null;
   } catch (err) {
     state.contents = [];
-    state.connError = err;
-    // 미설정은 화면 안내(설정 패널)로 충분하다 — 뜰 때마다 토스트로 재촉하지 않는다
-    if (!(err instanceof ApiError && err.code === 'ERR_NO_CONFIG')) toast(friendlyError(err), 'err');
+    // 미설정은 장애가 아니다 — 화면 안내(설정 패널·배너)로만 알리고 빨간 오류로 띄우지 않는다
+    if (err instanceof ApiError && err.code === 'ERR_NO_CONFIG') {
+      state.connError = null;
+    } else {
+      state.connError = err;
+      toast(friendlyError(err), 'err');
+    }
   } finally {
     state.loading = false;
     updateApproveBadge();
