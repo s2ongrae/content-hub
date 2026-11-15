@@ -49,6 +49,13 @@ DEPLOY_GUIDE.md         # 시트 + GAS 3분 배포 가이드
 - 렌더링은 `textContent` 전용, CSP meta 적용, 토큰 입력 마스킹.
 - 토큰 유출 의심 시 운영 패널에서 **토큰 회전** 1회 → 이전 토큰 즉시 무효.
 
+## 고치고 배포할 때 (3분)
+
+1. 프론트(`index.html` · `css/` · `js/`)를 고치면 `index.html` 의 `?v=m1-N` 을 한 단계 올립니다.
+2. `git push` → GitHub Pages 가 30~60초 뒤 새로 배포합니다.
+3. **GitHub Pages 캐시는 10분**입니다. 바로 안 바뀌어 보이면 10분 뒤 새로고침하세요(브라우저 강제 새로고침: `Ctrl+Shift+R`).
+4. GAS(`gas/`)를 고쳤으면 Apps Script에 다시 붙여넣고 **배포 → 배포 관리 → 편집 → 새 버전** 으로 올려야 반영됩니다(URL 유지).
+
 ## 상태
 
 M1(이 저장소)은 **프론트 6화면 + GAS 백엔드 12액션**입니다. 파이프라인 리스/재시도(`Pipeline.gs`), 트랙별 발행 전 린터(`QualityGate.gs`), 동일 경과일 아웃라이어(`AnalyticsEngine.gs`), 규칙 A/B(`BenchmarkEngine.gs`)는 M2~M3.
