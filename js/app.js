@@ -414,7 +414,10 @@ function renderBoard(main) {
         h('div', { class: 'col-head' },
           h('h2', { text: col.title }),
           h('span', { class: 'n', text: String(items.length) })),
-        h('p', { class: 'hint', style: 'font-size:11px;color:var(--tx-3);margin:-2px 2px 4px', text: col.hint }));
+        h('p', { class: 'hint', style: 'font-size:11px;color:var(--tx-3);margin:-2px 2px 4px',
+          text: col.key === 'publishing' && state.brand === 'ppiyak_kimmary'
+            ? '쇼츠·릴스는 올라감 — 발행 끝으로 넘기면 정리돼요'
+            : col.hint }));
       if (!items.length) colEl.appendChild(h('div', { class: 'empty', text: '없음' }));
       items.forEach((item) => colEl.appendChild(contentCard(item)));
       boardHost.appendChild(colEl);
@@ -807,11 +810,11 @@ function renderOps(main) {
   const connPanel = h('div', { class: 'panel' },
     h('h3', null, '연결', h('span', { class: 'tag', text: mode === 'live' ? 'LIVE' : '미설정' })),
     h('dl', { class: 'kv' },
-      h('dt', { text: 'Web App' }), h('dd', { text: cfg.baseUrl ? maskUrl(cfg.baseUrl) : '(없음)' }),
-      h('dt', { text: '토큰' }), h('dd', { text: cfg.token ? '설정됨 · ' + cfg.token.length + '자' : '(없음)' }),
+      h('dt', { text: '서버 주소' }), h('dd', { text: cfg.baseUrl ? maskUrl(cfg.baseUrl) : '(없음)' }),
+      h('dt', { text: '연결 열쇠' }), h('dd', { text: cfg.token ? '설정됨 · ' + cfg.token.length + '자' : '(없음)' }),
       h('dt', { text: '브랜드' }), h('dd', { text: BRANDS[state.brand].name })));
   connPanel.appendChild(h('div', { class: 'row', style: 'margin-top:12px' },
-    h('button', { class: 'btn sm', type: 'button', text: '연결 테스트', onclick: (e) => runAction(e.target, async () => {
+    h('button', { class: 'btn sm', type: 'button', title: '주소와 연결 열쇠가 맞는지 확인합니다', text: '연결 확인', onclick: (e) => runAction(e.target, async () => {
       const res = await api.health();
       return `시트 ${res.data.sheets_total}개 · 브랜드 ${(res.data.brands || []).length}개 · 원고 폴더 ${res.data.drive_folders_ready ? '준비됨' : '없음'} · 연결 열쇠 ${res.data.token_set ? '설정됨' : '없음'}`;
     }) }),
@@ -835,7 +838,7 @@ function renderOps(main) {
     const cells = [
       { k: '시트', v: hd ? hd.sheets_total : '—', sub: hd && hd.sheets_missing && hd.sheets_missing.length ? '누락 ' + hd.sheets_missing.length : '' },
       { k: '브랜드', v: hd ? (hd.brands || []).length : '—', sub: '대전청년 · 메리' },
-      { k: '마지막 백업', v: b && b.last_backup_at ? relTime(b.last_backup_at) : '없음', cls: b && b.backup_stale ? 'bad' : b ? 'good' : '', sub: b && b.last_backup_tier ? b.last_backup_tier : '' },
+      { k: '마지막 백업', v: b && b.last_backup_at ? relTime(b.last_backup_at) : '없음', cls: b && b.backup_stale ? 'bad' : b ? 'good' : '', sub: b && b.last_backup_tier ? ({ MANUAL: '수동', DAILY: '자동(매일)', WEEKLY: '자동(주간)', MONTHLY: '자동(월간)' }[b.last_backup_tier] || '') : '' },
       { k: '오늘 서버 호출', v: hd ? hd.daily_calls : '—', sub: '구글 한도 대비' },
       { k: '내가 봐야 함', v: sh ? sh.needs_human.count : state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length, cls: (sh && sh.needs_human.count) ? 'bad' : '', sub: '로그인·인증' },
       { k: '점검에서 걸린 것', v: sh ? sh.open_integrity_issues.count : '—', cls: sh && sh.open_integrity_issues.count ? 'bad' : 'good', sub: '아직 안 고침' },
