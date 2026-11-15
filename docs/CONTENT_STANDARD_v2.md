@@ -60,6 +60,7 @@ kind: note
 - `asplit=2` 없으면 `Stream specifier matches no streams`로 죽는다.
 - `alimiter`에 `level=false` 없으면 -14.0이 **-13.0**으로 어긋난다.
 - 목표: **-14.0 LUFS(±0.5)**, **TP ≤ -1.5 dBTP**.
+- ffmpeg 7.0.2 실측(2026-11-16, 합성 소재): 이 체인 → `-14.1 LUFS / TP -1.5`, AAC 192k 변환 뒤에도 같다. `alimiter` 기본값(`level=true`)은 `-12.5 LUFS / TP 0.0 dBFS`로 게이트 두 개를 동시에 탈락시켰다.
 
 ## 4. 영상
 
