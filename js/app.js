@@ -837,7 +837,7 @@ function renderOps(main) {
       const d = res.data || {};
       return `복구 완료 · ${d.restored_sheet || ''} · payload 재매핑 ${d.payloads_remapped || 0}건`;
     });
-  }));
+  } }));
   backupPanel.appendChild(restoreRow);
 
   backupPanel.appendChild(h('div', { class: 'row', style: 'margin-top:10px' },
