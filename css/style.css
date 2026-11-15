@@ -495,6 +495,9 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 /* ───────────── 데스크톱 ───────────── */
 @media (min-width: 900px) {
   body { padding-bottom: 24px; }
+  .brands { flex: 0 1 440px; }
+  .brand-chip { padding: 4px 16px; }
+  .appbar-tools { margin-left: auto; }
   .tabbar {
     position: sticky; top: 55px; bottom: auto;
     display: flex; justify-content: center; gap: 6px;
