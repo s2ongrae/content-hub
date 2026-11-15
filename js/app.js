@@ -130,6 +130,7 @@ function chanDots(item) {
 async function boot() {
   try {
     wireChrome();
+    state.route = (location.hash.replace(/^#\/?/, '') || 'board').split('?')[0];
     applyBrand(loadConfig().activeBrand || 'daejeon_youth', { silent: true });
     await refresh();
     renderRoute();
