@@ -307,6 +307,7 @@ main {
 .ccard .cc-meta { font-size: 11.5px; color: var(--tx-3); display: flex; gap: 8px; flex-wrap: wrap; }
 .ccard .cc-chans { display: flex; align-items: center; gap: 7px; margin-top: 8px; font-size: 10.5px; color: var(--tx-3); }
 .ccard .cc-chans .ch { display: inline-flex; align-items: center; gap: 3px; }
+.ccard .cc-chans .ch.off { opacity: .5; }
 .ccard .score { margin-left: auto; font-weight: 800; color: var(--tx-2); font-variant-numeric: tabular-nums; }
 
 .empty {
@@ -528,6 +529,36 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
   .banner { padding: 9px 10px; font-size: 12px; }
 }
 
+/* ───────────── 폰(≤699px): 칸반을 세로 스택으로 ─────────────
+   가로 스크롤 칸반이면 빈 열이 화면을 다 먹고 발행분이 오른쪽에 숨는다.
+   폰에서는 6개 상태를 위→아래로 쌓고, 0건 열은 제목 줄만 남긴다. */
+@media (max-width: 699px) {
+  .board {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+    padding-bottom: 0;
+    gap: 9px;
+  }
+  .board > * { scroll-snap-align: none; }
+  .col { min-height: 0; padding: 10px 10px 9px; gap: 7px; }
+  .col.is-empty { padding: 8px 10px; }
+  .col.is-empty .empty { display: none; }
+  .col.is-empty .hint { display: none; }
+  .col-head { padding: 0 2px 0; }
+  .col-head h2 { font-size: 13px; }
+  .ccard { padding: 12px; }
+  .ccard .cc-title { font-size: 14px; }
+  .lrow { min-height: 46px; }
+  /* 시리즈 EP 제목이 잘리지 않게 여러 줄 허용 */
+  .seed-row { align-items: flex-start; }
+  .seed-row .l-title, .seed-row .l-sub {
+    white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere;
+  }
+  .seed-row .l-side { align-self: flex-start; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
@@ -569,3 +600,14 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
   .seed-table th, .seed-table td { padding: 6px 5px; }
   .seg-btn { padding: 7px 10px; font-size: 12px; }
 }
+
+/* ───────────── 상세 시트: 메타 보정 ───────────── */
+.meta-edit {
+  margin-top: 16px; padding: 12px;
+  border: 1px solid var(--line); border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+.meta-edit h3 { font-size: 13px; margin-bottom: 9px; }
+.meta-edit .field { margin-bottom: 9px; }
+.meta-edit .row { gap: 10px; }
+.meta-edit .hint { color: var(--danger); }

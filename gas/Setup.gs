@@ -13,7 +13,11 @@ const SHEET_SCHEMAS = {
     'place_id', 'place_name', 'naver_place_url', 'target_keywords', 'blog_title', 'quality_score',
     'receipt_verified', 'media_drive_url', 'payload_file_id', 'blog_status', 'blog_url',
     'shorts_status', 'shorts_url', 'reels_status', 'reels_url', 'clip_status', 'clip_url',
-    'allow_partial_shortform', 'growth_tag', 'created_at', 'updated_at', 'updated_by'
+    'allow_partial_shortform', 'growth_tag', 'created_at', 'updated_at', 'updated_by',
+    // M2 — 시리즈 진행률(발행 n/5)과 훅 유형 비교
+    'series_id', 'episode_no', 'hook_variant',
+    // 인스타 표면 분리 — 릴스(reels_*)와 피드 카드뉴스(ig_feed_*)는 노출 엔진·지표가 다르다
+    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count'
   ],
   Channel_Logs: [
     'log_id', 'brand', 'content_id', 'channel', 'task_type', 'idempotency_key', 'client_id',

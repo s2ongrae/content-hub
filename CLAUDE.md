@@ -24,10 +24,11 @@
 |---|---|
 | `index.html` | 앱 셸(CSP meta, 토큰 마스킹, 하단 탭 `data-route`). 스크립트는 `js/app.js?v=m2-1`, 빌드 표시는 `#build-label` |
 | `js/app.js` | 해시 라우터 · 브랜드 스위처 · 화면 6종(보드·승인·검수·취재·노하우·운영). 렌더링은 `textContent`/`createElement` 전용 |
-| `js/api.js` | GAS 호출(30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 데모 분기) |
-| `js/mock.js` | 데모 백엔드(콘텐츠 10건). GAS 응답과 같은 봉투 |
+| `js/api.js` | GAS 호출(30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 미설정 시 `ERR_NO_CONFIG`) |
 | `js/quickApprove.js` | 폰 10초 승인 카드 스택 |
 | `js/seriesView.js` | `#/series` — 시리즈(대본 복사·보드에 DRAFT 생성)·키워드팩·훅 A/B 체크리스트(편별 `localStorage`) |
+| `manifest.webmanifest` · `icons/` | 홈 화면 앱(PWA). Service Worker 없음 |
+| `tools/make_icons.py` | 아이콘 생성기(192/512). 디자인을 바꾸면 이 스크립트로 다시 만든다 |
 | `css/style.css` | 브랜드 테마(네이비·오렌지 / 코랄·크림)·상태 배지·폰/PC 레이아웃 |
 | `gas/Setup.gs` | 23시트·Drive 폴더·토큰(비노출)·시딩·트리거 |
 | `gas/Auth.gs` | 상수시간 토큰·화이트리스트·`tryLock(1800)`·멱등·민감필드 차단(`ERR_SENSITIVE_FIELD`)·쿼터 서킷 |
@@ -49,6 +50,10 @@
 
 - **두 트랙의 콘텐츠·계정·해시태그·톤을 섞지 않는다.** 메리 소재는 메리 트랙에만, 대전 맛집·일상은 대전 청년 트랙에만.
 - 인스타는 대전 청년 계정의 **맛집 전용** 규칙을 지킨다(개인 일상은 별도).
+- **인스타는 표면이 둘이다** — 릴스(`reels_*`, 비팔로워 추천·완주·공유)와 피드 카드뉴스(`ig_feed_*`, 팔로워 관계·저장·슬라이드). 한 칸으로 합치지 않는다.
+  트랙 A 피드는 블로그 핵심 요약 5~8장 캐러셀로 **블로그 발행 뒤 D+1~D+2 시차** 발행(동시 게시는 초기 노출을 나눠 먹는다). 트랙 B 피드는 선택 발행.
+  컬럼: `ig_feed_status` · `ig_feed_url` · `ig_carousel_count` (2026-11-16 시트에 추가, GAS 재배포 전까지는 **읽기·표시 전용**).
+
 - 코드에서 트랙 분기는 `brand`(`daejeon_youth` / `ppiyak_kimmary`) 하나로만 한다. 새 화면을 만들 때도 `BRANDS` 정의를 쓰고 문자열을 흩뿌리지 않는다.
 - 상태값: `DRAFT · GENERATING → REVIEW → READY → PUBLISHING/PUBLISHED → LINKED`, 격리 열 `NEEDS_HUMAN`·`PARTIAL_FAIL`.
 
@@ -109,7 +114,8 @@
 ## 8. 검증 (자동 테스트 없음 — 이 저장소에는 테스트 꾸러미가 없다)
 
 - 시드·렌더러: `python3 tools/render_series_pack.py --out /tmp/check.md`가 오류 없이 끝나고, 10편이 모두 나오는지 확인. JSON 문법은 `python3 -m json.tool seeds/series_pack_2026w47.json`.
-- 프론트: 데모(Mock) 모드에서 보드·승인·검수·취재·`#/series`를 폰 폭으로 직접 눌러 본다. 콘솔 오류 0건.
+- 프론트: 실제 GAS 연결 상태에서 보드·승인·검수·취재·`#/series`를 폰 폭(360·390)과 PC 폭(1400)으로 직접 눌러 본다. 콘솔 오류 0건.
+- PWA: `manifest.webmanifest`·`icons/icon-192.png`(192×192)·`icons/icon-512.png`(512×512) 존재, `index.html` head에 manifest/icon/apple-touch-icon/mobile-web-app-capable. **Service Worker는 넣지 않는다**(캐시 꼬임).
 - GAS: Apps Script 편집기에서 저장(문법) → `health` 1회 호출 응답 확인. 실제 시트에 붙이기 전에는 **새 버전 배포를 하지 않는다**(라이브 앱이 깨진다).
 - 확인하지 못한 것은 보고에 그대로 적는다("화면은 봤지만 실제 GAS 저장은 확인 못 함" 등).
 

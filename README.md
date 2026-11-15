@@ -8,8 +8,8 @@
 
 | 트랙 | 채널 | 발행 규칙 |
 |---|---|---|
-| `daejeon_youth` 🍺 대전 청년 | 네이버 블로그 · 유튜브 쇼츠 · 인스타 릴스 · 네이버 클립 | 숏폼 3종 → 블로그(숏폼 임베드) → 숏폼 고정댓글에 블로그 URL 역삽입 → `LINKED` |
-| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠 · 인스타 릴스 | 쇼츠 · 릴스 업로드 즉시 `LINKED` (블로그 · 클립 `SKIPPED`) |
+| `daejeon_youth` 🍺 대전 청년 | 네이버 블로그 · 유튜브 쇼츠 · 인스타 릴스 + 인스타 피드(카드뉴스) · 네이버 클립 | 숏폼 3종 → 블로그(숏폼 임베드) → 숏폼 고정댓글에 블로그 URL 역삽입 → `LINKED`. 카드뉴스 피드는 블로그 발행 뒤 D+1~D+2 시차 |
+| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠 · 인스타 릴스 (+ 피드 선택) | 쇼츠 · 릴스 업로드 즉시 `LINKED` (블로그 · 클립 `SKIPPED`) |
 
 ## 지금 되는 것 (M1)
 
@@ -21,6 +21,9 @@
 6. **노하우 수집함** — 잘 된 글의 규칙을 적어 두고 JSON으로 내보내기(M3 `ingest_benchmark` 입력 형식 초안).
 7. **운영 패널** — 헬스체크 · 수동 백업 · 무결성 점검 · 스냅샷 복구(2단 확인) · 토큰 회전 · 콜드스타트 온보딩, 백업 지연 · 쿼터 서킷 · NEEDS_HUMAN 적체 배너.
 8. **연결 전 안내** — GAS URL·토큰이 없으면 가짜 데이터 없이 "⚙︎ 설정에서 GAS URL과 API 토큰을 연결하세요" 안내만 보여 줍니다. 연결하는 즉시 실제 시트를 읽습니다.
+9. **폰 보드** — 좁은 화면(≤699px)에서는 6열 칸반 대신 상태별 세로 스택으로 바뀝니다(가로 스크롤 없음). 0건 열은 제목 줄만 남습니다.
+10. **메타 보정** — 카드 상세에서 `target_keywords`·`quality_score`를 직접 채워 시트에 저장합니다(발행 기록만 가져온 행의 빈칸 보정).
+11. **홈 화면 앱(PWA)** — `manifest.webmanifest` + 192/512 아이콘. 안드로이드 크롬에서 "앱 설치"로 주소창 없는 화면. Service Worker는 넣지 않습니다(캐시 꼬임 방지).
 
 ## 구조
 
@@ -36,12 +39,17 @@ gas/Backup.gs           # 일/주/월 스냅샷 · 80개 배치+이어하기 · 
 gas/Code.gs             # doGet(liveness) / doPost 라우터 + M1 핸들러 12종
 gas/Notify.gs           # 헬스 경보(Slack/메일, 4시간 쿨다운)
 gas/Onboarding.gs       # 콜드스타트 위저드(훅·포맷·플레이스·키워드 + 2주 캘린더 10건)
-appsscript.json         # timeZone Asia/Seoul, V8, WebApp(USER_DEPLOYING / ANYONE_ANONYMOUS)
+manifest.webmanifest     # PWA (name 콘텐츠 허브 / standalone / icons 192·512)
+icons/icon-192.png       # 홈 화면 아이콘 (tools/make_icons.py 로 생성)
+icons/icon-512.png
+appsscript.json          # timeZone Asia/Seoul, V8, WebApp(USER_DEPLOYING / ANYONE_ANONYMOUS)
+tools/make_icons.py      # 아이콘 생성기 (Pillow)
 DEPLOY_GUIDE.md         # 시트 + GAS 3분 배포 가이드
 ```
 
 ## 보안 원칙
 
+- **커밋 금지 5종** — ①실명·연락처 ②Google Sheet ID ③GAS `/exec` URL ④API 토큰 ⑤고객·계정 캡처. 커밋 전 `git diff --staged`로 한 번 더 본다.
 - **저장소에는 비밀 없음.** `/exec` URL과 API 토큰은 각 기기 브라우저 `localStorage`에만 있고 요청 본문으로만 전송합니다(`URL · Referer · 로그`에 남지 않음).
 - 계정 비밀번호 · 쿠키 · 2FA 코드는 앱도 서버도 저장하지 않습니다(서버가 `ERR_SENSITIVE_FIELD`로 거부).
 - 캡차 · 2FA · 로그인 만료는 `NEEDS_HUMAN`으로 격리 — 사람이 직접 처리합니다.
@@ -57,4 +65,9 @@ DEPLOY_GUIDE.md         # 시트 + GAS 3분 배포 가이드
 
 ## 상태
 
-M1(이 저장소)은 **프론트 6화면 + GAS 백엔드 12액션**입니다. 파이프라인 리스/재시도(`Pipeline.gs`), 트랙별 발행 전 린터(`QualityGate.gs`), 동일 경과일 아웃라이어(`AnalyticsEngine.gs`), 규칙 A/B(`BenchmarkEngine.gs`)는 M2~M3.
+M1(이 저장소)은 **프론트 7화면 + GAS 백엔드 12액션**입니다. 파이프라인 리스/재시도(`Pipeline.gs`), 트랙별 발행 전 린터(`QualityGate.gs`), 동일 경과일 아웃라이어(`AnalyticsEngine.gs`), 규칙 A/B(`BenchmarkEngine.gs`)는 M2~M3.
+
+### 시트 스키마 (2026-11-16)
+`Contents`는 29 → **35컬럼**입니다. 오른쪽 끝에 6개를 덧붙였고 기존 행·값은 그대로입니다.
+`series_id` · `episode_no` · `hook_variant`(M2 시리즈) / `ig_feed_status` · `ig_feed_url` · `ig_carousel_count`(인스타 피드).
+**읽기·표시는 지금 동작**하고, 쓰기는 `gas/Code.gs`의 `editable` 목록에 넣어 두었으니 **Apps Script 재배포 후** 동작합니다.

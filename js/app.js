@@ -13,8 +13,8 @@ import { renderSeriesView } from './seriesView.js';
 /* ────────────────────────── 상수 ────────────────────────── */
 
 const BRANDS = {
-  daejeon_youth: { name: '대전 청년', emoji: '🍺', channels: '블로그 · 쇼츠 · 릴스 · 클립' },
-  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 릴스' }
+  daejeon_youth: { name: '대전 청년', emoji: '🍺', channels: '블로그 · 쇼츠 · 인스타(릴스·피드) · 클립' },
+  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 인스타(릴스·피드)' }
 };
 
 const COLUMNS = [
@@ -113,13 +113,18 @@ function badge(status) {
 
 function chanDots(item) {
   const wrap = h('span', { class: 'cc-chans' });
-  const map = [['블로그', item.blog_status], ['숏폼', item.shorts_status], ['릴스', item.reels_status], ['클립', item.clip_status]];
-  const short = { 블로그: '블', 숏폼: '숏', 릴스: '릴', 클립: '클' };
-  map.forEach(([label, st]) => {
-    if (!st) return;
+  const map = [
+    ['블로그', 'blog_status', '블'],
+    ['쇼츠', 'shorts_status', '숏'],
+    ['인스타 릴스', 'reels_status', '릴'],
+    ['인스타 피드', 'ig_feed_status', '피'],
+    ['클립', 'clip_status', '클']
+  ];
+  map.forEach(([label, key, short]) => {
+    const st = item[key];
     const on = st === 'DONE' || st === 'UPLOADED' || st === 'PUBLISHED' || st === 'LINKED';
-    wrap.appendChild(h('span', { class: 'ch', title: label + ': ' + st },
-      h('i', { class: 'chan-dot ' + (on ? 'on' : st === 'SKIPPED' ? 'skip' : '') }), short[label]));
+    wrap.appendChild(h('span', { class: 'ch' + (st ? '' : ' off'), title: label + ': ' + (st || '기록 없음') },
+      h('i', { class: 'chan-dot ' + (on ? 'on' : st === 'SKIPPED' ? 'skip' : '') }), short));
   });
   if (item.quality_score) wrap.appendChild(h('span', { class: 'score', text: item.quality_score + '점' }));
   return wrap;
@@ -395,7 +400,7 @@ function renderBoard(main) {
       if (q) {
         items = items.filter((c) => `${c.place_name} ${c.blog_title || ''} ${c.target_keywords || ''}`.toLowerCase().indexOf(q) >= 0);
       }
-      const colEl = h('section', { class: 'col' + (col.alert && items.length ? ' alert' : '') },
+      const colEl = h('section', { class: 'col' + (col.alert && items.length ? ' alert' : '') + (items.length ? '' : ' is-empty') },
         h('div', { class: 'col-head' },
           h('h2', { text: col.title }),
           h('span', { class: 'n', text: String(items.length) })),
@@ -989,14 +994,15 @@ async function openDetail(contentId) {
       h('dt', { text: '지역·분류' }), h('dd', { text: [m.region_dong, m.category].filter(Boolean).join(' · ') || '-' }),
       h('dt', { text: '키워드' }), h('dd', { text: m.target_keywords || '-' }),
       h('dt', { text: '품질점수' }), h('dd', { text: m.quality_score ? m.quality_score + '점' : '미채점' }),
-      h('dt', { text: '채널' }), h('dd', { text: `블로그 ${m.blog_status || '-'} · 숏폼 ${m.shorts_status || '-'} · 릴스 ${m.reels_status || '-'} · 클립 ${m.clip_status || '-'}` }),
+      h('dt', { text: '채널' }), h('dd', { text: `블로그 ${m.blog_status || '-'} · 쇼츠 ${m.shorts_status || '-'} · 인스타 릴스 ${m.reels_status || '-'} · 인스타 피드 ${m.ig_feed_status || '-'} · 클립 ${m.clip_status || '-'}` }),
       h('dt', { text: '수정' }), h('dd', { text: `${relTime(m.updated_at)} · ${m.updated_by || '-'}` })));
 
     // 채널별 발행 링크 — 시트에 기록된 실제 URL 을 그대로 보여 준다
     const channels = [
       ['블로그', 'blog_status', 'blog_url'],
       ['쇼츠', 'shorts_status', 'shorts_url'],
-      ['릴스', 'reels_status', 'reels_url'],
+      ['인스타 릴스', 'reels_status', 'reels_url'],
+      ['인스타 피드', 'ig_feed_status', 'ig_feed_url'],
       ['클립', 'clip_status', 'clip_url']
     ].filter(([, , k]) => m[k]);
     if (channels.length) {
@@ -1015,6 +1021,57 @@ async function openDetail(contentId) {
       body.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: 'payload 미리보기' }));
       body.appendChild(h('pre', { class: 'json', text: JSON.stringify(d.payload, null, 2).slice(0, 2400) }));
     }
+
+    /* 메타 보정 — 발행 기록만 가져온 행은 키워드·품질점수가 비어 있다.
+       여기서 채우면 보드 뱃지·검색이 실제 데이터로 동작한다(시트에 저장). */
+    const kwInput = h('input', {
+      type: 'text', value: m.target_keywords || '', autocomplete: 'off',
+      placeholder: '예: 대전 봉명동 맛집, 봉명동 야장'
+    });
+    const scoreInput = h('input', {
+      type: 'number', min: '0', max: '100', inputmode: 'numeric', value: m.quality_score || '',
+      placeholder: '0~100'
+    });
+    const metaNote = h('span', { class: 'hint', text: '' });
+    const metaSave = h('button', { class: 'btn sm primary', type: 'button', text: '저장' });
+    metaSave.addEventListener('click', async () => {
+      const raw = String(scoreInput.value).trim();
+      const score = raw === '' ? '' : Number(raw);
+      if (score !== '' && (Number.isNaN(score) || score < 0 || score > 100)) {
+        toast('품질 점수는 0~100 사이 숫자로 넣어 주세요', 'err');
+        scoreInput.focus();
+        return;
+      }
+      const label = metaSave.textContent;
+      metaSave.disabled = true;
+      metaSave.textContent = '저장 중…';
+      metaNote.textContent = '';
+      try {
+        const action = api.createAction('meta');
+        await api.updateContent({
+          content_id: contentId,
+          expected_version: d.version,
+          target_keywords: String(kwInput.value).trim(),
+          quality_score: score
+        }, action);
+        toast('메타 저장 완료', 'ok');
+        await refresh();
+        renderRoute();
+        openDetail(contentId);
+      } catch (err) {
+        metaNote.textContent = friendlyError(err);
+        toast(friendlyError(err), 'err');
+        metaSave.disabled = false;
+        metaSave.textContent = label;
+      }
+    });
+    body.appendChild(h('section', { class: 'meta-edit' },
+      h('h3', { text: '메타 보정' }),
+      h('label', { class: 'field' },
+        h('span', { class: 'field-label', text: '타깃 키워드 (쉼표로 구분)' }), kwInput),
+      h('label', { class: 'field' },
+        h('span', { class: 'field-label', text: '품질 점수 (0~100)' }), scoreInput),
+      h('div', { class: 'row' }, metaSave, metaNote)));
 
     if (d.internal_links && d.internal_links.length) {
       body.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '내부링크 후보 (같은 클러스터)' }));

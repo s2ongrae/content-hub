@@ -22,22 +22,31 @@
 
 ## 2. 서버(M2)에서 받아야 할 것
 
-### 2-1. 스키마 추가 (Contents 29 → 32컬럼)
+### 2-1. 스키마 추가 (Contents 29 → 35컬럼) — 2026-11-16 시트 반영 완료
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | `series_id` | string | `SY-DY-01` / `SY-KM-01` |
 | `episode_no` | number | 1~5 |
 | `hook_variant` | string | `PROOF_FIRST` / `GAIN_LOSS` / `COVER_MATCH` / `SERIES_TEASE` |
+| `ig_feed_status` | string | 인스타 **피드(카드뉴스)** 상태 — 릴스(`reels_*`)와 다른 표면 |
+| `ig_feed_url` | string | 피드 게시물 URL |
+| `ig_carousel_count` | number | 카드 장수(1~10) |
 
-> PRD v2 §4.1의 29컬럼에 3개만 더한다. `series_id + episode_no`로 시리즈 진행률(발행 n/5)을 시트에서 바로 센다.
+> 오른쪽 끝(AD~AI)에만 덧붙였다. 기존 16건·29컬럼 값은 그대로다(읽기는 지금 동작).
+> 쓰기는 `gas/Code.gs` `handleUpdateContent_`의 `editable` 목록에 넣어 두었으므로 **Apps Script 새 버전 배포 후** 동작한다.
+> `series_id + episode_no`로 시리즈 진행률(발행 n/5)을 시트에서 바로 센다.
+
+**왜 피드를 릴스와 나누나**: 릴스는 비팔로워 추천·완주·공유, 피드 카드뉴스는 팔로워 관계·저장·슬라이드 체류로 노출 엔진과 지표가 다르다.
+같은 소재를 동시에 올리면 두 번째 게시물의 초기 노출이 나뉜다 → 트랙 A 피드는 블로그 발행 뒤 **D+1~D+2 시차** 발행.
 
 ### 2-2. 액션
 
 | 액션 | 상태 | 내용 |
 |---|---|---|
-| `upsert_keyword` | M1 `ERR_NOT_IMPLEMENTED` | `keyword_pack`의 클러스터·키워드·자동완성 실측값을 `Keywords` 시트에 적재. `captured_at`을 함께 저장해 "언제 조회한 값인지" 남긴다 |
-| `seed_series_pack` | **신규 제안** | `seeds/series_pack_2026w47.json`을 받아 Contents 10건(DRAFT) + Hooks + Formats에 멱등 적재(`pack_id` 플래그) |
+| `upsert_keyword` | M1 `ERR_NOT_IMPLEMENTED` · **다음 재배포 1순위** | `keyword_pack`의 클러스터·키워드·자동완성 실측값을 `Keywords` 시트에 적재. `captured_at`을 함께 저장해 "언제 조회한 값인지" 남긴다 |
+| `seed_series_pack` | **미룸(P2)** | 시드 10건을 DRAFT로 멱등 적재. 시리즈 화면에서 수동 생성이 되고, 30건 이상 쌓여 D+14 성과가 검증된 포맷이 정해진 뒤 M3에서 |
+| `record_metrics` | **다음 순위** | D+1/D+7/D+30 지표 입력(조회·체류·검색유입, 숏폼 24h/72h/7d). 입력 UI는 상세 시트의 '메타 보정'과 같은 자리에 붙인다 |
 | `record_same_age_metric` | M3 예정 | `hook_variant`별 24h/72h/7d 지표를 붙여 훅 유형 비교가 가능하게 |
 | `log_rank` | M3 예정 | 블로그 글 발행 후 `봉명동 술집` 등 타깃 키워드 순위 기록 |
 

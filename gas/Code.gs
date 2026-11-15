@@ -468,7 +468,9 @@ function handleUpdateContent_(ss, payload, ctx) {
   const editable = ['status', 'blog_title', 'quality_score', 'target_keywords', 'cluster_id',
     'region_dong', 'category', 'place_name', 'naver_place_url', 'media_drive_url',
     'blog_status', 'blog_url', 'shorts_status', 'shorts_url', 'reels_status', 'reels_url',
-    'clip_status', 'clip_url', 'allow_partial_shortform', 'growth_tag', 'receipt_verified'];
+    'clip_status', 'clip_url', 'allow_partial_shortform', 'growth_tag', 'receipt_verified',
+    'series_id', 'episode_no', 'hook_variant',
+    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count'];
   editable.forEach(function (k) {
     if (payload[k] !== undefined && headers.indexOf(k) >= 0) {
       all[rowIndex][headers.indexOf(k)] = payload[k];
