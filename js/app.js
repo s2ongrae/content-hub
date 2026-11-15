@@ -9,6 +9,7 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { resetMockData } from './mock.js';
+import { renderSeriesView } from './seriesView.js';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -333,6 +334,7 @@ function renderRoute() {
     approve: renderApprove,
     capture: renderCapture,
     review: renderReview,
+    series: (main) => renderSeriesView(main, { h, state, toast, friendlyError }),
     knowhow: renderKnowHow,
     ops: renderOps
   }[route] || renderBoard;
