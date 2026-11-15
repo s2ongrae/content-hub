@@ -1106,6 +1106,32 @@ async function openDetail(contentId) {
     }
 
     const actions = h('div', { class: 'row end', style: 'margin-top:16px' });
+    if (d.status === 'PUBLISHED') {
+      // 발행은 됐지만 마지막 칸으로 정리되지 않은 카드(가져온 기록 등)를 사람이 한 번에 넘긴다
+      actions.appendChild(h('button', {
+        class: 'btn sm primary', type: 'button',
+        title: '모든 채널 업로드·연결이 끝났으면 마지막 칸으로 옮깁니다',
+        text: '발행 끝으로 넘기기',
+        onclick: async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          const label = btn.textContent;
+          btn.textContent = '넘기는 중…';
+          try {
+            await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED' },
+              api.createAction('link'));
+            toast('발행 끝으로 옮겼어요', 'ok');
+            dlg.close();
+            await refresh();
+            renderRoute();
+          } catch (err) {
+            toast(friendlyError(err), 'err');
+            btn.disabled = false;
+            btn.textContent = label;
+          }
+        }
+      }));
+    }
     if (d.status === 'REVIEW') {
       actions.appendChild(h('button', { class: 'btn sm', type: 'button', text: '점검하러 가기', onclick: () => {
         state.reviewId = contentId; dlg.close(); location.hash = '#/review';
