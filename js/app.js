@@ -980,6 +980,8 @@ async function openDetail(contentId) {
   clear(body);
   body.appendChild(h('div', { class: 'loading-skeleton' },
     h('div', { class: 'sk-line w40' }), h('div', { class: 'sk-card' })));
+  // 메타 저장 뒤 다시 열 때: 이미 열려 있으면 showModal 이 예외를 던지는 브라우저가 있다
+  if (dlg.open) dlg.close();
   dlg.showModal();
 
   try {
