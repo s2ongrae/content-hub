@@ -627,6 +627,7 @@ function runIntegrityCheck_(actor) {
   const brandCol = headers.indexOf('brand');
   const fileCol = headers.indexOf('payload_file_id');
   const statusCol = headers.indexOf('status');
+  const updatedByCol = headers.indexOf('updated_by');
 
   const referenced = {};
   if (rows.length > 1 && idCol >= 0 && fileCol >= 0) {
@@ -636,7 +637,10 @@ function runIntegrityCheck_(actor) {
       if (!fileId) {
         // DRAFT·캘린더 슬롯은 payload가 아직 없는 것이 정상
         const st = statusCol >= 0 ? String(rows[r][statusCol]) : '';
-        if (st !== 'DRAFT') {
+        // 과거 발행분을 시트로만 가져온 행(published-import)은 payload 원본이 애초에 없다.
+        // 이걸 WARN 으로 올리면 매 점검마다 같은 경고가 쌓여 진짜 문제를 가린다.
+        const by = updatedByCol >= 0 ? String(rows[r][updatedByCol] || '') : '';
+        if (st !== 'DRAFT' && by !== 'published-import') {
           issues.push(issue_('WARN', 'BROKEN_FILE_ID', rows[r][brandCol] || '', contentId,
             'payload_file_id 가 비어 있습니다 (status=' + st + ')'));
         }
