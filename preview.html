@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko" data-brand="daejeon_youth">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0b1220">
+<title>Content Hub OS — 대전청년 · 삐약 김메리</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%93%9A%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css?v=m1-1">
+</head>
+<body>
+
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="appbar">
+  <div class="brands" role="tablist" aria-label="브랜드 전환">
+    <button type="button" class="brand-chip" data-brand-btn="daejeon_youth" role="tab" aria-selected="true">
+      <span class="bc-emoji" aria-hidden="true">🍺</span>
+      <span class="bc-name">대전 청년</span>
+      <span class="bc-chan">4채널</span>
+    </button>
+    <button type="button" class="brand-chip" data-brand-btn="ppiyak_kimmary" role="tab" aria-selected="false">
+      <span class="bc-emoji" aria-hidden="true">🐱</span>
+      <span class="bc-name">삐약 김메리</span>
+      <span class="bc-chan">2채널</span>
+    </button>
+  </div>
+
+  <div class="appbar-tools">
+    <button type="button" id="btn-approve-badge" class="pill pill-approve" hidden>
+      승인 대기 <b id="approve-count">0</b>
+    </button>
+    <span id="conn-dot" class="conn-dot" title="연결 상태"></span>
+    <button type="button" id="btn-refresh" class="icon-btn" title="새로고침" aria-label="새로고침">⟳</button>
+    <button type="button" id="btn-settings" class="icon-btn" title="설정" aria-label="설정">⚙︎</button>
+  </div>
+</header>
+
+<nav class="tabbar" id="tabbar" aria-label="화면 이동">
+  <button type="button" class="tab" data-route="board"><span aria-hidden="true">▦</span><em>보드</em></button>
+  <button type="button" class="tab" data-route="approve"><span aria-hidden="true">✅</span><em>승인</em></button>
+  <button type="button" class="tab" data-route="capture"><span aria-hidden="true">＋</span><em>취재</em></button>
+  <button type="button" class="tab" data-route="review"><span aria-hidden="true">🔍</span><em>검수</em></button>
+  <button type="button" class="tab" data-route="knowhow"><span aria-hidden="true">💡</span><em>노하우</em></button>
+  <button type="button" class="tab" data-route="ops"><span aria-hidden="true">🛠</span><em>운영</em></button>
+</nav>
+
+<div id="banners" class="banners" aria-live="polite"></div>
+
+<main id="main" tabindex="-1">
+  <div class="loading-skeleton" id="boot">
+    <div class="sk-line w40"></div>
+    <div class="sk-card"></div>
+    <div class="sk-card"></div>
+  </div>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<!-- ───────────── 설정 ───────────── -->
+<dialog id="settings-dialog" class="sheet">
+  <div class="sheet-card">
+    <header class="sheet-head">
+      <h2>설정</h2>
+      <button type="button" class="icon-btn" data-close="settings-dialog" aria-label="닫기">✕</button>
+    </header>
+
+    <div class="sheet-body">
+      <section class="panel">
+        <h3>GAS 연결</h3>
+        <label class="field">
+          <span class="field-label">Web App URL <code>/exec</code></span>
+          <input id="in-gas-url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                 placeholder="https://script.google.com/macros/s/AKfy…/exec">
+        </label>
+        <label class="field">
+          <span class="field-label">API 토큰</span>
+          <span class="input-row">
+            <input id="in-token" type="password" autocomplete="off" spellcheck="false"
+                   placeholder="시트 메뉴 → 2. API 토큰 확인">
+            <button type="button" id="btn-toggle-token" class="ghost-btn">보기</button>
+          </span>
+        </label>
+        <p class="hint">
+          두 값은 <b>이 브라우저의 localStorage</b>에만 저장되고, 요청 본문(<code>auth_token</code>)으로만 전송됩니다.
+          깃허브 저장소에는 어떤 형태로도 올라가지 않습니다.
+        </p>
+        <div class="row">
+          <button type="button" id="btn-test" class="btn">연결 테스트</button>
+          <button type="button" id="btn-save-cfg" class="btn primary">저장</button>
+        </div>
+        <div id="conn-result" class="result" hidden></div>
+      </section>
+
+      <section class="panel">
+        <h3>데모(Mock) 모드</h3>
+        <label class="switch">
+          <input type="checkbox" id="in-demo">
+          <span>GAS 없이 화면·기능 체험</span>
+        </label>
+        <p class="hint">
+          데모 데이터는 이 브라우저에만 있습니다. 취재 등록 · 승인/반려 · 백업 시뮬레이션까지 실제와 같은 흐름으로 동작합니다.
+        </p>
+        <button type="button" id="btn-reset-demo" class="ghost-btn">데모 데이터 처음으로</button>
+      </section>
+
+      <section class="panel">
+        <h3>보안</h3>
+        <p class="hint">
+          계정 비밀번호·쿠키·2FA 코드는 이 앱이 저장하지 않습니다. 캡차·2FA는 <code>NEEDS_HUMAN</code>으로 격리되어
+          사람이 브라우저에서 직접 처리합니다.
+        </p>
+        <button type="button" id="btn-clear-token" class="ghost-btn danger">저장된 토큰 삭제</button>
+      </section>
+
+      <p class="version">Content Hub OS · M1 · <span id="build-label">v2-m1</span></p>
+    </div>
+  </div>
+</dialog>
+
+<!-- ───────────── 상세 ───────────── -->
+<dialog id="detail-dialog" class="sheet sheet-wide">
+  <div class="sheet-card">
+    <header class="sheet-head">
+      <h2 id="detail-title">콘텐츠 상세</h2>
+      <button type="button" class="icon-btn" data-close="detail-dialog" aria-label="닫기">✕</button>
+    </header>
+    <div class="sheet-body" id="detail-body"></div>
+  </div>
+</dialog>
+
+<noscript>
+  <p style="padding:24px;color:#fff">이 앱은 자바스크립트가 필요합니다.</p>
+</noscript>
+
+<script type="module" src="js/app.js?v=m1-1"></script>
+</body>
+</html>
