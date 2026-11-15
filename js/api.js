@@ -147,7 +147,9 @@ export class ContentHubApi {
   async _mockOnce(envelope) {
     const t0 = Date.now();
     try {
-      const data = await this.mock.handle(envelope.action, envelope.payload);
+      // GAS 는 본문의 brand 를 ctx.brand 로 넘긴다. 데모도 같은 규칙으로 맞춘다.
+      const payload = Object.assign({ brand: envelope.brand }, envelope.payload || {});
+      const data = await this.mock.handle(envelope.action, payload);
       return {
         ok: true,
         action: envelope.action,
