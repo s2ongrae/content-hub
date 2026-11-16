@@ -137,6 +137,13 @@ const CHANNELS = [
 
 const DONE_STATES = ['UPLOADED', 'DONE', 'PUBLISHED', 'LINKED'];
 const channelDone = (v) => DONE_STATES.indexOf(v) >= 0;
+const channelLabel = (v) => {
+  if (!v) return '아직';
+  if (channelDone(v)) return '올림';
+  if (v === 'SKIPPED') return '건너뜀';
+  if (v === 'FAILED' || v === 'PARTIAL_FAIL') return '실패';
+  return '대기';
+};
 const channelState = (v) => {
   if (!v) return 'none';
   if (channelDone(v)) return 'done';
@@ -182,7 +189,7 @@ function channelChip(item, c) {
   const st = channelState(raw);
   const chip = h('span', {
     class: 'chip', 'data-ch': c.key, 'data-state': st,
-    title: c.label + ': ' + (raw ? statusLabel(raw) : '기록 없음')
+    title: c.label + ': ' + (raw ? channelLabel(raw) : '기록 없음')
   }, channelIcon(c.key), h('span', { text: st === 'skip' ? '—' : c.label }));
   if (st === 'done') chip.appendChild(h('span', { class: 'ck', text: '✓' }));
   return chip;
@@ -1089,8 +1096,10 @@ function gateRows(m, payload) {
   else if (score >= 80) rows.push({ k: '품질 점수 80점', v: 'ok', t: score + '점 · 통과' });
   else rows.push({ k: '품질 점수 80점', v: 'no', t: score + '점 · 미달' });
 
-  const hasPayload = !!payload && typeof payload === 'object'
-    && Object.keys(payload).length > 0 && !payload._error;
+  const contentKeys = (payload && typeof payload === 'object' && !payload._error)
+    ? Object.keys(payload).filter((k) => k !== 'version' && k !== 'updated_at')
+    : [];
+  const hasPayload = contentKeys.length > 0;
   if (!hasPayload) return { rows, note: '대본·원고 파일이 없어 나머지 점검은 할 수 없어요(발행 기록만 있는 카드예요).' };
 
   const hook = findHook(payload);
@@ -1229,7 +1238,7 @@ function analysisSection(contentId, d, m, payload, dlg) {
     const row = h('div', { class: 'ana-chan', 'data-ch': c.key },
       channelIcon(c.key, 13),
       h('span', { class: 'nm', text: c.label }),
-      h('span', { class: 'st', text: raw ? statusLabel(raw) : '기록 없음' }));
+      h('span', { class: 'st', text: raw ? channelLabel(raw) : '기록 없음' }));
     if (url) row.appendChild(h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: url }));
     chanWrap.appendChild(row);
   });
@@ -1253,7 +1262,7 @@ function sourceSection(contentId, d, m, payload, dlg) {
     h('dt', { text: '지역·분류' }), h('dd', { text: [m.region_dong, m.category].filter(Boolean).join(' · ') || '-' }),
     h('dt', { text: '키워드' }), h('dd', { text: m.target_keywords || '-' }),
     h('dt', { text: '품질 점수' }), h('dd', { text: m.quality_score ? m.quality_score + '점' : '아직 없음' }),
-    h('dt', { text: '채널' }), h('dd', { text: CHANNELS.map((c) => c.label + ' ' + (m[c.st] ? statusLabel(m[c.st]) : '아직 없음')).join(' · ') }),
+    h('dt', { text: '채널' }), h('dd', { text: CHANNELS.map((c) => c.label + ' ' + (m[c.st] ? channelLabel(m[c.st]) : '아직 없음')).join(' · ') }),
     h('dt', { text: '수정' }), h('dd', { text: relTime(m.updated_at) + ' · ' + (m.updated_by || '-') })));
 
   const links = CHANNELS.filter((c) => m[c.url]);

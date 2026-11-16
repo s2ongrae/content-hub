@@ -303,7 +303,7 @@ main {
 
 /* 0건 칸은 폰·PC 모두 한 줄 바로 접는다.
    빈 칸 다섯 개가 화면을 다 먹으면 정작 카드가 첫 화면에 안 보인다(칼럼 순서는 파이프라인이라 그대로 둔다). */
-.col.is-empty { min-height: 0; padding: 8px 11px; justify-content: center; }
+.col.is-empty { min-height: 0; padding: 8px 11px; justify-content: center; align-self: start; }
 .col.is-empty .col-head { padding: 0; }
 .col.is-empty .empty,
 .col.is-empty .hint { display: none; }
