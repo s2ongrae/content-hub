@@ -157,6 +157,13 @@ const brandChannels = (brand) => (brand === 'ppiyak_kimmary'
   ? CHANNELS.filter((c) => c.key !== 'blog')
   : CHANNELS);
 
+/* 그 카드가 실제로 올리는 채널 — 일부러 건너뛴 채널은 분모에서 뺀다(1/5가 아니라 1/1로 보이게) */
+const liveChannels = (item) => {
+  const all = brandChannels(item.brand || state.brand);
+  const live = all.filter((c) => channelState(item[c.st]) !== 'skip');
+  return live.length ? live : all;
+};
+
 const CH_ICONS = {
   blog: ['M2.6 2.3h6.8v7.4H2.6z', 'M4.2 4.7h3.6', 'M4.2 6.4h3.6'],
   shorts: ['M2.5 3.1h7v5.8h-7z', 'M5.2 4.7l2.2 1.3-2.2 1.3z'],
@@ -198,7 +205,7 @@ function channelChip(item, c) {
 function renderChannelRow(item) {
   const row = h('div', { class: 'chrow' });
   CHANNELS.forEach((c) => row.appendChild(channelChip(item, c)));
-  const targets = brandChannels(item.brand || state.brand);
+  const targets = liveChannels(item);
   const done = targets.filter((c) => channelDone(item[c.st])).length;
   row.appendChild(h('span', { class: 'cc-frac', text: done + '/' + targets.length }));
   return row;
@@ -1121,8 +1128,7 @@ function gateRows(m, payload) {
 }
 
 function analysisOf(m, payload) {
-  const brand = m.brand || state.brand;
-  const targets = brandChannels(brand);
+  const targets = liveChannels(m);
   const done = targets.filter((c) => channelDone(m[c.st]));
   const failed = targets.filter((c) => channelState(m[c.st]) === 'fail');
   const pending = targets.filter((c) => !channelDone(m[c.st]) && channelState(m[c.st]) !== 'fail' && channelState(m[c.st]) !== 'skip');
