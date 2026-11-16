@@ -755,3 +755,34 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
   .ana-chan { flex-wrap: wrap; row-gap: 4px; }
   .ana-chan a { max-width: 100%; }
 }
+
+/* ==========================================================================
+   v3.3 시인성 상향 — 대전 청년(기본 트랙) 전용 오버라이드
+   근거(WCAG 2.1, 직접 계산): --tx-3 #8799b1 → surface(#131d2f) 5.80:1 ·
+   surface-2(#19253a) 5.28:1 · bg(#0b1220) 6.44:1 (이전 #6f829c는 4.30/3.91로 AA 미달)
+   --line #314361 → surface 1.69:1 (이전 1.32) · --line-soft #253349 → surface 1.32:1
+   김메리 토큰은 이 블록의 영향을 받지 않는다(브랜드 블록이 같은 변수를 덮어쓴다).
+   ========================================================================== */
+:root {
+  --tx-3: #8799b1;
+  --line: #314361;
+  --line-soft: #253349;
+}
+
+/* 카드: block 유지(.col이 flex column gap이라 여기 margin은 넣지 않는다) */
+.ccard { border-radius: 12px; padding: 9px 12px; }
+.ccard .cc-title { font-size: 14px; font-weight: 650; line-height: 1.35; }
+.ccard .cc-id,
+.ccard .cc-meta3,
+.cc-frac,
+.col-head .n { font-size: 11px; }
+
+/* 채널 칩: 10.5→11px, 22→24px. none/skip의 opacity 감산(.6)은 실효 2.4:1이라 색·테두리로만 구분한다 */
+.chip { height: 24px; padding: 0 7px; font-size: 11px; font-weight: 600; }
+.chip[data-state="none"] { opacity: 1; background: transparent; border: 1px dashed var(--line); }
+.chip[data-state="skip"] { opacity: 1; background: var(--bg-soft); border: 1px solid var(--line-soft); }
+.chan-dot.skip { opacity: 1; }
+
+@media (max-width: 699px) {
+  .ccard { padding: 9px 12px; }
+}
