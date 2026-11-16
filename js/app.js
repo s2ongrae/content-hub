@@ -1074,11 +1074,6 @@ function ageDays(iso) {
   return Math.floor((Date.now() - t) / 86400000);
 }
 
-function payloadText(payload) {
-  if (!payload || typeof payload !== 'object') return '';
-  try { return JSON.stringify(payload); } catch (e) { return ''; }
-}
-
 function findHook(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const keys = ['hook_text', 'hook', 'cover_text', 'first_line', 'subtitle_first', 'first_two_seconds'];
@@ -1120,7 +1115,14 @@ function gateRows(m, payload) {
   else if (intro === 0) rows.push({ k: '인트로 0초(인사·로고 없이 시작)', v: 'ok', t: '0초' });
   else rows.push({ k: '인트로 0초(인사·로고 없이 시작)', v: 'no', t: intro + '초' });
 
-  const slots = (payloadText(payload).match(/\[\s*\]/g) || []).length;
+  /* 팩트 슬롯은 사람이 채우는 대본 속 `[ ]`만 센다.
+     payload 문서에 구조적으로 들어가는 internal_links(연결 글 목록)의 빈 배열 `[]`는
+     슬롯이 아니므로 스캔 대상에서 뺀다(위양성 방지). */
+  let scanText = '';
+  try {
+    scanText = JSON.stringify(payload, (k, v) => (k === 'internal_links' ? undefined : v)) || '';
+  } catch (e) { scanText = ''; }
+  const slots = (scanText.match(/\[\s*\]/g) || []).length;
   if (slots === 0) rows.push({ k: '팩트 슬롯 [ ] 안 남음', v: 'ok', t: '남은 자리 없음' });
   else rows.push({ k: '팩트 슬롯 [ ] 안 남음', v: 'no', t: slots + '곳 남음' });
 
