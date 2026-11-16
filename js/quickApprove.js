@@ -24,7 +24,7 @@ export class QuickApproveView {
   }
 
   async mount() {
-    this.root.innerHTML = '';
+    this.root.replaceChildren();
     this.root.classList.add('quick-approve');
 
     const header = el('div', 'qa-header');
@@ -76,7 +76,7 @@ export class QuickApproveView {
 
   async reload() {
     this.countEl.textContent = '불러오는 중…';
-    this.cardHost.innerHTML = '';
+    this.cardHost.replaceChildren();
     try {
       const res = await api.listContents({ status: 'REVIEW', limit: 20 });
       this.items = (res.data && res.data.items) || [];
@@ -94,7 +94,7 @@ export class QuickApproveView {
   }
 
   render() {
-    this.cardHost.innerHTML = '';
+    this.cardHost.replaceChildren();
     const item = this.current();
     const left = this.items.length - this.index;
     this.countEl.textContent = item ? `승인할 카드 ${left}장` : '승인할 카드가 없어요';

@@ -121,23 +121,80 @@ function badge(status) {
   return h('span', { class: 'badge ' + code, title: code, text: statusLabel(code) });
 }
 
-function chanDots(item) {
-  const wrap = h('span', { class: 'cc-chans' });
-  const map = [
-    ['블로그', 'blog_status', '블'],
-    ['쇼츠', 'shorts_status', '숏'],
-    ['인스타 릴스', 'reels_status', '릴'],
-    ['인스타 피드', 'ig_feed_status', '피'],
-    ['클립', 'clip_status', '클']
-  ];
-  map.forEach(([label, key, short]) => {
-    const st = item[key];
-    const on = st === 'DONE' || st === 'UPLOADED' || st === 'PUBLISHED' || st === 'LINKED';
-    wrap.appendChild(h('span', { class: 'ch' + (st ? '' : ' off'), title: label + ': ' + (st || '기록 없음') },
-      h('i', { class: 'chan-dot ' + (on ? 'on' : st === 'SKIPPED' ? 'skip' : '') }), short));
+/* ────────────────────────── 채널 정의·아이콘 ──────────────────────────
+   카드와 상세가 같은 정의를 쓴다. 순서 고정(블로그·쇼츠·릴스·피드·클립).
+   채널색은 아이콘 선·테두리·틴트에만 쓰고 글자는 --tx로 둔다(작은 글씨 대비 확보). */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+const CHANNELS = [
+  { key: 'blog', label: '블로그', st: 'blog_status', url: 'blog_url' },
+  { key: 'shorts', label: '쇼츠', st: 'shorts_status', url: 'shorts_url' },
+  { key: 'reels', label: '릴스', st: 'reels_status', url: 'reels_url' },
+  { key: 'feed', label: '피드', st: 'ig_feed_status', url: 'ig_feed_url' },
+  { key: 'clip', label: '클립', st: 'clip_status', url: 'clip_url' }
+];
+
+const DONE_STATES = ['UPLOADED', 'DONE', 'PUBLISHED', 'LINKED'];
+const channelDone = (v) => DONE_STATES.indexOf(v) >= 0;
+const channelState = (v) => {
+  if (!v) return 'none';
+  if (channelDone(v)) return 'done';
+  if (v === 'SKIPPED') return 'skip';
+  if (v === 'FAILED' || v === 'PARTIAL_FAIL') return 'fail';
+  return 'none';
+};
+
+/* 트랙별 대상 채널 — 김메리는 블로그를 쓰지 않는다(SKIPPED 고정). 칸은 두 트랙 다 5개. */
+const brandChannels = (brand) => (brand === 'ppiyak_kimmary'
+  ? CHANNELS.filter((c) => c.key !== 'blog')
+  : CHANNELS);
+
+const CH_ICONS = {
+  blog: ['M2.6 2.3h6.8v7.4H2.6z', 'M4.2 4.7h3.6', 'M4.2 6.4h3.6'],
+  shorts: ['M2.5 3.1h7v5.8h-7z', 'M5.2 4.7l2.2 1.3-2.2 1.3z'],
+  reels: ['M2.3 2.5h7.4v7H2.3z', 'M2.3 4.6h7.4', 'M4.3 2.5l.9 2.1', 'M6.9 2.5l.9 2.1'],
+  feed: ['M2.4 2.4h3v3h-3z', 'M6.6 2.4h3v3h-3z', 'M2.4 6.6h3v3h-3z', 'M6.6 6.6h3v3h-3z'],
+  clip: ['M7.1 1.9L3.3 6.5h2.5l-.7 3.6 3.8-4.7H6.3z']
+};
+
+function channelIcon(key, size = 12) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.25');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  (CH_ICONS[key] || []).forEach((d) => {
+    const p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', d);
+    svg.appendChild(p);
   });
-  if (item.quality_score) wrap.appendChild(h('span', { class: 'score', text: item.quality_score + '점' }));
-  return wrap;
+  return svg;
+}
+
+function channelChip(item, c) {
+  const raw = item[c.st];
+  const st = channelState(raw);
+  const chip = h('span', {
+    class: 'chip', 'data-ch': c.key, 'data-state': st,
+    title: c.label + ': ' + (raw ? statusLabel(raw) : '기록 없음')
+  }, channelIcon(c.key), h('span', { text: st === 'skip' ? '—' : c.label }));
+  if (st === 'done') chip.appendChild(h('span', { class: 'ck', text: '✓' }));
+  return chip;
+}
+
+function renderChannelRow(item) {
+  const row = h('div', { class: 'chrow' });
+  CHANNELS.forEach((c) => row.appendChild(channelChip(item, c)));
+  const targets = brandChannels(item.brand || state.brand);
+  const done = targets.filter((c) => channelDone(item[c.st])).length;
+  row.appendChild(h('span', { class: 'cc-frac', text: done + '/' + targets.length }));
+  return row;
 }
 
 /* ────────────────────────── 부트 ────────────────────────── */
@@ -201,6 +258,9 @@ function applyBrand(brand, opts = {}) {
   state.brand = brand;
   api.setBrand(brand);
   document.documentElement.dataset.brand = brand;
+  // 안드로이드 상단바 색도 트랙에 맞춘다(핑크 시절 네이비가 남아 있던 문제)
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute('content', brand === 'ppiyak_kimmary' ? '#141210' : '#0b1220');
   document.querySelectorAll('[data-brand-btn]').forEach((btn) => {
     btn.setAttribute('aria-selected', btn.dataset.brandBtn === brand ? 'true' : 'false');
   });
@@ -431,14 +491,15 @@ function contentCard(item) {
       badge(item.status),
       h('span', { class: 'cc-id', text: item.content_id }),
       h('span', { class: 'spacer' }),
-      item.growth_tag && item.growth_tag !== 'NONE' ? h('span', { class: 'badge DRAFT', text: item.growth_tag }) : null),
+      item.growth_tag && item.growth_tag !== 'NONE' ? h('span', { class: 'badge DRAFT', text: item.growth_tag }) : null,
+      item.quality_score ? h('span', { class: 'cc-score', text: item.quality_score + '점' }) : null),
     h('div', { class: 'cc-title', text: item.blog_title || item.place_name || '(제목 없음)' }),
-    h('div', { class: 'cc-meta' },
+    renderChannelRow(item),
+    h('div', { class: 'cc-meta3' },
       item.region_dong ? h('span', { text: item.region_dong }) : null,
       item.category ? h('span', { text: item.category }) : null,
-      h('span', { text: 'v' + (item.version || 1) })),
-    chanDots(item),
-    h('div', { class: 'cc-meta', style: 'margin-top:6px' }, h('span', { text: '수정 ' + relTime(item.updated_at) })));
+      h('span', { text: 'v' + (item.version || 1) }),
+      h('span', { text: '수정 ' + relTime(item.updated_at) })));
 }
 
 /* ────────────────────────── 승인 ────────────────────────── */
@@ -988,135 +1049,134 @@ function maskUrl(u) {
 
 /* ────────────────────────── 상세 시트 ────────────────────────── */
 
-async function openDetail(contentId) {
-  const dlg = $('#detail-dialog');
-  const body = $('#detail-body');
-  $('#detail-title').textContent = contentId;
-  clear(body);
-  body.appendChild(h('div', { class: 'loading-skeleton' },
-    h('div', { class: 'sk-line w40' }), h('div', { class: 'sk-card' })));
-  // 메타 저장 뒤 다시 열 때: 이미 열려 있으면 showModal 이 예외를 던지는 브라우저가 있다
-  if (dlg.open) dlg.close();
-  dlg.showModal();
+/* ────────────────────────── 카드 분석 계산 ──────────────────────────
+   시트에 지금 있는 값만 쓴다. 판단할 수 없는 항목은 '확인 못 함'으로 둔다(추측 금지).
+   액션 제안은 LLM 없이 조건문으로만 만든다. */
 
-  try {
-    const res = await api.getContentDetail(contentId);
-    const d = res.data || {};
-    const m = d.meta || {};
-    clear(body);
-    body.appendChild(h('div', { class: 'row', style: 'margin-bottom:10px' }, badge(d.status), h('span', { class: 'cc-id', text: 'v' + d.version })));
-    body.appendChild(h('dl', { class: 'kv' },
-      h('dt', { text: '가게·주제' }), h('dd', { text: m.place_name || '-' }),
-      h('dt', { text: '제목' }), h('dd', { text: m.blog_title || '(미정)' }),
-      h('dt', { text: '지역·분류' }), h('dd', { text: [m.region_dong, m.category].filter(Boolean).join(' · ') || '-' }),
-      h('dt', { text: '키워드' }), h('dd', { text: m.target_keywords || '-' }),
-      h('dt', { text: '품질 점수' }), h('dd', { text: m.quality_score ? m.quality_score + '점' : '아직 없음' }),
-      h('dt', { text: '채널' }), h('dd', { text: [['블로그', m.blog_status], ['쇼츠', m.shorts_status], ['릴스', m.reels_status], ['피드', m.ig_feed_status], ['클립', m.clip_status]].map(([n, v]) => `${n} ${v ? statusLabel(v) : '아직 없음'}`).join(' · ') }),
-      h('dt', { text: '수정' }), h('dd', { text: `${relTime(m.updated_at)} · ${m.updated_by || '-'}` })));
+function ageDays(iso) {
+  if (!iso) return null;
+  const t = new Date(String(iso).replace(' ', 'T')).getTime();
+  if (!t || Number.isNaN(t)) return null;
+  return Math.floor((Date.now() - t) / 86400000);
+}
 
-    // 채널별 발행 링크 — 시트에 기록된 실제 URL 을 그대로 보여 준다
-    const channels = [
-      ['블로그', 'blog_status', 'blog_url'],
-      ['쇼츠', 'shorts_status', 'shorts_url'],
-      ['인스타 릴스', 'reels_status', 'reels_url'],
-      ['인스타 피드', 'ig_feed_status', 'ig_feed_url'],
-      ['클립', 'clip_status', 'clip_url']
-    ].filter(([, , k]) => m[k]);
-    if (channels.length) {
-      body.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '채널 링크' }));
-      const dl = h('dl', { class: 'kv' });
-      channels.forEach(([label, stKey, urlKey]) => {
-        dl.appendChild(h('dt', { text: label }));
-        dl.appendChild(h('dd', null,
-          h('span', { class: 'badge ' + (m[stKey] || 'PENDING'), title: m[stKey] || 'PENDING', text: statusLabel(m[stKey]) }), ' ',
-          h('a', { href: m[urlKey], target: '_blank', rel: 'noopener noreferrer', text: m[urlKey] })));
-      });
-      body.appendChild(dl);
-    }
+function payloadText(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  try { return JSON.stringify(payload); } catch (e) { return ''; }
+}
 
-    if (d.payload) {
-      body.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '원고·대본 파일 미리보기' }));
-      body.appendChild(h('pre', { class: 'json', text: JSON.stringify(d.payload, null, 2).slice(0, 2400) }));
-    }
+function findHook(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const keys = ['hook_text', 'hook', 'cover_text', 'first_line', 'subtitle_first', 'first_two_seconds'];
+  for (let i = 0; i < keys.length; i += 1) {
+    const v = payload[keys[i]];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  const script = payload.script || payload.shots || payload.scenes;
+  if (Array.isArray(script) && script.length) {
+    const first = script[0] || {};
+    const cand = first.subtitle || first.text || first.line || first.caption;
+    if (typeof cand === 'string' && cand.trim()) return cand.trim();
+  }
+  return null;
+}
 
-    /* 메타 보정 — 발행 기록만 가져온 행은 키워드·품질점수가 비어 있다.
-       여기서 채우면 보드 뱃지·검색이 실제 데이터로 동작한다(시트에 저장). */
-    const kwInput = h('input', {
-      type: 'text', value: m.target_keywords || '', autocomplete: 'off',
-      placeholder: '예: 대전 봉명동 맛집, 봉명동 야장'
-    });
-    const scoreInput = h('input', {
-      type: 'number', min: '0', max: '100', inputmode: 'numeric', value: m.quality_score || '',
-      placeholder: '0~100'
-    });
-    const metaNote = h('span', { class: 'hint', text: '' });
-    const metaSave = h('button', { class: 'btn sm primary', type: 'button', text: '저장' });
-    metaSave.addEventListener('click', async () => {
-      const raw = String(scoreInput.value).trim();
-      const score = raw === '' ? '' : Number(raw);
-      if (score !== '' && (Number.isNaN(score) || score < 0 || score > 100)) {
-        toast('품질 점수는 0~100 사이 숫자로 넣어 주세요', 'err');
-        scoreInput.focus();
-        return;
-      }
-      const label = metaSave.textContent;
-      metaSave.disabled = true;
-      metaSave.textContent = '저장 중…';
-      metaNote.textContent = '';
-      try {
-        const action = api.createAction('meta');
-        await api.updateContent({
-          content_id: contentId,
-          expected_version: d.version,
-          target_keywords: String(kwInput.value).trim(),
-          quality_score: score
-        }, action);
-        toast('메타 저장 완료', 'ok');
-        await refresh();
-        renderRoute();
-        openDetail(contentId);
-      } catch (err) {
-        metaNote.textContent = friendlyError(err);
-        toast(friendlyError(err), 'err');
-        metaSave.disabled = false;
-        metaSave.textContent = label;
-      }
-    });
-    body.appendChild(h('section', { class: 'meta-edit' },
-      h('h3', { text: '정보 채우기' }),
-      h('label', { class: 'field' },
-        h('span', { class: 'field-label', text: '타깃 키워드 (쉼표로 구분)' }), kwInput),
-      h('label', { class: 'field' },
-        h('span', { class: 'field-label', text: '품질 점수 (0~100)' }), scoreInput),
-      h('div', { class: 'row' }, metaSave, metaNote)));
+function gateRows(m, payload) {
+  const rows = [];
+  const raw = m.quality_score;
+  const score = (raw === '' || raw == null) ? null : Number(raw);
+  if (score == null) rows.push({ k: '품질 점수 80점', v: 'na', t: '아직 안 매김' });
+  else if (score >= 80) rows.push({ k: '품질 점수 80점', v: 'ok', t: score + '점 · 통과' });
+  else rows.push({ k: '품질 점수 80점', v: 'no', t: score + '점 · 미달' });
 
-    if (d.internal_links && d.internal_links.length) {
-      body.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '같은 주제 지난 글 (본문에 링크로 걸면 좋아요)' }));
-      const wrap = h('div', { class: 'list' });
-      d.internal_links.forEach((l) => wrap.appendChild(h('div', { class: 'lrow' },
-        h('div', { class: 'l-main' },
-          h('div', { class: 'l-title', text: l.title || l.content_id }),
-          h('div', { class: 'l-sub', text: l.blog_url || '링크 없음' })))));
-      body.appendChild(wrap);
-    }
+  const hasPayload = !!payload && typeof payload === 'object'
+    && Object.keys(payload).length > 0 && !payload._error;
+  if (!hasPayload) return { rows, note: '대본·원고 파일이 없어 나머지 점검은 할 수 없어요(발행 기록만 있는 카드예요).' };
 
-    if (d.active_rules && d.active_rules.length) {
-      body.appendChild(h('p', { class: 'hint', style: 'margin-top:12px',
-        text: '적용 중인 노하우: ' + d.active_rules.map((r) => `${r.rule_id} ${r.version_tag || ''}`).join(', ') }));
-    }
+  const hook = findHook(payload);
+  if (hook == null) rows.push({ k: '첫 2초 훅 12자 이내', v: 'na', t: '확인 못 함' });
+  else if (hook.length <= 12) rows.push({ k: '첫 2초 훅 12자 이내', v: 'ok', t: hook.length + '자' });
+  else rows.push({ k: '첫 2초 훅 12자 이내', v: 'no', t: hook.length + '자 · 길어요' });
 
-    const actions = h('div', { class: 'row end', style: 'margin-top:16px' });
-    if (d.status === 'PUBLISHED') {
-      // 발행은 됐지만 마지막 칸으로 정리되지 않은 카드(가져온 기록 등)를 사람이 한 번에 넘긴다
-      actions.appendChild(h('button', {
-        class: 'btn sm primary', type: 'button',
-        title: '모든 채널 업로드·연결이 끝났으면 마지막 칸으로 옮깁니다',
-        text: '발행 끝으로 넘기기',
+  const introRaw = payload.intro_seconds != null ? payload.intro_seconds : payload.hook_start_seconds;
+  const intro = introRaw == null ? null : Number(introRaw);
+  if (intro == null || Number.isNaN(intro)) rows.push({ k: '인트로 0초(인사·로고 없이 시작)', v: 'na', t: '확인 못 함' });
+  else if (intro === 0) rows.push({ k: '인트로 0초(인사·로고 없이 시작)', v: 'ok', t: '0초' });
+  else rows.push({ k: '인트로 0초(인사·로고 없이 시작)', v: 'no', t: intro + '초' });
+
+  const slots = (payloadText(payload).match(/\[\s*\]/g) || []).length;
+  if (slots === 0) rows.push({ k: '팩트 슬롯 [ ] 안 남음', v: 'ok', t: '남은 자리 없음' });
+  else rows.push({ k: '팩트 슬롯 [ ] 안 남음', v: 'no', t: slots + '곳 남음' });
+
+  return { rows, note: '' };
+}
+
+function analysisOf(m, payload) {
+  const brand = m.brand || state.brand;
+  const targets = brandChannels(brand);
+  const done = targets.filter((c) => channelDone(m[c.st]));
+  const failed = targets.filter((c) => channelState(m[c.st]) === 'fail');
+  const pending = targets.filter((c) => !channelDone(m[c.st]) && channelState(m[c.st]) !== 'fail' && channelState(m[c.st]) !== 'skip');
+  const raw = m.quality_score;
+  const score = (raw === '' || raw == null) ? null : Number(raw);
+  const days = ageDays(m.updated_at);
+  const acts = [];
+  const add = (text, opts) => { acts.push(Object.assign({ text }, opts || {})); };
+
+  if (m.status === 'NEEDS_HUMAN' || m.status === 'PARTIAL_FAIL') {
+    add('직접 풀어야 해요 — 로그인·인증·오류를 확인하세요', { urgent: true, tab: 'src', cta: '원인 보기' });
+  }
+  if (failed.length) {
+    add(failed.map((c) => c.label).join('·') + ' 올리기가 실패했어요 — 다시 올려 주세요', { urgent: true, tab: 'src', cta: '상태 보기' });
+  }
+  if (m.status === 'PUBLISHED' && pending.length) {
+    add('아직 안 올린 채널: ' + pending.map((c) => c.label).join('·'), { tab: 'src', cta: '보기' });
+  }
+  if (score == null) {
+    add('품질 점수가 비어 있어요 — 80점 이상이어야 "올릴 준비"로 갑니다', { tab: 'src', cta: '점수 넣기' });
+  } else if (score < 80) {
+    add('품질 점수 ' + score + '점 — 80점 이상이어야 "올릴 준비"로 갑니다', { tab: 'src', cta: '고치기' });
+  }
+  if (!String(m.target_keywords || '').trim()) {
+    add('검색 키워드가 비었어요', { tab: 'src', cta: '키워드 넣기' });
+  }
+  if ((m.status === 'DRAFT' || m.status === 'REVIEW') && days != null && days >= 7) {
+    add(days + '일째 그대로예요 — 오늘 10분만 손보면 끝나요');
+  }
+  if (!pending.length && !failed.length && m.status !== 'LINKED') {
+    add('채널은 다 됐어요 — "발행 끝"으로 넘기면 보드가 정리됩니다', { cta: '정리하기', action: 'link' });
+  }
+  if (!acts.length) add('지금 손댈 것은 없어요');
+
+  return {
+    targets, done, pending, failed, score, days,
+    actions: acts.slice(0, 2),
+    more: Math.max(0, acts.length - 2)
+  };
+}
+
+function goDetailTab(key) {
+  const btn = document.querySelector('#detail-tabs [data-tab="' + key + '"]');
+  if (btn) btn.click();
+}
+
+function analysisSection(contentId, d, m, payload, dlg) {
+  const wrap = h('div', { class: 'ana' });
+  const info = analysisOf(m, payload);
+
+  const acts = h('div', { class: 'ana-acts' });
+  info.actions.forEach((a) => {
+    const row = h('div', { class: 'ana-act' + (a.urgent ? ' urgent' : '') },
+      h('span', { class: 'ai', 'aria-hidden': 'true', text: a.urgent ? '!' : '→' }),
+      h('span', { text: a.text }));
+    if (a.action === 'link') {
+      row.appendChild(h('button', {
+        class: 'go', type: 'button', text: a.cta || '정리하기',
         onclick: async (e) => {
           const btn = e.currentTarget;
           btn.disabled = true;
           const label = btn.textContent;
-          btn.textContent = '넘기는 중…';
+          btn.textContent = '정리 중…';
           try {
             await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED' },
               api.createAction('link'));
@@ -1131,12 +1191,196 @@ async function openDetail(contentId) {
           }
         }
       }));
+    } else if (a.tab === 'src') {
+      row.appendChild(h('button', {
+        class: 'go', type: 'button', text: a.cta || '보기',
+        onclick: () => goDetailTab('src')
+      }));
     }
-    if (d.status === 'REVIEW') {
-      actions.appendChild(h('button', { class: 'btn sm', type: 'button', text: '점검하러 가기', onclick: () => {
-        state.reviewId = contentId; dlg.close(); location.hash = '#/review';
-      } }));
-      actions.appendChild(h('button', { class: 'btn sm primary', type: 'button', title: '검수 기록을 남기고 발행 준비 칸으로 넘깁니다', text: '확인 완료', onclick: async (e) => {
+    acts.appendChild(row);
+  });
+  wrap.appendChild(h('section', null,
+    h('div', { class: 'ana-h' }, h('span', { text: '다음 할 일' })),
+    acts,
+    info.more ? h('p', { class: 'ana-note', style: 'margin-top:6px', text: '그 밖에 할 일 ' + info.more + '개' }) : null));
+
+  const total = info.targets.length || 1;
+  const pct = Math.round((info.done.length / total) * 100);
+  wrap.appendChild(h('section', { class: 'ana-prog' },
+    h('div', { class: 'ana-h' }, h('span', { text: '채널 진행' })),
+    h('div', { class: 'pr-top' }, h('b', { text: String(info.done.length) }),
+      h('span', { text: '/ ' + info.targets.length + ' 채널 · ' + pct + '%' })),
+    h('div', { class: 'prog' }, h('i', { style: 'width:' + pct + '%' }))));
+
+  const g = gateRows(m, payload);
+  const gateWrap = h('div', { class: 'gate' });
+  g.rows.forEach((r) => gateWrap.appendChild(h('div', { class: 'gate-row' },
+    h('span', { text: r.k }),
+    h('span', { class: 'gv ' + r.v, text: r.t }))));
+  wrap.appendChild(h('section', null,
+    h('div', { class: 'ana-h' }, h('span', { text: '품질 점검' })),
+    gateWrap,
+    g.note ? h('p', { class: 'ana-note', style: 'margin-top:7px', text: g.note }) : null));
+
+  const chanWrap = h('div', { class: 'ana-chans' });
+  CHANNELS.forEach((c) => {
+    const raw = m[c.st];
+    const url = m[c.url];
+    const row = h('div', { class: 'ana-chan', 'data-ch': c.key },
+      channelIcon(c.key, 13),
+      h('span', { class: 'nm', text: c.label }),
+      h('span', { class: 'st', text: raw ? statusLabel(raw) : '기록 없음' }));
+    if (url) row.appendChild(h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: url }));
+    chanWrap.appendChild(row);
+  });
+  wrap.appendChild(h('section', null,
+    h('div', { class: 'ana-h' }, h('span', { text: '채널별 현황' }), h('span', { class: 'n', text: CHANNELS.length + '개' })),
+    chanWrap));
+
+  wrap.appendChild(h('p', { class: 'ana-note',
+    text: '조회·저장·댓글 수는 아직 앱이 자동으로 받아오지 않아요. 다음 업데이트에서 직접 적는 칸이 생깁니다.' }));
+
+  wrap.appendChild(detailActionButtons(contentId, d, m, dlg));
+  return wrap;
+}
+
+function sourceSection(contentId, d, m, payload, dlg) {
+  const wrap = h('div');
+
+  wrap.appendChild(h('dl', { class: 'kv' },
+    h('dt', { text: '가게·주제' }), h('dd', { text: m.place_name || '-' }),
+    h('dt', { text: '제목' }), h('dd', { text: m.blog_title || '(미정)' }),
+    h('dt', { text: '지역·분류' }), h('dd', { text: [m.region_dong, m.category].filter(Boolean).join(' · ') || '-' }),
+    h('dt', { text: '키워드' }), h('dd', { text: m.target_keywords || '-' }),
+    h('dt', { text: '품질 점수' }), h('dd', { text: m.quality_score ? m.quality_score + '점' : '아직 없음' }),
+    h('dt', { text: '채널' }), h('dd', { text: CHANNELS.map((c) => c.label + ' ' + (m[c.st] ? statusLabel(m[c.st]) : '아직 없음')).join(' · ') }),
+    h('dt', { text: '수정' }), h('dd', { text: relTime(m.updated_at) + ' · ' + (m.updated_by || '-') })));
+
+  const links = CHANNELS.filter((c) => m[c.url]);
+  if (links.length) {
+    wrap.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '채널 링크' }));
+    const dl = h('dl', { class: 'kv' });
+    links.forEach((c) => {
+      dl.appendChild(h('dt', { text: c.label }));
+      dl.appendChild(h('dd', null,
+        h('span', { class: 'badge ' + (m[c.st] || 'PENDING'), title: m[c.st] || 'PENDING', text: statusLabel(m[c.st]) }), ' ',
+        h('a', { href: m[c.url], target: '_blank', rel: 'noopener noreferrer', text: m[c.url] })));
+    });
+    wrap.appendChild(dl);
+  }
+
+  if (payload) {
+    const det = h('details', { style: 'margin-top:14px' },
+      h('summary', { style: 'font-size:13px;font-weight:700;cursor:pointer', text: '원고·대본 파일 원문 보기' }),
+      h('pre', { class: 'json', style: 'margin-top:8px', text: JSON.stringify(payload, null, 2).slice(0, 2400) }));
+    wrap.appendChild(det);
+  }
+
+  /* 메타 보정 — 발행 기록만 가져온 행은 키워드·품질점수가 비어 있다.
+     여기서 채우면 보드 뱃지·검색이 실제 데이터로 동작한다(시트에 저장). */
+  const kwInput = h('input', {
+    type: 'text', value: m.target_keywords || '', autocomplete: 'off',
+    placeholder: '예: 대전 봉명동 맛집, 봉명동 야장'
+  });
+  const scoreInput = h('input', {
+    type: 'number', min: '0', max: '100', inputmode: 'numeric', value: m.quality_score || '',
+    placeholder: '0~100'
+  });
+  const metaNote = h('span', { class: 'hint', text: '' });
+  const metaSave = h('button', { class: 'btn sm primary', type: 'button', text: '저장' });
+  metaSave.addEventListener('click', async () => {
+    const rawScore = String(scoreInput.value).trim();
+    const score = rawScore === '' ? '' : Number(rawScore);
+    if (score !== '' && (Number.isNaN(score) || score < 0 || score > 100)) {
+      toast('품질 점수는 0~100 사이 숫자로 넣어 주세요', 'err');
+      scoreInput.focus();
+      return;
+    }
+    const label = metaSave.textContent;
+    metaSave.disabled = true;
+    metaSave.textContent = '저장 중…';
+    metaNote.textContent = '';
+    try {
+      const action = api.createAction('meta');
+      await api.updateContent({
+        content_id: contentId,
+        expected_version: d.version,
+        target_keywords: String(kwInput.value).trim(),
+        quality_score: score
+      }, action);
+      toast('메타 저장 완료', 'ok');
+      await refresh();
+      renderRoute();
+      openDetail(contentId, 'src');
+    } catch (err) {
+      metaNote.textContent = friendlyError(err);
+      toast(friendlyError(err), 'err');
+      metaSave.disabled = false;
+      metaSave.textContent = label;
+    }
+  });
+  wrap.appendChild(h('section', { class: 'meta-edit' },
+    h('h3', { text: '정보 채우기' }),
+    h('label', { class: 'field' },
+      h('span', { class: 'field-label', text: '타깃 키워드 (쉼표로 구분)' }), kwInput),
+    h('label', { class: 'field' },
+      h('span', { class: 'field-label', text: '품질 점수 (0~100)' }), scoreInput),
+    h('div', { class: 'row' }, metaSave, metaNote)));
+
+  if (d.internal_links && d.internal_links.length) {
+    wrap.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '같은 주제 지난 글 (본문에 링크로 걸면 좋아요)' }));
+    const list = h('div', { class: 'list' });
+    d.internal_links.forEach((l) => list.appendChild(h('div', { class: 'lrow' },
+      h('div', { class: 'l-main' },
+        h('div', { class: 'l-title', text: l.title || l.content_id }),
+        h('div', { class: 'l-sub', text: l.blog_url || '링크 없음' })))));
+    wrap.appendChild(list);
+  }
+
+  if (d.active_rules && d.active_rules.length) {
+    wrap.appendChild(h('p', { class: 'hint', style: 'margin-top:12px',
+      text: '적용 중인 노하우: ' + d.active_rules.map((r) => r.rule_id + ' ' + (r.version_tag || '')).join(', ') }));
+  }
+
+  wrap.appendChild(detailActionButtons(contentId, d, m, dlg));
+  return wrap;
+}
+
+function detailActionButtons(contentId, d, m, dlg) {
+  const actions = h('div', { class: 'row end', style: 'margin-top:16px' });
+  if (d.status === 'PUBLISHED') {
+    actions.appendChild(h('button', {
+      class: 'btn sm primary', type: 'button',
+      title: '모든 채널 업로드·연결이 끝났으면 마지막 칸으로 옮깁니다',
+      text: '발행 끝으로 넘기기',
+      onclick: async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        const label = btn.textContent;
+        btn.textContent = '넘기는 중…';
+        try {
+          await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED' },
+            api.createAction('link'));
+          toast('발행 끝으로 옮겼어요', 'ok');
+          dlg.close();
+          await refresh();
+          renderRoute();
+        } catch (err) {
+          toast(friendlyError(err), 'err');
+          btn.disabled = false;
+          btn.textContent = label;
+        }
+      }
+    }));
+  }
+  if (d.status === 'REVIEW') {
+    actions.appendChild(h('button', { class: 'btn sm', type: 'button', text: '점검하러 가기', onclick: () => {
+      state.reviewId = contentId; dlg.close(); location.hash = '#/review';
+    } }));
+    actions.appendChild(h('button', {
+      class: 'btn sm primary', type: 'button',
+      title: '검수 기록을 남기고 발행 준비 칸으로 넘깁니다', text: '확인 완료',
+      onclick: async (e) => {
         e.target.disabled = true;
         try {
           await api.quickApprove(contentId, { channel: m.blog_status === 'SKIPPED' ? 'youtube_shorts' : 'naver_blog' });
@@ -1149,9 +1393,55 @@ async function openDetail(contentId) {
           toast(friendlyError(err), 'err');
           e.target.disabled = false;
         }
-      } }));
-    }
-    body.appendChild(actions);
+      }
+    }));
+  }
+  return actions;
+}
+
+async function openDetail(contentId, opts = {}) {
+  const dlg = $('#detail-dialog');
+  const body = $('#detail-body');
+  const tabBar = $('#detail-tabs');
+  $('#detail-title').textContent = contentId;
+  clear(body);
+  if (tabBar) clear(tabBar);
+  body.appendChild(h('div', { class: 'loading-skeleton' },
+    h('div', { class: 'sk-line w40' }), h('div', { class: 'sk-card' })));
+  // 메타 저장 뒤 다시 열 때: 이미 열려 있으면 showModal 이 예외를 던지는 브라우저가 있다
+  if (dlg.open) dlg.close();
+  dlg.showModal();
+
+  try {
+    const res = await api.getContentDetail(contentId);
+    const d = res.data || {};
+    const m = d.meta || {};
+    const payload = d.payload || null;
+    let tab = opts === 'src' ? 'src' : 'ana';
+
+    const paintTabs = () => {
+      if (!tabBar) return;
+      clear(tabBar);
+      [['ana', '분석'], ['src', '원문·메타']].forEach((pair) => {
+        tabBar.appendChild(h('button', {
+          class: 'sheet-tab', type: 'button', role: 'tab', 'data-tab': pair[0],
+          'aria-selected': pair[0] === tab ? 'true' : 'false',
+          onclick: () => { tab = pair[0]; paintTabs(); paintBody(); }
+        }, h('span', { text: pair[1] })));
+      });
+    };
+
+    const paintBody = () => {
+      clear(body);
+      body.appendChild(h('div', { class: 'row', style: 'margin-bottom:10px' },
+        badge(d.status), h('span', { class: 'cc-id', text: 'v' + d.version })));
+      body.appendChild(tab === 'ana'
+        ? analysisSection(contentId, d, m, payload, dlg)
+        : sourceSection(contentId, d, m, payload, dlg));
+    };
+
+    paintTabs();
+    paintBody();
   } catch (err) {
     clear(body);
     body.appendChild(h('div', { class: 'result err', text: friendlyError(err) }));
