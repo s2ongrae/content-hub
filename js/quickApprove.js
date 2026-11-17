@@ -61,11 +61,15 @@ export class QuickApproveView {
     this._keyHandler = (ev) => {
       if (ev.target && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
       if (!this.root.isConnected) return;
+      // 카드 내부나 액션바에 포커스가 있어도 동작하도록
       if (ev.key === 'ArrowLeft') { ev.preventDefault(); this.approve(); }
       else if (ev.key === 'ArrowRight') { ev.preventDefault(); this.next(); }
       else if (ev.key === 'ArrowDown') { ev.preventDefault(); this.reject(); }
     };
     document.addEventListener('keydown', this._keyHandler);
+    // 카드 호스트에도 포커스 가능하게 하고 키보드 이벤트 전달
+    this.cardHost.setAttribute('tabindex', '0');
+    this.cardHost.addEventListener('keydown', this._keyHandler);
 
     await this.reload();
   }

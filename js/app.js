@@ -477,24 +477,51 @@ function renderBoard(main) {
   paintBoard();
 
   function paintBoard() {
-    clear(boardHost);
     const q = state.search.trim().toLowerCase();
+    const existingCols = boardHost.querySelectorAll('.col');
+    const existingMap = new Map();
+    existingCols.forEach((el) => {
+      const h2 = el.querySelector('h2');
+      if (h2) existingMap.set(h2.textContent, el);
+    });
+
     COLUMNS.forEach((col) => {
       let items = state.contents.filter((c) => col.statuses.indexOf(c.status) >= 0);
       if (q) {
         items = items.filter((c) => `${c.place_name} ${c.blog_title || ''} ${c.target_keywords || ''}`.toLowerCase().indexOf(q) >= 0);
       }
-      const colEl = h('section', { class: 'col' + (col.alert && items.length ? ' alert' : '') + (items.length ? '' : ' is-empty') },
-        h('div', { class: 'col-head' },
-          h('h2', { text: col.title }),
-          h('span', { class: 'n', text: String(items.length) })),
-        h('p', { class: 'hint', style: 'font-size:11px;color:var(--tx-3);margin:-2px 2px 4px',
+
+      let colEl = existingMap.get(col.title);
+      if (!colEl) {
+        colEl = h('section', { class: 'col' + (col.alert && items.length ? ' alert' : '') + (items.length ? '' : ' is-empty') },
+          h('div', { class: 'col-head' },
+            h('h2', { text: col.title }),
+            h('span', { class: 'n', text: String(items.length) })),
+          h('p', { class: 'hint', style: 'font-size:11px;color:var(--tx-3);margin:-2px 2px 4px',
           text: col.key === 'publishing' && state.brand === 'ppiyak_kimmary'
             ? '쇼츠·릴스·클립은 올라감 — 발행 끝으로 넘기면 정리돼요'
             : col.hint }));
-      if (!items.length) colEl.appendChild(h('div', { class: 'empty', text: '없음' }));
-      items.forEach((item) => colEl.appendChild(contentCard(item)));
-      boardHost.appendChild(colEl);
+        boardHost.appendChild(colEl);
+      } else {
+        colEl.className = 'col' + (col.alert && items.length ? ' alert' : '') + (items.length ? '' : ' is-empty');
+        const countEl = colEl.querySelector('.n');
+        if (countEl) countEl.textContent = String(items.length);
+        const cardsHost = colEl.querySelector('.col-cards') || (() => {
+          const host = h('div', { class: 'col-cards' });
+          const hint = colEl.querySelector('p.hint');
+          if (hint) hint.insertAdjacentElement('afterend', host);
+          else colEl.appendChild(host);
+          return host;
+        })();
+        clear(cardsHost);
+        items.forEach((item) => cardsHost.appendChild(contentCard(item)));
+        const emptyEl = colEl.querySelector('.empty');
+        if (items.length === 0 && !emptyEl) {
+          colEl.appendChild(h('div', { class: 'empty', text: '없음' }));
+        } else if (items.length > 0 && emptyEl) {
+          emptyEl.remove();
+        }
+      }
     });
   }
 }

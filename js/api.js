@@ -297,9 +297,15 @@ function sleep(ms) {
 
 export const api = new ContentHubApi();
 
-/* 온라인 복귀 시 자동 재전송 */
+/* 온라인 복귀·탭 포커스 복귀 시 자동 재전송 */
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     api.flushQueue().catch(() => {});
+  });
+  // 탭을 다시 볼 때(백그라운드에서 돌아왔을 때)도 큐 재시도 — 온라인 이벤트가 안 터지는 경우 보완
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      api.flushQueue().catch(() => {});
+    }
   });
 }
