@@ -30,11 +30,13 @@ export async function loadPack(force) {
 const STATUS_LABEL = {
   PUBLISHED: '발행 완료',
   READY_TO_SHOOT: '촬영 가능',
+  BLOCKED_FACTS: '팩트 확인 필요',
   PLANNED: '앞 편 후 제작'
 };
 const STATUS_CLASS = {
   PUBLISHED: 'LINKED',
   READY_TO_SHOOT: 'READY',
+  BLOCKED_FACTS: 'DRAFT',
   PLANNED: 'DRAFT'
 };
 
