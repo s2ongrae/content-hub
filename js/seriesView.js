@@ -91,12 +91,12 @@ export function renderSeriesView(main, ctx) {
   main.appendChild(h('div', { class: 'page-head' },
     h('div', null,
       h('h1', { text: '🎬 연재 기획' }),
-      h('p', { class: 'sub', text: '10편 대본 · 네이버 자동완성 실측 · 첫 2초 문장 비교' })),
+      h('p', { class: 'sub', text: '연재 대본 · 네이버 자동완성 실측 · 첫 2초 문장 비교' })),
     h('div', { class: 'head-actions' },
       h('span', { class: 'tag', text: brand === 'ppiyak_kimmary' ? '삐약 김메리' : '대전 청년' }))));
 
   const seg = h('div', { class: 'seg', role: 'tablist', 'aria-label': '시리즈 화면 전환' });
-  [['series', '연재 10편'], ['keywords', '검색어 모음'], ['hooks', '첫 문장 비교']].forEach(([key, label]) => {
+  [['series', '연재 대본'], ['keywords', '검색어 모음'], ['hooks', '첫 문장 비교']].forEach(([key, label]) => {
     seg.appendChild(h('button', {
       type: 'button', class: 'seg-btn', role: 'tab', 'data-sub': key,
       'aria-selected': subTab === key ? 'true' : 'false',
