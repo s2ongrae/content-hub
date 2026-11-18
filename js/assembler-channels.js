@@ -36,13 +36,21 @@ export function composeShorts({ facts, blocks, slots, brand }) {
   const beats = Array.isArray(slots) ? slots : [];
   const hook = pickLines(blocks, 12, 1)[0] || '';
   const priceTag = short(clean(f.price_menu).split(/[·,]/)[0].split(/\s+/)[0] || '', 12);
+  const seen = {};
   const cuts = beats.map((s, i) => ({
     no: i + 1,
     role: s.role,
     time: s.start + '–' + s.end + 's',
     media: s.media || '[컷 비어 있음]',
     // 자막은 사용자 문장이나 확인된 숫자만. 안내문(s.note)은 자막으로 쓰지 않는다.
-    subtitle: (i === 0 || /HOOK/.test(s.slot_id || '')) ? hook : (/PROOF-1/.test(s.slot_id || '') ? priceTag : ''),
+    subtitle: (function () {
+      const key = s.slot_id || String(i);
+      if (seen[key]) return '';                       // 같은 비트의 두 번째 컷부터는 자막을 비운다
+      seen[key] = true;
+      if (i === 0 || /HOOK/.test(key)) return hook;
+      if (/PROOF-1/.test(key)) return priceTag;
+      return '';
+    })(),
     guide: s.note || ''
   }));
   const lines = pickLines(blocks, 14, 6);
