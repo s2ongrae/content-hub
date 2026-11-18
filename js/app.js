@@ -506,21 +506,22 @@ function renderBoard(main) {
         colEl.className = 'col' + (col.alert && items.length ? ' alert' : '') + (items.length ? '' : ' is-empty');
         const countEl = colEl.querySelector('.n');
         if (countEl) countEl.textContent = String(items.length);
-        const cardsHost = colEl.querySelector('.col-cards') || (() => {
-          const host = h('div', { class: 'col-cards' });
-          const hint = colEl.querySelector('p.hint');
-          if (hint) hint.insertAdjacentElement('afterend', host);
-          else colEl.appendChild(host);
-          return host;
-        })();
-        clear(cardsHost);
-        items.forEach((item) => cardsHost.appendChild(contentCard(item)));
-        const emptyEl = colEl.querySelector('.empty');
-        if (items.length === 0 && !emptyEl) {
-          colEl.appendChild(h('div', { class: 'empty', text: '없음' }));
-        } else if (items.length > 0 && emptyEl) {
-          emptyEl.remove();
-        }
+      }
+
+      const cardsHost = colEl.querySelector('.col-cards') || (() => {
+        const host = h('div', { class: 'col-cards' });
+        const hint = colEl.querySelector('p.hint');
+        if (hint) hint.insertAdjacentElement('afterend', host);
+        else colEl.appendChild(host);
+        return host;
+      })();
+      clear(cardsHost);
+      items.forEach((item) => cardsHost.appendChild(contentCard(item)));
+      const emptyEl = colEl.querySelector('.empty');
+      if (items.length === 0 && !emptyEl) {
+        colEl.appendChild(h('div', { class: 'empty', text: '없음' }));
+      } else if (items.length > 0 && emptyEl) {
+        emptyEl.remove();
       }
     });
   }
