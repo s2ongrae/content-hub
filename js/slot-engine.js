@@ -173,7 +173,9 @@ export function planChannels({ facts, blocks, media, brand, monthPlaces }) {
   /* ── 클립: 세로 원본만 ── */
   const clipPool = portraitVideos.filter((v) => !/reels|shorts|tiktok/i.test(v.name));
   if (portraitVideos.length && !clipPool.length) warnings.push({ code: 'NEED_ORIGINAL', msg: '파일명에 reels·shorts·tiktok — 워터마크 없는 원본으로 교체하세요' });
-  const clipCuts = clipPool.length ? clipPool : portraitVideos;
+  if (!portraitVideos.length && videos.length) warnings.push({ code: 'CLIP_CROP', msg: '세로 원본이 없어 가로 영상을 크롭해 클립을 만듭니다(9:16 확인)' });
+  // 세로 원본이 없으면 가로 영상으로 대체하고 크롭 경고를 남긴다(빈 화면보다 낫다)
+  const clipCuts = clipPool.length ? clipPool : (portraitVideos.length ? portraitVideos : videos);
   clipCuts.slice(0, 3).forEach((m, i) => {
     channels.clip.push({ slot_id: 'CLIP_' + (i + 1), role: ['오픈', '핵심', '마무리'][i] || '추가', start: i * 10, end: (i + 1) * 10, media: m.name, note: '핵심 메뉴·위치 텍스트 오버레이' });
   });

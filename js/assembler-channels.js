@@ -24,9 +24,11 @@ export function pickLines(blocks, max, limit) {
 export function shortTitle(facts, blocks) {
   const f = facts || {};
   const place = clean(f.place_name) || '[가게]';
-  const price = clean(f.price_menu).split(/[·,]/)[0].trim();
+  const first = clean(f.price_menu).split(/[·,]/)[0].trim();
+  const price = first.split(/\s+/)[0];            // "냉동삼겹" 처럼 메뉴 이름만
   const detail = price || short((pickLines(blocks, 14, 1)[0] || ''), 14);
-  return (detail ? place + ' ' + detail : place) + ' …' + (clean(f.region_dong) || '대전');
+  const tail = clean(f.wait_time) ? short(f.wait_time, 12) : '';
+  return (detail ? place + ' ' + detail : place) + (tail ? ' ' + tail : '') + ' …';
 }
 
 export function composeShorts({ facts, blocks, slots, brand }) {
@@ -66,7 +68,8 @@ export function composeClip({ facts, blocks, slots }) {
     media: s.media || '[세로 원본 필요]',
     overlay: short(f.place_name + (f.price_menu ? ' · ' + f.price_menu : ''), 24)
   }));
-  const base = ['대전맛집', (clean(f.region_dong) || '유성') + '맛집', clean(f.place_name) || '대전클립', '오늘클립챌린지', short(f.category || '맛집', 8)].filter(Boolean);
+  const catTag = short(f.category || '맛집', 8).replace(/[·/,\s]+/g, '');
+  const base = ['대전맛집', (clean(f.region_dong) || '유성').replace(/\s/g, '') + '맛집', (clean(f.place_name) || '대전클립').replace(/\s/g, ''), '오늘클립챌린지', catTag].filter(Boolean);
   return {
     title: shortTitle(f, blocks),
     segments: segs,
@@ -112,7 +115,8 @@ export function composeDaangn({ facts, blocks, slots }) {
 export function composeInstagram(kind, { facts, blocks, slots }) {
   const f = facts || {};
   const dong = clean(f.region_dong) ? clean(f.region_dong).replace(/\s+/g, '') : '대전';
-  const tags = ['대전맛집', dong + '맛집', clean(f.place_name) || '대전', short(f.category || '맛집', 6), dong + '술집']
+  const catTag = short(f.category || '맛집', 6).replace(/[·/,\s]+/g, '');
+  const tags = ['대전맛집', dong + '맛집', (clean(f.place_name) || '대전').replace(/\s/g, ''), catTag, dong + '술집']
     .filter(Boolean).slice(0, 5).map((t) => '#' + t.replace(/\s+/g, ''));
   if (kind === 'feed') {
     const slides = (Array.isArray(slots) ? slots : []).map((s, i) => ({

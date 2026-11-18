@@ -11,7 +11,7 @@
  *  - 확인 못 한 수치는 `[확인 필요]`로 비운다. 지어내지 않는다.
  */
 
-import { sha256Hex, userBodyText, splitUserBlocks } from './slot-engine.js?v=20261119b';
+import { sha256Hex, userBodyText, splitUserBlocks } from './slot-engine.js?v=20261119c';
 
 export const BANNED_PHRASES = [
   '결론적으로', '다양한 매력을', '입안 가득', '라고 할 수 있습니다', '방법입니다', '어떨까요',

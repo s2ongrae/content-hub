@@ -8,9 +8,9 @@
  * 원칙: textContent/createElement만(h() 사용). 폰 360px 가로 스크롤 0.
  */
 
-import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261119b';
-import { composeBlog } from './assembler.js?v=20261119b';
-import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261119b';
+import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261119c';
+import { composeBlog } from './assembler.js?v=20261119c';
+import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261119c';
 
 const SAVE_KEY = 'contenthub.create.v1';
 
