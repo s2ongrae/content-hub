@@ -8,9 +8,9 @@
  * 원칙: textContent/createElement만(h() 사용). 폰 360px 가로 스크롤 0.
  */
 
-import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261119a';
-import { composeBlog } from './assembler.js?v=20261119a';
-import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261119a';
+import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261119b';
+import { composeBlog } from './assembler.js?v=20261119b';
+import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261119b';
 
 const SAVE_KEY = 'contenthub.create.v1';
 
@@ -84,8 +84,33 @@ export function renderCreateView(main, ctx) {
   driveEl.addEventListener('input', () => { st.media_drive_url = driveEl.value; save(); });
   F.media_drive_url = driveEl;
 
+  const saveCard = h('button', { class: 'btn sm', type: 'button', text: '💾 현황 보드에 초안 카드로 저장' });
+  saveCard.addEventListener('click', async () => {
+    if (!text(st.place_name).trim()) { toast('가게 이름·주제를 먼저 적어 주세요', 'err'); return; }
+    saveCard.disabled = true; saveCard.textContent = '저장 중…';
+    try {
+      const r = await api.createContent({
+        brand: ctx.state.brand,
+        place_name: text(st.place_name).trim(),
+        region_dong: text(st.region_dong).trim(),
+        category: text(st.category).trim(),
+        cluster_id: text(st.cluster_id).trim(),
+        target_keywords: text(st.target_keywords).trim(),
+        naver_place_url: text(st.naver_place_url).trim(),
+        media_drive_url: text(st.media_drive_url).trim(),
+        receipt_verified: !!st.receipt_verified,
+        allow_partial_shortform: false
+      });
+      const id = (r && r.data && r.data.content_id) || '';
+      toast('보드에 저장했습니다 ' + id, 'ok');
+    } catch (err) {
+      toast('저장하지 못했습니다 — 서버 연결을 확인하세요', 'err');
+    } finally { saveCard.disabled = false; saveCard.textContent = '💾 현황 보드에 초안 카드로 저장'; }
+  });
+
   const form = h('div', { class: 'panel' },
     h('h3', null, '① 재료 넣기'),
+    h('p', { class: 'hint', text: '이 화면 하나로 끝납니다: 재료 → 채널 → 복사·내려받기·오더. 서버가 없어도 브라우저에서 바로 계산합니다.' }),
     h('p', { class: 'hint', text: '모르는 값은 비워 두세요. 비운 값은 지어내지 않고 [확인 필요]로 남깁니다.' }),
     field('place_name', '가게 이름 · 주제 *', '예: 미미삼겹 유성점'),
     h('div', { class: 'form-grid two' },
@@ -133,7 +158,7 @@ export function renderCreateView(main, ctx) {
           warnHost.appendChild(h('div', { class: 'result err', text: friendlyError(err) }));
         } finally { scan.disabled = false; scan.textContent = '📁 드라이브 폴더 읽기'; }
       });
-      return h('div', { class: 'row', style: 'margin:8px 0' }, scan);
+      return h('div', { class: 'row', style: 'margin:8px 0;gap:6px;flex-wrap:wrap' }, scan, saveCard);
     })()
   );
   main.appendChild(form);
@@ -215,6 +240,53 @@ export function renderCreateView(main, ctx) {
     return b;
   }
 
+  function safeName(s) { return String(s || '원스톱').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40); }
+
+  function downloadBtn(h, filename, content, toast) {
+    const b = h('button', { class: 'btn sm', type: 'button', text: '⬇ 내려받기' });
+    b.addEventListener('click', () => {
+      try {
+        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+        toast('내려받았습니다 — ' + filename, 'ok');
+      } catch (e) { toast('내려받기에 실패했습니다', 'err'); }
+    });
+    return b;
+  }
+
+  async function packageText(g) {
+    const place = g.facts.place_name || '제목 없음';
+    const blog = await composeBlog({ facts: g.facts, blocks: g.blocks, media: g.media, mode: st.mode,
+      linkTargets: (st.links || []).filter((l) => l && l.url).map((l) => ({ url: l.url, anchor: l.title })), brand: ctx.state.brand });
+    const shorts = composeShorts({ facts: g.facts, blocks: g.blocks, slots: g.channels.shorts, brand: ctx.state.brand });
+    const clip = composeClip({ facts: g.facts, blocks: g.blocks, slots: g.channels.clip });
+    const daangn = composeDaangn({ facts: g.facts, blocks: g.blocks, slots: g.channels.daangn });
+    const reels = composeInstagram('reels', { facts: g.facts, blocks: g.blocks, slots: g.channels.ig_reels });
+    const feed = composeInstagram('feed', { facts: g.facts, blocks: g.blocks, slots: g.channels.ig_feed });
+    const parts = [
+      '# ' + place + ' — 원스톱 패키지',
+      '원문 ' + g.blocks.length + '문단 · 해시 ' + g.user_body_sha256.slice(0, 12) + ' · 모드 ' + st.mode,
+      '',
+      '## 1) 네이버 블로그', blog.title, '', blog.head, '', blog.body, '', blog.tail,
+      '', '### 붙이는 순서(링크 카드)', ...blog.paste_steps.map((x, i) => (i + 1) + '. ' + x),
+      '', '## 2) 유튜브 쇼츠 (' + shorts.length_sec + '초 · ' + shorts.cut_count + '컷)', shorts.title,
+      ...shorts.cuts.map((c) => c.no + '. ' + c.time + ' | ' + c.media + ' | ' + c.subtitle),
+      '고정댓글: ' + shorts.pinned_comment,
+      '', '## 3) 네이버 클립', clip.title, clip.hashtags.join(' '), '장소 태그: ' + clip.place_tag,
+      '', '## 4) 당근 스토리 (' + daangn.duration_sec + '초)', daangn.description, daangn.tags.join(' '), '장소: ' + daangn.place_tag,
+      '', '## 5) 인스타 릴스', reels.caption, reels.hashtags.join(' '),
+      '', '## 6) 인스타 피드', ...feed.slides.map((s) => s.no + '. ' + s.media + ' — ' + s.copy), '', feed.caption, feed.hashtags.join(' '),
+      '', '---', '슬롯: ' + Object.keys(g.channels).map((k) => k + ' ' + g.channels[k].length).join(' · ')
+    ];
+    return parts.filter((x) => x != null).join('\n');
+  }
+
   function pre(h, content) {
     return h('pre', { style: 'white-space:pre-wrap;word-break:break-word;font:inherit;margin:0;line-height:1.55' }, content);
   }
@@ -292,7 +364,9 @@ export function renderCreateView(main, ctx) {
         { ok: (r.link_cards || []).length <= 2, msg: '링크 카드 ' + (r.link_cards || []).length + '개' }
       ]));
       box.appendChild(pre(h, r.text));
-      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' }, copyBtn(h, r.text, toast)));
+      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' },
+        copyBtn(h, r.text, toast),
+        downloadBtn(h, safeName(g.facts.place_name) + '_블로그.md', r.text, toast)));
       if (r.paste_steps) {
         box.appendChild(h('h4', { style: 'margin:14px 0 6px', text: '링크 카드 붙이는 순서' }));
         box.appendChild(h('ol', { style: 'margin:0;padding-left:18px' }, r.paste_steps.map((s) => h('li', { class: 'hint', text: s }))));
@@ -305,7 +379,8 @@ export function renderCreateView(main, ctx) {
       if (r.slides) box.appendChild(slotTable(h, r.slides.map((s) => ({ role: s.no + '. ' + s.role, media: s.media, note: s.copy }))));
       const t = r.caption + '\n\n' + r.hashtags.join(' ');
       box.appendChild(pre(h, t));
-      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' }, copyBtn(h, t, toast)));
+      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' },
+        copyBtn(h, t, toast), downloadBtn(h, safeName(g.facts.place_name) + '_인스타.md', t, toast)));
     } else if (ch === 'shorts') {
       const r = composeShorts({ facts: g.facts, blocks: g.blocks, slots: g.channels.shorts, brand: ctx.state.brand });
       box.appendChild(h('h3', null, '🎬 유튜브 쇼츠 — ' + r.length_sec + '초 · ' + r.cut_count + '컷'));
@@ -314,7 +389,8 @@ export function renderCreateView(main, ctx) {
       const t = r.title + '\n\n' + r.cuts.map((c) => c.no + '. ' + c.time + ' | ' + c.media + ' | ' + c.subtitle).join('\n')
         + '\n\n고정댓글: ' + r.pinned_comment;
       box.appendChild(pre(h, t));
-      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' }, copyBtn(h, t, toast)));
+      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' },
+        copyBtn(h, t, toast), downloadBtn(h, safeName(g.facts.place_name) + '_쇼츠.md', t, toast)));
     } else if (ch === 'clip') {
       const r = composeClip({ facts: g.facts, blocks: g.blocks, slots: g.channels.clip });
       box.appendChild(h('h3', null, '📎 네이버 클립'));
@@ -322,7 +398,8 @@ export function renderCreateView(main, ctx) {
       box.appendChild(slotTable(h, r.segments.map((s) => ({ time: s.time, role: '컷', media: s.media, note: s.overlay }))));
       const t = r.title + '\n' + r.hashtags.join(' ') + '\n장소 태그: ' + r.place_tag;
       box.appendChild(pre(h, t));
-      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' }, copyBtn(h, t, toast)));
+      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' },
+        copyBtn(h, t, toast), downloadBtn(h, safeName(g.facts.place_name) + '_클립.md', t, toast)));
     } else {
       const r = composeDaangn({ facts: g.facts, blocks: g.blocks, slots: g.channels.daangn });
       box.appendChild(h('h3', null, '🥕 당근 스토리 — ' + (r.duration_sec || 0) + '초'));
@@ -330,11 +407,15 @@ export function renderCreateView(main, ctx) {
       box.appendChild(slotTable(h, g.channels.daangn));
       const t = r.description + '\n\n' + r.tags.join(' ') + '\n장소: ' + r.place_tag;
       box.appendChild(pre(h, t));
-      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' }, copyBtn(h, t, toast)));
+      box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' },
+        copyBtn(h, t, toast), downloadBtn(h, safeName(g.facts.place_name) + '_당근.md', t, toast)));
     }
 
-    /* 오더 */
-    const order = h('button', { class: 'btn primary block', type: 'button', text: '🤖 노트북에 영상 오더 보내기' });
+    /* 오더 — 문구는 언제나 그대로 복사할 수 있게 둔다(셀프서비스) */
+    const orderText = '[제작 오더] ' + (g.facts.place_name || '') + ' · 채널 ' + ch
+      + ' · 슬롯 ' + (g.channels[pick] || []).length + '개 · 조립본 해시 ' + g.user_body_sha256.slice(0, 8)
+      + '\n모드: ' + st.mode + ' · 톤 시드: seeds/skills/tone_reference_v1.md';
+    const order = h('button', { class: 'btn primary', type: 'button', text: '🤖 노트북에 오더 보내기' });
     order.addEventListener('click', async () => {
       order.disabled = true; order.textContent = '보내는 중…';
       try {
@@ -345,15 +426,32 @@ export function renderCreateView(main, ctx) {
         });
         const id = (r && r.data && (r.data.order_id || r.data.order)) || '';
         toast('오더를 보냈습니다 ' + id, 'ok');
-        resultHost.prepend(h('p', { class: 'hint', text: '오더 접수: ' + (id || '접수됨') + ' — 조립본은 이미 저장됐습니다.' }));
+        order.textContent = '✓ 오더 접수 ' + (id || '');
       } catch (err) {
-        resultHost.prepend(h('div', { class: 'result err' },
-          h('strong', { text: '노트북 오더 전송이 아직 켜지지 않았습니다' }),
-          h('p', { class: 'hint', text: 'GAS hub_order 배포 뒤에 동작합니다. 지금은 위 완성본을 복사해 그대로 올리시면 됩니다.' })));
-      } finally { order.disabled = false; order.textContent = '🤖 노트북에 영상 오더 보내기'; }
+        order.textContent = '🤖 노트북에 오더 보내기';
+        toast('오더 전송은 아직 꺼져 있습니다 — 문구를 복사해 포털에 붙여넣으세요', 'err');
+      } finally { order.disabled = false; }
     });
-    resultHost.appendChild(h('div', { class: 'panel' }, order,
-      h('p', { class: 'hint', text: '오더가 실패해도 위 완성본은 그대로 남습니다. 복사해서 올리시면 됩니다.' })));
+
+    const pkgOut = h('div');
+    const pkgBtn = h('button', { class: 'btn sm', type: 'button', text: '📦 전체 패키지 만들기(5채널)' });
+    pkgBtn.addEventListener('click', async () => {
+      pkgBtn.disabled = true; pkgBtn.textContent = '만드는 중…';
+      try {
+        const t = await packageText(g);
+        while (pkgOut.firstChild) pkgOut.removeChild(pkgOut.firstChild);
+        pkgOut.appendChild(pre(h, t));
+        pkgOut.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:8px' },
+          copyBtn(h, t, toast),
+          downloadBtn(h, safeName(g.facts.place_name) + '_원스톱패키지.md', t, toast)));
+      } finally { pkgBtn.disabled = false; pkgBtn.textContent = '📦 전체 패키지 만들기(5채널)'; }
+    });
+
+    resultHost.appendChild(h('div', { class: 'panel' },
+      h('h3', null, '④ 오더 · 내보내기'),
+      h('div', { class: 'row', style: 'gap:6px;flex-wrap:wrap' }, order, copyBtn(h, orderText, toast), pkgBtn),
+      h('p', { class: 'hint', text: '노트북이 꺼져 있어도 됩니다 — [복사]로 오더 문구를 복사해 포털 오더함에 붙여넣으면 그대로 실행됩니다.' }),
+      pkgOut));
   }
 
   /* 링크 입력(교차링크) — 결과 상자에서 고친다 */
