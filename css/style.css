@@ -973,4 +973,4 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 .chrow { flex-wrap: wrap; row-gap: 3px; }
 
 /* 린터 결과로 스크롤할 때 상단 탭바에 제목이 가리지 않게 */
-.lint-result { scroll-margin-top: 74px; }
+.lint-result { scroll-margin-top: 112px; }
