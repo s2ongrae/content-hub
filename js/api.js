@@ -222,6 +222,13 @@ export class ContentHubApi {
 
   recordChecklist(data) { return this.post('record_checklist', data); }
 
+  /* 성과(Metrics) — 발행 뒤 채널별 숫자를 시계열로 쌓는다 */
+  listMetrics(filters = {}) { return this.post('list_metrics', filters); }
+
+  recordMetrics(data, action) {
+    return this.post('record_metrics', data, action ? action.key : null);
+  }
+
   /* 운영 · 백업 · 보안 */
   getSystemHealth() { return this.post('get_system_health', {}); }
 

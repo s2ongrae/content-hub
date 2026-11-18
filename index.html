@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/style.css?v=m2-12">
+<link rel="stylesheet" href="css/style.css?v=m2-13">
 </head>
 <body>
 
@@ -26,7 +26,7 @@
     <button type="button" class="brand-chip" data-brand-btn="daejeon_youth" role="tab" aria-selected="true">
       <span class="bc-emoji" aria-hidden="true">🍺</span>
       <span class="bc-name">대전 청년</span>
-      <span class="bc-chan">4채널</span>
+      <span class="bc-chan">5채널</span>
     </button>
     <button type="button" class="brand-chip" data-brand-btn="ppiyak_kimmary" role="tab" aria-selected="false">
       <span class="bc-emoji" aria-hidden="true">🐱</span>
@@ -49,8 +49,10 @@
   <button type="button" class="tab" data-route="board" aria-label="진행 현황" title="전체 진행 단계를 한눈에"><span aria-hidden="true">▦</span><em>현황</em></button>
   <button type="button" class="tab" data-route="approve" aria-label="빠른 승인" title="카드 한 장씩 읽고 바로 승인"><span aria-hidden="true">✅</span><em>승인</em></button>
   <button type="button" class="tab" data-route="capture" aria-label="글감 적기" title="다녀온 곳·아이디어를 새로 적기"><span aria-hidden="true">＋</span><em>글감</em></button>
-  <button type="button" class="tab" data-route="review" aria-label="원고 점검" title="올리기 전에 빠진 것 확인"><span aria-hidden="true">🔍</span><em>점검</em></button>
-  <button type="button" class="tab" data-route="series" aria-label="연재 묶음" title="같은 주제로 이어지는 편 관리"><span aria-hidden="true">🎬</span><em>연재</em></button>
+  <button type="button" class="tab" data-route="perf" aria-label="성과분석" title="이번 주 유효조회·당월 리워드·당근 달성률"><span aria-hidden="true">📈</span><em>성과</em></button>
+  <button type="button" class="tab" data-route="review" aria-label="원고 검수" title="올리기 전에 빠진 것 확인"><span aria-hidden="true">🗒</span><em>검수</em></button>
+  <button type="button" class="tab" data-route="lint" aria-label="발행 전 린터" title="상위노출 8항목으로 초안을 채점"><span aria-hidden="true">🔍</span><em>점검</em></button>
+  <button type="button" class="tab" data-route="series" aria-label="연재 모음" title="같은 주제로 이어지는 편 관리"><span aria-hidden="true">🎬</span><em>연재</em></button>
   <button type="button" class="tab" data-route="knowhow" aria-label="참고 노하우" title="잘 된 글의 비결 모아두기"><span aria-hidden="true">💡</span><em>참고</em></button>
   <button type="button" class="tab" data-route="ops" aria-label="앱 관리" title="연결·백업·시트 점검"><span aria-hidden="true">🛠</span><em>관리</em></button>
 </nav>
@@ -110,7 +112,7 @@
         <button type="button" id="btn-clear-token" class="ghost-btn danger">연결 열쇠 지우기</button>
       </section>
 
-      <p class="version">Content Hub OS · M1 · <span id="build-label">v2-m18</span></p>
+      <p class="version">Content Hub OS · M1 · <span id="build-label">v2-m19</span></p>
     </div>
   </div>
 </dialog>
@@ -131,6 +133,6 @@
   <p style="padding:24px;color:#fff">이 앱은 자바스크립트가 필요합니다.</p>
 </noscript>
 
-<script type="module" src="js/app.js?v=m2-18"></script>
+<script type="module" src="js/app.js?v=m2-19"></script>
 </body>
 </html>

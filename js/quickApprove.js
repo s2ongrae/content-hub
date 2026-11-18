@@ -212,9 +212,10 @@ function channelLine(item) {
     ['블로그', item.blog_status],
     ['숏폼', item.shorts_status],
     ['릴스', item.reels_status],
-    ['클립', item.clip_status]
+    ['클립', item.clip_status],
+    ['당근', item.daangn_status]
   ];
-  return map.filter((m) => m[1]).map((m) => `${m[0]} ${statusKo(m[1])}`).join(' · ');
+  return map.filter((m) => m[1] && m[1] !== 'SKIPPED').map((m) => `${m[0]} ${statusKo(m[1])}`).join(' · ');
 }
 
 function statusKo(s) {

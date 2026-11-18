@@ -17,7 +17,9 @@ const SHEET_SCHEMAS = {
     // M2 — 시리즈 진행률(발행 n/5)과 훅 유형 비교
     'series_id', 'episode_no', 'hook_variant',
     // 인스타 표면 분리 — 릴스(reels_*)와 피드 카드뉴스(ig_feed_*)는 노출 엔진·지표가 다르다
-    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count'
+    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count',
+    // 당근 스토리 — 대전 청년 5번째 채널(2026-11-18). 기존 35칸 순서·이름 불변, 뒤에만 덧붙임
+    'daangn_status', 'daangn_url'
   ],
   Channel_Logs: [
     'log_id', 'brand', 'content_id', 'channel', 'task_type', 'idempotency_key', 'client_id',
@@ -26,7 +28,9 @@ const SHEET_SCHEMAS = {
   ],
   Metrics: [
     'metric_id', 'brand', 'content_id', 'checkpoint', 'channel', 'views', 'avg_dwell_sec',
-    'search_inflow_pct', 'smartblock_exposed', 'likes_comments', 'recorded_at'
+    'search_inflow_pct', 'smartblock_exposed', 'likes_comments', 'recorded_at',
+    // 성과분석(#/perf) — 채널별 최소 입력(2026-11-18, 뒤에만 덧붙임)
+    'valid_views', 'saves', 'reward_krw'
   ],
   Config: [
     'config_key', 'config_group', 'config_value', 'description', 'updated_at'
@@ -242,7 +246,8 @@ function setupContentHubOS() {
           naver_blog: 'youth-daejeon',
           youtube_shorts: '@daejeon_daily',
           instagram_reels: '@daejeon_daily',
-          naver_clip: '38cj7vrin2'
+          naver_clip: '38cj7vrin2',
+          daangn: 'daangn_story'
         }),
         JSON.stringify([]),
         'TWO_STAGE_CIRCULAR',
@@ -274,7 +279,7 @@ function setupContentHubOS() {
           instagram_reels: '@m2ow.mari',
           naver_clip: ''   // 2026-11-16: 메리 트랙도 클립 업로드 대상. 채널 ID는 업로드 단계에서 채운다
         }),
-        JSON.stringify(['naver_blog']),
+        JSON.stringify(['naver_blog', 'daangn']),
         'ONE_STAGE_SHORTFORM',
         JSON.stringify({
           character: '삐약 김메리',

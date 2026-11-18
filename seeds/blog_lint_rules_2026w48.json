@@ -1,0 +1,114 @@
+{
+  "version": "2026w48",
+  "updated_at": "2026-11-18",
+  "source": "downloads/대전블로그_상위노출_벤치마킹_20261118.md §6-3·6-4 — 네이버 블로그 관련도순 상위 24건 실측(2026-11-18 12:00)",
+  "note": "웹앱(js/blogLint.js)과 파이썬 CLI(tools/blog_lint_cli.py)가 같이 읽는 데이터입니다. 점수 가중치 합은 100입니다.",
+  "benchmark": {
+    "sample": "네이버 블로그 검색 관련도순 상위 24건 (어은동 맛집·봉명동 맛집·대전 삼겹살 맛집·대전 유성 칼국수)",
+    "median": {
+      "chars": 2017,
+      "photos": 22.5,
+      "chars_per_photo": 110,
+      "paragraphs": 143,
+      "avg_paragraph_chars": 15.2,
+      "short_lines": 74,
+      "first_screen_info_rate_pct": 75,
+      "info_elements": 5,
+      "hashtags": 5
+    },
+    "ours_before": {
+      "content_ids": ["224480755004", "224459297302"],
+      "chars": [2764, 2999],
+      "photos": [15, 14],
+      "chars_per_photo": [184, 214],
+      "avg_paragraph_chars": [25.8, 29.7],
+      "short_lines": [37, 32],
+      "hashtags": [13, 0]
+    }
+  },
+  "targets": {
+    "title_window": 14,
+    "title_len": [26, 45],
+    "first_screen_chars": 400,
+    "body_len": [1700, 2300],
+    "body_warn": [1500, 2500],
+    "photos_min": 16,
+    "chars_per_photo": [85, 130],
+    "chars_per_photo_max": 140,
+    "avg_line_max": 20,
+    "short_lines_min": 60,
+    "short_lines_warn": 50,
+    "hashtag_count": [8, 14],
+    "hashtag_warn_over": 15,
+    "core_tags_required": 3,
+    "short_line_max_chars": 16
+  },
+  "coreTags": ["대전맛집", "유성맛집", "봉명동맛집"],
+  "titleLexicon": ["대전", "유성", "봉명동", "어은동", "궁동", "온천", "관평동", "둔산", "삼겹살", "칼국수", "고기", "맛집", "술집", "해장", "제육", "혼밥", "주차"],
+  "rules": [
+    {
+      "id": "title_front",
+      "label": "제목 앞배치",
+      "weight": 14,
+      "pass": "앞 14자 안에 지역명 또는 메뉴명",
+      "warn": "앞 14자에 지역·메뉴 없음",
+      "fix": "제목 맨 앞에 [지역 + 메뉴]를 넣으세요. 예: [봉명동 삼겹살] 미미삼겹 …"
+    },
+    {
+      "id": "title_len",
+      "label": "제목 길이",
+      "weight": 10,
+      "pass": "26~45자",
+      "warn": "25자 이하·46자 이상",
+      "fix": "검색 화면에서 잘리지 않는 26~45자로 맞추세요(콜론 뒤 감성 한 줄은 줄이기)."
+    },
+    {
+      "id": "first_screen",
+      "label": "첫 화면 정보",
+      "weight": 14,
+      "pass": "본문 앞 400자에 주소·영업시간·전화 중 1개 이상",
+      "warn": "앞 400자에 방문 팩트 없음",
+      "fix": "도입 썰 3줄 뒤에 📍위치 ⏰영업 🚗주차 정보 카드를 바로 붙이세요."
+    },
+    {
+      "id": "body_len",
+      "label": "본문 분량",
+      "weight": 12,
+      "pass": "1,700~2,300자",
+      "warn": "1,500자 미만·2,500자 초과",
+      "fix": "정보를 늘리지 말고 덜어내세요. 감성 썰을 줄이고 사진으로 바꾸는 쪽이 빠릅니다."
+    },
+    {
+      "id": "photo_density",
+      "label": "사진 밀도",
+      "weight": 14,
+      "pass": "사진 16장 이상 · 사진 1장당 85~130자",
+      "warn": "사진 16장 미만 또는 장당 140자 초과",
+      "fix": "사진을 18~22장으로 늘리고 글자 덩어리를 95~120자 단위로 끊으세요."
+    },
+    {
+      "id": "line_rhythm",
+      "label": "문단 호흡",
+      "weight": 12,
+      "pass": "빈 줄 제외 평균 20자 이하",
+      "warn": "평균 21자 초과",
+      "fix": "한 줄에 한 정보만. 평균 15~18자로 끊으면 모바일 스크롤 리듬이 살아납니다."
+    },
+    {
+      "id": "short_lines",
+      "label": "짧은 줄",
+      "weight": 12,
+      "pass": "16자 이하 줄 60개 이상",
+      "warn": "50개 미만",
+      "fix": "짧은 줄을 65개 이상으로 늘리세요(가격·대기시간·단점은 한 줄씩)."
+    },
+    {
+      "id": "hashtags",
+      "label": "해시태그",
+      "weight": 12,
+      "pass": "8~14개 · 핵심 3개 포함",
+      "warn": "15개 초과 또는 핵심 태그 빠짐",
+      "fix": "10~12개로 유지하고 전부 본문·제목과 직접 연관된 키워드만 쓰세요(범용 태그는 스팸 필터 위험)."
+    }
+  ]
+}

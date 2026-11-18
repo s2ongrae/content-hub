@@ -19,6 +19,8 @@ const ACTION_WHITELIST = {
   create_content:       { mode: 'WRITE', allowDegraded: false, m1: true },
   update_content:       { mode: 'WRITE', allowDegraded: false, m1: true },
   record_checklist:     { mode: 'WRITE', allowDegraded: false, m1: true },   // 모바일 10초 승인용
+  list_metrics:         { mode: 'READ',  allowDegraded: true,  m1: true },   // 성과분석(#/perf) 읽기
+  record_metrics:       { mode: 'WRITE', allowDegraded: false, m1: true },   // 성과 숫자 입력
   // 운영 · 백업 · 보안 (M1에서 실제 구현)
   get_system_health:    { mode: 'READ',  allowDegraded: true,  m1: true },
   // 장시간 액션은 라우터 락을 잡지 않는다(30초 예산·전역 블로킹 방지). 내부 단계가 자체 락을 쓴다.
@@ -34,7 +36,6 @@ const ACTION_WHITELIST = {
   report_publish:       { mode: 'WRITE', allowDegraded: false, m1: false },
   report_cross_link:    { mode: 'WRITE', allowDegraded: false, m1: false },
   // 분석 · 벤치마크 (M3)
-  record_metrics:       { mode: 'WRITE', allowDegraded: false, m1: false },
   record_same_age_metric:{ mode: 'WRITE', allowDegraded: false, m1: false },
   ingest_benchmark:     { mode: 'WRITE', allowDegraded: false, m1: false },
   manage_prompt_rule:   { mode: 'WRITE', allowDegraded: false, m1: false },

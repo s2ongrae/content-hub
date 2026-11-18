@@ -9,11 +9,14 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
+import { renderPerfView, loadMetrics } from './perfView.js';
+import { renderLintView } from './lintView.js';
+import { renderDaangnSection, loadDaangnSeed } from './daangnView.js';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
 const BRANDS = {
-  daejeon_youth: { name: '대전 청년', emoji: '🍺', channels: '블로그 · 쇼츠 · 인스타(릴스·피드) · 클립' },
+  daejeon_youth: { name: '대전 청년', emoji: '🍺', channels: '블로그 · 쇼츠 · 인스타(릴스·피드) · 클립 · 당근' },
   ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 인스타(릴스·피드) · 클립' }
 };
 
@@ -63,7 +66,11 @@ const state = {
   reviewId: null,
   checklist: {},
   loading: false,
-  quick: null
+  quick: null,
+  metrics: [],
+  metricsError: null,
+  metricsAt: null,
+  daangnSeed: null
 };
 
 /* ────────────────────────── DOM 헬퍼 ────────────────────────── */
@@ -132,7 +139,9 @@ const CHANNELS = [
   { key: 'shorts', label: '쇼츠', st: 'shorts_status', url: 'shorts_url' },
   { key: 'reels', label: '릴스', st: 'reels_status', url: 'reels_url' },
   { key: 'feed', label: '피드', st: 'ig_feed_status', url: 'ig_feed_url' },
-  { key: 'clip', label: '클립', st: 'clip_status', url: 'clip_url' }
+  { key: 'clip', label: '클립', st: 'clip_status', url: 'clip_url' },
+  /* 5번째 발행 채널 — 대전 청년만. 메리 트랙은 daangn_status=SKIPPED 고정으로 제외한다. */
+  { key: 'daangn', label: '당근', st: 'daangn_status', url: 'daangn_url' }
 ];
 
 const DONE_STATES = ['UPLOADED', 'DONE', 'PUBLISHED', 'LINKED'];
@@ -152,9 +161,9 @@ const channelState = (v) => {
   return 'none';
 };
 
-/* 트랙별 대상 채널 — 김메리는 블로그를 쓰지 않는다(SKIPPED 고정). 칸은 두 트랙 다 5개. */
+/* 트랙별 대상 채널 — 김메리는 블로그·당근을 쓰지 않는다. 대전 청년은 6칸(당근 포함). */
 const brandChannels = (brand) => (brand === 'ppiyak_kimmary'
-  ? CHANNELS.filter((c) => c.key !== 'blog')
+  ? CHANNELS.filter((c) => c.key !== 'blog' && c.key !== 'daangn')
   : CHANNELS);
 
 /* 그 카드가 실제로 올리는 채널 — 일부러 건너뛴 채널은 분모에서 뺀다(1/5가 아니라 1/1로 보이게) */
@@ -169,7 +178,8 @@ const CH_ICONS = {
   shorts: ['M2.5 3.1h7v5.8h-7z', 'M5.2 4.7l2.2 1.3-2.2 1.3z'],
   reels: ['M2.3 2.5h7.4v7H2.3z', 'M2.3 4.6h7.4', 'M4.3 2.5l.9 2.1', 'M6.9 2.5l.9 2.1'],
   feed: ['M2.4 2.4h3v3h-3z', 'M6.6 2.4h3v3h-3z', 'M2.4 6.6h3v3h-3z', 'M6.6 6.6h3v3h-3z'],
-  clip: ['M7.1 1.9L3.3 6.5h2.5l-.7 3.6 3.8-4.7H6.3z']
+  clip: ['M7.1 1.9L3.3 6.5h2.5l-.7 3.6 3.8-4.7H6.3z'],
+  daangn: ['M6 10.6L2.9 5.4h6.2z', 'M4.6 3.4c.4-.9 1.2-1.5 1.9-1.4', 'M7.4 3.4c-.4-.9-1.2-1.5-1.9-1.4']
 };
 
 function channelIcon(key, size = 12) {
@@ -204,7 +214,7 @@ function channelChip(item, c) {
 
 function renderChannelRow(item) {
   const row = h('div', { class: 'chrow' });
-  CHANNELS.forEach((c) => row.appendChild(channelChip(item, c)));
+  brandChannels(item.brand || state.brand).forEach((c) => row.appendChild(channelChip(item, c)));
   const targets = liveChannels(item);
   const done = targets.filter((c) => channelDone(item[c.st])).length;
   row.appendChild(h('span', { class: 'cc-frac', text: done + '/' + targets.length }));
@@ -218,6 +228,7 @@ async function boot() {
     wireChrome();
     state.route = (location.hash.replace(/^#\/?/, '') || 'board').split('?')[0];
     applyBrand(loadConfig().activeBrand || 'daejeon_youth', { silent: true });
+    loadDaangnSeed().then((s) => { state.daangnSeed = s; });
     await refresh();
     renderRoute();
     loadHealth();
@@ -304,6 +315,8 @@ async function refresh() {
     }
   } finally {
     state.loading = false;
+    // 성과 숫자는 별도 호출 — 실패해도 화면은 그대로 그린다(조용한 안내는 성과 화면에서)
+    await loadMetrics(state, api);
     updateApproveBadge();
     renderBanners();
     updateConnDot();
@@ -418,16 +431,20 @@ function renderRoute() {
   });
   const main = $('#main');
   clear(main);
+  const ctx = { h, state, api, toast, friendlyError, banner, pageHead, relTime, BRANDS, brandChannels, channelLabel, channelState, channelIcon, CHANNELS, renderRoute, openDetail };
   const view = {
     board: renderBoard,
     approve: renderApprove,
     capture: renderCapture,
     review: renderReview,
+    perf: (main) => renderPerfView(main, ctx),
+    lint: (main) => renderLintView(main, ctx) || null,
     series: (main) => renderSeriesView(main, { h, state, toast, friendlyError }),
     knowhow: renderKnowHow,
     ops: renderOps
   }[route] || renderBoard;
-  view(main);
+  const maybe = view(main);
+  if (maybe && typeof maybe.catch === 'function') maybe.catch((err) => toast(friendlyError(err), 'err'));
   window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
 }
 
@@ -1268,7 +1285,8 @@ function analysisSection(contentId, d, m, payload, dlg) {
     g.note ? h('p', { class: 'ana-note', style: 'margin-top:7px', text: g.note }) : null));
 
   const chanWrap = h('div', { class: 'ana-chans' });
-  CHANNELS.forEach((c) => {
+  const chans = brandChannels(m.brand || state.brand);
+  chans.forEach((c) => {
     const raw = m[c.st];
     const url = m[c.url];
     const row = h('div', { class: 'ana-chan', 'data-ch': c.key },
@@ -1279,11 +1297,19 @@ function analysisSection(contentId, d, m, payload, dlg) {
     chanWrap.appendChild(row);
   });
   wrap.appendChild(h('section', null,
-    h('div', { class: 'ana-h' }, h('span', { text: '채널별 현황' }), h('span', { class: 'n', text: CHANNELS.length + '개' })),
+    h('div', { class: 'ana-h' }, h('span', { text: '채널별 현황' }), h('span', { class: 'n', text: chans.length + '개' })),
     chanWrap));
 
-  wrap.appendChild(h('p', { class: 'ana-note',
-    text: '조회·저장·댓글 수는 아직 앱이 자동으로 받아오지 않아요. 다음 업데이트에서 직접 적는 칸이 생깁니다.' }));
+  /* 당근 수익화 트래커 + 발행 전 점검 3개 — 대전 청년 카드에만 */
+  const daangn = renderDaangnSection({ h, item: m, state, seed: state.daangnSeed });
+  if (daangn) wrap.appendChild(daangn);
+
+  wrap.appendChild(h('div', { class: 'ana-note-row' },
+    h('span', { class: 'ana-note', style: 'margin:0', text: '조회·유효시청·리워드는 성과 화면에서 직접 넣습니다.' }),
+    h('button', {
+      class: 'ghost-btn sm', type: 'button', text: '성과 탭 열기',
+      onclick: () => { dlg.close(); location.hash = '#/perf'; }
+    })));
 
   wrap.appendChild(detailActionButtons(contentId, d, m, dlg));
   return wrap;
@@ -1298,10 +1324,10 @@ function sourceSection(contentId, d, m, payload, dlg) {
     h('dt', { text: '지역·분류' }), h('dd', { text: [m.region_dong, m.category].filter(Boolean).join(' · ') || '-' }),
     h('dt', { text: '키워드' }), h('dd', { text: m.target_keywords || '-' }),
     h('dt', { text: '품질 점수' }), h('dd', { text: m.quality_score ? m.quality_score + '점' : '아직 없음' }),
-    h('dt', { text: '채널' }), h('dd', { text: CHANNELS.map((c) => c.label + ' ' + (m[c.st] ? channelLabel(m[c.st]) : '아직 없음')).join(' · ') }),
+    h('dt', { text: '채널' }), h('dd', { text: brandChannels(m.brand || state.brand).map((c) => c.label + ' ' + (m[c.st] ? channelLabel(m[c.st]) : '아직 없음')).join(' · ') }),
     h('dt', { text: '수정' }), h('dd', { text: relTime(m.updated_at) + ' · ' + (m.updated_by || '-') })));
 
-  const links = CHANNELS.filter((c) => m[c.url]);
+  const links = brandChannels(m.brand || state.brand).filter((c) => m[c.url]);
   if (links.length) {
     wrap.appendChild(h('h3', { style: 'margin:14px 0 6px;font-size:13px', text: '채널 링크' }));
     const dl = h('dl', { class: 'kv' });

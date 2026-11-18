@@ -8,8 +8,8 @@
 
 | 트랙 | 채널 | 발행 규칙 |
 |---|---|---|
-| `daejeon_youth` 🍺 대전 청년 | 네이버 블로그 · 유튜브 쇼츠 · 인스타 릴스 + 인스타 피드(카드뉴스) · 네이버 클립 | 숏폼 3종 → 블로그(숏폼 임베드) → 숏폼 고정댓글에 블로그 URL 역삽입 → `LINKED`. 카드뉴스 피드는 블로그 발행 뒤 D+1~D+2 시차 |
-| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠 · 인스타 릴스 · 네이버 클립 (+ 피드 선택) | 쇼츠 · 릴스 · 클립 업로드 즉시 `LINKED` (블로그만 `SKIPPED`) |
+| `daejeon_youth` 🍺 대전 청년 | 네이버 블로그 · 유튜브 쇼츠 · 인스타 릴스 + 인스타 피드(카드뉴스) · 네이버 클립 · **당근 스토리** | 숏폼 3종 → 블로그(숏폼 임베드) → 숏폼 고정댓글에 블로그 URL 역삽입 → `LINKED`. 카드뉴스 피드는 블로그 발행 뒤 D+1~D+2 시차. 당근은 쇼츠·릴스·클립 직후에 3가지만 손봐서 같이 올린다(역삽입 댓글은 당근만 생략) |
+| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠 · 인스타 릴스 · 네이버 클립 (+ 피드 선택) | 쇼츠 · 릴스 · 클립 업로드 즉시 `LINKED` (블로그·당근만 `SKIPPED`) |
 
 ## 지금 되는 것 (M1)
 
@@ -24,6 +24,9 @@
 9. **폰 보드** — 좁은 화면(≤699px)에서는 6열 칸반 대신 상태별 세로 스택으로 바뀝니다(가로 스크롤 없음). 0건 열은 제목 줄만 남습니다.
 10. **메타 보정** — 카드 상세에서 `target_keywords`·`quality_score`를 직접 채워 시트에 저장합니다(발행 기록만 가져온 행의 빈칸 보정).
 11. **홈 화면 앱(PWA)** — `manifest.webmanifest` + 192/512 아이콘. 안드로이드 크롬에서 "앱 설치"로 주소창 없는 화면. Service Worker는 넣지 않습니다(캐시 꼬임 방지).
+12. **당근 스토리(5번째 채널)** — 대전 청년 카드에만 `[당근]` 칩이 붙고, 상세 시트에 **수익화 트래커**(당월 인정 스토리 N/5 · 유효 시청 N/2,000 · 확정 기본보상 · 달성 배지)와 **발행 전 점검 3개**(직접 촬영·설명 30자·협찬 표기)가 있습니다. 메리 트랙은 `daangn_status=SKIPPED` 고정으로 칩을 그리지 않습니다. 근거: [`docs/DAANGN_STORY_CHANNEL_v1.md`](docs/DAANGN_STORY_CHANNEL_v1.md), 수치: `seeds/daangn_story_v1.json`.
+13. **성과분석(#/perf)** — 큰 숫자 3개(이번 주 유효조회 · 당월 누적 리워드 · 당근 달성률) + **오늘 입력할 숫자**(D+1·D+7·D+14가 걸린 카드만 채널별 한 줄 입력) + **D+7 승자(🏆)·D+14 리프레시(🔄) 배지** + 최근 기록. `Metrics` 시트에 시계열로 쌓고, GAS가 `list_metrics`/`record_metrics`를 모르면 빨간 오류 대신 조용한 안내만 띄웁니다.
+14. **발행 전 린터(#/lint)** — 상위 24건 실측에서 뽑은 **8항목**(제목 앞배치·제목 길이·첫 화면 정보·본문 분량·사진 밀도·문단 호흡·짧은 줄·해시태그)을 PASS·주의·고칠 것으로 채점합니다. 같은 규칙을 웹앱(`js/blogLint.js`)과 CLI(`tools/blog_lint_cli.py`)가 `seeds/blog_lint_rules_2026w48.json` 하나로 공유합니다. 기준 문서: [`docs/BLOG_STANDARD_v4.md`](docs/BLOG_STANDARD_v4.md).
 
 ## 구조
 
@@ -32,10 +35,16 @@ index.html              # 앱 (CSP meta, 토큰 마스킹)
 css/style.css           # 브랜드 테마(네이비·오렌지 / 코랄·크림), 상태 배지, 폰·PC 레이아웃
 js/api.js               # 30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 미설정 시 ERR_NO_CONFIG
 js/quickApprove.js      # 폰 10초 승인 카드 스택
-js/app.js               # 해시 라우터 · 브랜드 스위처 · 화면 6종 (렌더링 textContent 전용)
+js/app.js               # 해시 라우터 · 브랜드 스위처 · 화면 8종 (렌더링 textContent 전용)
+js/perfView.js          # 성과분석(#/perf) — 큰 숫자·오늘 입력함·승자/리프레시 배지
+js/lintView.js          # 발행 전 린터(#/lint) — 8항목 채점 화면
+js/blogLint.js          # 린터 규칙 엔진(웹앱·CLI 공용)·window.BlogLint
+js/daangnView.js        # 당근 수익화 트래커·발행 전 점검 3개
 js/studioView.js        # 숏폼 공방(연재 탭) — 훅 채점·대본 뼈대·제목/썸네일·컷 리스트·댓글·바이럴
 js/yt/                  # 무료 MIT 스킬의 계산을 한국어로 옮긴 모듈(hookscore·titlelint·edl·viral·preset·comments)
 seeds/skills/           # 숏폼 프리셋·훅 공식·댓글 규칙·말투(웹앱과 파이썬 도구가 함께 읽는 데이터)
+seeds/daangn_story_v1.json        # 당근 자격·보상·규격·점검 3개
+tools/blog_lint_cli.py  # 초안 md 8항목 검사 CLI(통과 0 · 고칠 것 1)
 tools/yt/               # 노트북·클로드 코드용 파이썬 도구 4개 + 스킬 설치 스크립트
 .claude/skills/yt-*     # 클로드가 바로 부르는 숏폼·유튜브 스킬 12개
 gas/Setup.gs            # 23시트 · Drive 폴더 · 토큰(비노출) · 시딩 · 트리거
@@ -89,7 +98,9 @@ DEPLOY_GUIDE.md         # 시트 + GAS 3분 배포 가이드
 
 M1(이 저장소)은 **프론트 7화면 + GAS 백엔드 12액션**입니다. 파이프라인 리스/재시도(`Pipeline.gs`), 트랙별 발행 전 린터(`QualityGate.gs`), 동일 경과일 아웃라이어(`AnalyticsEngine.gs`), 규칙 A/B(`BenchmarkEngine.gs`)는 M2~M3.
 
-### 시트 스키마 (2026-11-16)
-`Contents`는 29 → **35컬럼**입니다. 오른쪽 끝에 6개를 덧붙였고 기존 행·값은 그대로입니다.
-`series_id` · `episode_no` · `hook_variant`(M2 시리즈) / `ig_feed_status` · `ig_feed_url` · `ig_carousel_count`(인스타 피드).
-**읽기·표시는 지금 동작**하고, 쓰기는 `gas/Code.gs`의 `editable` 목록에 넣어 두었으니 **Apps Script 재배포 후** 동작합니다.
+### 시트 스키마 (2026-11-18)
+`Contents`는 29 → 35 → **37컬럼**입니다. 오른쪽 끝에만 덧붙였고 기존 행·값은 그대로입니다.
+`series_id` · `episode_no` · `hook_variant`(M2 시리즈) / `ig_feed_status` · `ig_feed_url` · `ig_carousel_count`(인스타 피드) / **`daangn_status` · `daangn_url`(당근)**.
+`Metrics`는 기존 11컬럼 뒤에 **`valid_views` · `saves` · `reward_krw`** 3칸을 덧붙였습니다.
+**읽기·표시는 지금 동작**하고, 쓰기는 `gas/Code.gs`의 `editable` 목록·핸들러에 넣어 두었으니 **Apps Script 재배포 후** 동작합니다.
+칼럼은 첫 호출 때 `ensureSchemaV2_`가 헤더만 늘리므로 시트를 새로 만들 필요는 없습니다(초기 설치를 다시 돌려도 됨).

@@ -74,6 +74,7 @@ function doPost(e) {
     }
 
     ss = SpreadsheetApp.getActiveSpreadsheet();
+    ensureSchemaV2_(ss);   // 당근 2칸 + Metrics 3칸 — 첫 호출에만 헤더를 늘린다(기존 열 순서 불변)
 
     // 인증 · 화이트리스트 · 브랜드
     const auth = authenticateRequest_(e, body, { allowAllBrand: true, requireBrand: false });
@@ -219,6 +220,8 @@ const M1_HANDLERS = {
   create_content: handleCreateContent_,
   update_content: handleUpdateContent_,
   record_checklist: handleRecordChecklist_,
+  list_metrics: handleListMetrics_,
+  record_metrics: handleRecordMetrics_,
   get_system_health: handleGetSystemHealth_,
   backup_now: handleBackupNow_,
   integrity_check: handleIntegrityCheck_,
@@ -291,7 +294,8 @@ function handleListContents_(ss, payload, ctx) {
         growth_tag: r.growth_tag, updated_at: r.updated_at,
         target_keywords: r.target_keywords,
         series_id: r.series_id, episode_no: r.episode_no, hook_variant: r.hook_variant,
-        ig_feed_status: r.ig_feed_status, ig_feed_url: r.ig_feed_url, ig_carousel_count: r.ig_carousel_count
+        ig_feed_status: r.ig_feed_status, ig_feed_url: r.ig_feed_url, ig_carousel_count: r.ig_carousel_count,
+        daangn_status: r.daangn_status, daangn_url: r.daangn_url
       };
     })
   };
@@ -398,6 +402,8 @@ function handleCreateContent_(ss, payload, ctx) {
     reels_url: '',
     clip_status: 'PENDING',   // 2026-11-16 사용자 확정 — 메리 트랙도 네이버 클립을 올린다(3채널 완주)
     clip_url: '',
+    daangn_status: isKimmary ? 'SKIPPED' : 'PENDING',   // 당근 스토리 — 대전 청년만 5번째 채널
+    daangn_url: '',
     allow_partial_shortform: payload.allow_partial_shortform === true,
     growth_tag: 'NONE',
     created_at: now,
@@ -473,7 +479,8 @@ function handleUpdateContent_(ss, payload, ctx) {
     'blog_status', 'blog_url', 'shorts_status', 'shorts_url', 'reels_status', 'reels_url',
     'clip_status', 'clip_url', 'allow_partial_shortform', 'growth_tag', 'receipt_verified',
     'series_id', 'episode_no', 'hook_variant',
-    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count'];
+    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count',
+    'daangn_status', 'daangn_url'];
   editable.forEach(function (k) {
     if (payload[k] !== undefined && headers.indexOf(k) >= 0) {
       all[rowIndex][headers.indexOf(k)] = payload[k];
@@ -738,4 +745,170 @@ function reapExpiredLeases_() {
   }
   if (reaped) sheet.getRange(2, 1, values.length, 10).setValues(values);
   return { reaped: reaped };
+}
+
+/* ------------------------------------------------------------------ *
+ * 성과(Metrics) — 성과분석 #/perf · 당근 수익화 트래커
+ *
+ * Contents 35칸은 건드리지 않는다. 시계열은 Metrics 시트에만 쌓는다.
+ *  · checkpoint = 스냅샷(D1/D7/D14/D30)   · channel = blog|shorts|reels|clip|daangn
+ *  · 기존 열(metric_id, brand, content_id, checkpoint, channel, views, avg_dwell_sec,
+ *    search_inflow_pct, smartblock_exposed, likes_comments, recorded_at) 순서·이름 불변,
+ *    뒤에 valid_views · saves · reward_krw 3칸만 덧붙인다.
+ * ------------------------------------------------------------------ */
+
+/** 2026-11-18 스키마 확장 — 첫 호출에만 헤더를 늘리고 ScriptProperty로 표시한다. */
+function ensureSchemaV2_(ss) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('SCHEMA_V2_DAANGN') === '1') return;
+  ensureSheetColumns_(ss, 'Contents', ['daangn_status', 'daangn_url']);
+  ensureSheetColumns_(ss, 'Metrics', ['valid_views', 'saves', 'reward_krw']);
+  props.setProperty('SCHEMA_V2_DAANGN', '1');
+}
+
+/** 시트에 없는 열만 헤더 줄 끝에 붙인다(기존 열 위치·값 불변). */
+function ensureSheetColumns_(ss, sheetName, cols) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return false;
+  const lastCol = sheet.getLastColumn();
+  const headers = lastCol < 1 ? [] : sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  const missing = cols.filter(function (c) { return headers.indexOf(c) < 0; });
+  if (!missing.length) return false;
+  sheet.getRange(1, lastCol + 1, 1, missing.length)
+    .setValues([missing])
+    .setBackground('#0F172A')
+    .setFontColor('#F8FAFC')
+    .setFontWeight('bold');
+  return true;
+}
+
+function numOr_(v, dflt) {
+  if (v === '' || v == null) return dflt;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : dflt;
+}
+
+/** 저장 시점 날짜 문자열(YYYY-MM-DD)을 KST 자정 ISO로. 없으면 지금. */
+function metricStamp_(v) {
+  const day = String(v || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return day + 'T00:00:00+09:00';
+  return formatKstIso_(new Date());
+}
+
+/**
+ * 성과 숫자 입력. items 배열로 여러 채널을 한 번에 넣는다.
+ * payload = { items:[{content_id, channel, snapshot, views, valid_views, likes_comments, saves, reward_krw, avg_dwell_sec, search_inflow_pct, measured_at}] }
+ */
+function handleRecordMetrics_(ss, payload, ctx) {
+  const items = (Array.isArray(payload.items) && payload.items.length) ? payload.items : [payload];
+  const sheet = ss.getSheetByName('Metrics');
+  if (!sheet) throw createAppError_('ERR_SERVER_CONFIG', 'Metrics 시트가 없습니다. 초기 설치를 실행하세요.');
+  ensureSheetColumns_(ss, 'Metrics', ['valid_views', 'saves', 'reward_krw']);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+
+  const nowStamp = formatKstIso_(new Date());
+  const rows = [];
+  const ids = [];
+  const daangnContents = [];
+
+  items.forEach(function (it) {
+    const contentId = String(it.content_id || '').trim();
+    if (!contentId) throw createAppError_('ERR_VALIDATION_FAILED', 'content_id 가 필요합니다.');
+    const channel = String(it.channel || '').trim();
+    if (!channel) throw createAppError_('ERR_VALIDATION_FAILED', 'channel 이 필요합니다.');
+    if (contentId.length > 64 || channel.length > 32) {
+      throw createAppError_('ERR_VALIDATION_FAILED', 'content_id·channel 이 너무 깁니다.');
+    }
+    const stamp = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMddHHmmss');
+    const metricId = 'MET-' + stamp + '-' + Math.floor(100 + Math.random() * 900);
+    ids.push(metricId);
+    if (channel === 'daangn') daangnContents.push(contentId);
+
+    const rowObj = {
+      metric_id: metricId,
+      brand: it.brand || payload.brand || ctx.brand || '',
+      content_id: contentId,
+      checkpoint: String(it.snapshot || it.checkpoint || 'D1').toUpperCase(),
+      channel: channel,
+      views: numOr_(it.views, 0),
+      avg_dwell_sec: numOr_(it.avg_dwell_sec, 0),
+      search_inflow_pct: numOr_(it.search_inflow_pct, 0),
+      smartblock_exposed: it.smartblock_exposed === true,
+      likes_comments: numOr_(it.likes_comments, 0),
+      recorded_at: metricStamp_(it.measured_at || it.recorded_at),
+      valid_views: numOr_(it.valid_views, 0),
+      saves: numOr_(it.saves, 0),
+      reward_krw: numOr_(it.reward_krw, 0)
+    };
+    rows.push(headers.map(function (h) { return rowObj[h] === undefined ? '' : rowObj[h]; }));
+  });
+
+  const lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow + 1, 1, rows.length, headers.length).setValues(rows);
+
+  /* 당근 숫자를 넣었다면 = 그 스토리를 올렸다는 뜻. 비어 있던 상태만 UPLOADED로 올린다(되돌리지 않음). */
+  daangnContents.forEach(function (id) {
+    try { markDaangnUploaded_(ss, id); } catch (err) { /* 표시 실패가 저장을 막지 않게 */ }
+  });
+
+  return { count: rows.length, metric_ids: ids, recorded_at: nowStamp };
+}
+
+function markDaangnUploaded_(ss, contentId) {
+  const sheet = ss.getSheetByName('Contents');
+  if (!sheet) return false;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  const idCol = headers.indexOf('content_id');
+  const stCol = headers.indexOf('daangn_status');
+  if (idCol < 0 || stCol < 0) return false;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  const vals = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  for (let i = 0; i < vals.length; i++) {
+    if (String(vals[i][idCol]) !== String(contentId)) continue;
+    const cur = String(vals[i][stCol] || '').toUpperCase();
+    if (cur && cur !== 'PENDING') return false;   // 이미 올림·실패·건너뜀 기록이 있으면 그대로 둔다
+    sheet.getRange(i + 2, stCol + 1).setValue('UPLOADED');
+    return true;
+  }
+  return false;
+}
+
+/** 성과 조회 — 기간(from~to, YYYY-MM-DD)·브랜드·카드·채널로 거른다. */
+function handleListMetrics_(ss, payload, ctx) {
+  const from = String(payload.from || '').slice(0, 10);
+  const to = String(payload.to || '').slice(0, 10);
+  const brand = String(payload.brand || ctx.brand || '');
+  const contentId = String(payload.content_id || '').trim();
+  const channel = String(payload.channel || '').trim();
+
+  const rows = readSheetAsObjects_(ss, 'Metrics');
+  const out = rows.filter(function (r) {
+    if (!r.content_id) return false;
+    if (brand && brand !== 'ALL' && String(r.brand) !== brand) return false;
+    if (contentId && String(r.content_id) !== contentId) return false;
+    if (channel && String(r.channel) !== channel) return false;
+    const day = String(r.recorded_at || '').slice(0, 10);
+    if (from && day && day < from) return false;
+    if (to && day && day > to) return false;
+    return true;
+  }).map(function (r) {
+    return {
+      metric_id: r.metric_id,
+      brand: r.brand,
+      content_id: String(r.content_id),
+      channel: String(r.channel || ''),
+      snapshot: String(r.checkpoint || ''),
+      views: Number(r.views) || 0,
+      valid_views: Number(r.valid_views) || 0,
+      avg_dwell_sec: Number(r.avg_dwell_sec) || 0,
+      search_inflow_pct: Number(r.search_inflow_pct) || 0,
+      likes_comments: Number(r.likes_comments) || 0,
+      saves: Number(r.saves) || 0,
+      reward_krw: Number(r.reward_krw) || 0,
+      measured_at: String(r.recorded_at || '')
+    };
+  }).sort(function (a, b) { return String(a.measured_at).localeCompare(String(b.measured_at)); });
+
+  return { brand: brand, from: from, to: to, count: out.length, rows: out };
 }
