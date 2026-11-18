@@ -206,6 +206,50 @@ function judgeHashtags(m, t, core) {
   return st('near', label, n < lo ? (lo - n) + '개 부족' : (n > hi ? (n - hi) + '개 초과' : '핵심 태그 1개 빠짐'));
 }
 
+/* ── 링크 카드 3항목 (2026-11-18, 스펙 §7) — 점수 계산에는 넣지 않는다 ── */
+const LINK_CARD_RE = /\[LINK_CARD:\s*([^\]\s]+)\s*\]/g;
+const LINK_FORBIDDEN = /여기|링크|클릭|참고|바로가기/;
+
+function judgeLinkCard(m) {
+  const body = String((m && m.body) || '');
+  const stripped = body.replace(LINK_CARD_RE, '');
+  const cards = (body.match(LINK_CARD_RE) || []).length;
+  if (/https?:\/\//.test(stripped)) return st('warn', '줄글 URL 있음', '링크 카드로 바꾸세요');
+  if (cards === 0) return st('near', '카드 0개', '관련 내 글 1개를 링크 카드로 넣으세요');
+  if (cards > 2) return st('warn', cards + '개', '링크 카드는 1~2개를 권장합니다');
+  return st('pass', cards + '개', '카드 1개 = URL 1개');
+}
+
+function judgeLinkAnchor(m) {
+  const body = String((m && m.body) || '');
+  const re = /\[LINK_CARD:[^\]]*\]/g;
+  let hit;
+  let n = 0;
+  const bad = [];
+  while ((hit = re.exec(body))) {
+    n += 1;
+    const before = body.slice(0, hit.index).split('\n').map((s) => s.trim()).filter(Boolean);
+    const prev = before.length ? before[before.length - 1].replace(/^[>*\-\s]+/, '') : '';
+    if (prev.length < 5 || LINK_FORBIDDEN.test(prev)) bad.push(prev || '(설명 없음)');
+  }
+  if (!n) return st('near', '카드 없음', '카드 앞에 글 제목을 그대로 쓴 한 줄을 두세요');
+  if (bad.length) return st('warn', bad.length + '건', '카드 앞 설명에 글 핵심 주제를 적으세요');
+  return st('pass', 'OK', '카드 앞 한 줄 설명 있음');
+}
+
+function judgeEmbedHint(m) {
+  const body = String((m && m.body) || '');
+  const n = (body.match(/\[LINK_CARD:[^\]]*\]/g) || []).length;
+  if (!n) return st('near', '—', '카드가 없으면 안내도 필요 없습니다');
+  return st('pass', '안내 표시', 'URL 붙여넣고 Enter → 카드만 남기기');
+}
+
+const LINK_RULES = [
+  { id: 'link_card', label: '링크 카드', weight: 0, fix: '줄글 주소 대신 링크 카드로 바꾸세요 — 카드 1개 = URL 1개, 1~2개 권장.' },
+  { id: 'link_anchor', label: '링크 문구', weight: 0, fix: '카드 앞 한 줄에 글 제목을 그대로 쓰세요(여기·링크·클릭 금지).' },
+  { id: 'link_embed_hint', label: '붙이는 순서', weight: 0, fix: 'URL을 붙여넣고 Enter → 카드가 뜨면 남은 URL 글자를 지우세요.' }
+];
+
 const JUDGES = {
   title_front: judgeTitleFront,
   title_len: judgeTitleLen,
@@ -219,6 +263,9 @@ const JUDGES = {
 
 /** 규칙별로 참조하는 자료가 다르다(제목은 지역·메뉴 사전, 해시태그는 핵심 태그). */
 function runJudge(id, m, t, lexicon, core) {
+  if (id === 'link_card') return judgeLinkCard(m);
+  if (id === 'link_anchor') return judgeLinkAnchor(m);
+  if (id === 'link_embed_hint') return judgeEmbedHint(m);
   if (id === 'title_front') return judgeTitleFront(m, t, lexicon);
   if (id === 'hashtags') return judgeHashtags(m, t, core);
   const fn = JUDGES[id];
@@ -248,6 +295,12 @@ export function lintBlog(input, ruleSet) {
       id: r.id, label: r.label, weight: Number(r.weight) || 0,
       state: res.state, value: res.value, note: res.note, fix: r.fix || ''
     };
+  });
+
+  /* 링크 카드 3항목은 뒤에 덧붙인다(가중치 0 — 점수·통과 판정에 영향 없음) */
+  LINK_RULES.forEach((r) => {
+    const res = runJudge(r.id, m, t, lexicon, core);
+    items.push({ id: r.id, label: r.label, weight: 0, state: res.state, value: res.value, note: res.note, fix: r.fix });
   });
 
   const score = Math.round(items.reduce((s, it) => s

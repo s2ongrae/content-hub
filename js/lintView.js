@@ -105,7 +105,7 @@ export async function renderLintView(main, ctx) {
           h('div', { class: 'lr-title', text: it.label + '  ·  ' + it.value }),
           h('div', { class: 'lr-note', text: it.note || '' }),
           it.state === 'pass' ? null : h('div', { class: 'lr-fix', text: it.fix })),
-        h('span', { class: 'lr-w', text: '+' + it.weight })));
+        h('span', { class: 'lr-w', text: it.weight ? '+' + it.weight : '' })));
     });
     panel.appendChild(list);
 
