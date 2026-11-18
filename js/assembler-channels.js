@@ -34,15 +34,16 @@ export function shortTitle(facts, blocks) {
 export function composeShorts({ facts, blocks, slots, brand }) {
   const f = facts || {};
   const beats = Array.isArray(slots) ? slots : [];
+  const hook = pickLines(blocks, 12, 1)[0] || '';
+  const priceTag = short(clean(f.price_menu).split(/[·,]/)[0].split(/\s+/)[0] || '', 12);
   const cuts = beats.map((s, i) => ({
     no: i + 1,
     role: s.role,
     time: s.start + '–' + s.end + 's',
     media: s.media || '[컷 비어 있음]',
-    subtitle: short(
-      (i === 0 && pickLines(blocks, 12, 1)[0]) || (f.price_menu && /증거/.test(s.role || '') ? short(f.price_menu, 14) : '') || s.note,
-      14
-    )
+    // 자막은 사용자 문장이나 확인된 숫자만. 안내문(s.note)은 자막으로 쓰지 않는다.
+    subtitle: /HOOK/.test(s.role || '') ? hook : (/PROOF-1/.test(s.role || '') ? priceTag : ''),
+    guide: s.note || ''
   }));
   const lines = pickLines(blocks, 14, 6);
   return {

@@ -8,9 +8,9 @@
  * 원칙: textContent/createElement만(h() 사용). 폰 360px 가로 스크롤 0.
  */
 
-import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261119c';
-import { composeBlog } from './assembler.js?v=20261119c';
-import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261119c';
+import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261119d';
+import { composeBlog } from './assembler.js?v=20261119d';
+import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261119d';
 
 const SAVE_KEY = 'contenthub.create.v1';
 
@@ -386,7 +386,7 @@ export function renderCreateView(main, ctx) {
       box.appendChild(h('h3', null, '🎬 유튜브 쇼츠 — ' + r.length_sec + '초 · ' + r.cut_count + '컷'));
       box.appendChild(checks(h, r.checks));
       box.appendChild(slotTable(h, r.cuts));
-      const t = r.title + '\n\n' + r.cuts.map((c) => c.no + '. ' + c.time + ' | ' + c.media + ' | ' + c.subtitle).join('\n')
+      const t = r.title + '\n\n' + r.cuts.map((c) => c.no + '. ' + c.time + ' | ' + c.media + ' | ' + (c.subtitle || '—')).join('\n')
         + '\n\n고정댓글: ' + r.pinned_comment;
       box.appendChild(pre(h, t));
       box.appendChild(h('div', { class: 'row', style: 'gap:6px;margin-top:10px' },
