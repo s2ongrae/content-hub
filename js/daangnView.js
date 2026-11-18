@@ -16,8 +16,8 @@ const FALLBACK = {
   eligibility: { stories_per_month: 5, valid_views_per_month: 2000, min_duration_sec: 10,
     min_description_chars: 30, submit_within_days: 3, notify: '다음 날 오전 11시',
     submit_path: '당근폼 프로필 제출', keep_stories_per_month: 2 },
-  reward: { base_per_video_krw: [100, 1000], performance: '월 집계 후 다음 달 5일 전후',
-    performance_min_krw: 1000, payout: '당근페이' },
+  reward: { base_per_video_krw: [100, 1000], performance: '다음 달 5일 전후 월 집계',
+    performance_min_krw: 1000, payout: '당근페이 필수' },
   checks: [
     { id: 'shot', label: '직접 촬영 · 음성 포함 · 10초 이상', detail: '정지 이미지가 절반을 넘으면 제외됩니다.' },
     { id: 'desc', label: '설명 30자 이상 — AI가 쓴 문구 그대로 쓰지 않기', detail: 'AI 문구 적발 시 성과 보상 전액 미지급.' },
@@ -146,11 +146,11 @@ export function renderDaangnSection(ctx) {
     h('div', null, h('span', { text: '영상 1건당' }), h('b', { text: (rw.base_per_video_krw || [100, 1000]).map((v) => Number(v).toLocaleString('ko-KR')).join('~') + '원' }))));
 
   const stateRows = h('div', { class: 'dg-note' });
-  stateRows.appendChild(h('p', { text: '성과 보상: ' + (rw.performance || '월 집계 후 다음 달 5일 전후')
-    + ' · 월 ' + won(rw.performance_min_krw || 1000) + ' 미만은 미지급 (' + (rw.payout || '당근페이') + ')' }));
-  stateRows.appendChild(h('p', { text: achieved
-    ? '조건을 채웠어요 → ' + (el.notify || '다음 날 오전 11시') + ' 알림 → ' + (el.submit_within_days || 3) + '일 내 ' + (el.submit_path || '당근폼 제출')
-    : '조건 달성 시 ' + (el.notify || '다음 날 오전 11시') + ' 알림 → ' + (el.submit_within_days || 3) + '일 내 ' + (el.submit_path || '당근폼 제출') + ' → 배지' }));
+  stateRows.appendChild(h('p', { text: '성과 보상: ' + (rw.performance || '다음 달 5일 전후 월 집계')
+    + ' · 월 ' + won(rw.performance_min_krw || 1000) + ' 미만은 미지급 · ' + (rw.payout || '당근페이 필수') }));
+  stateRows.appendChild(h('p', { text: (achieved ? '조건을 채웠어요 → ' : '조건을 채우면 ')
+    + (el.notify || '다음 날 오전 11시') + ' 알림 → ' + (el.submit_within_days || 3) + '일 내 '
+    + (el.submit_path || '당근폼 제출') + (achieved ? '' : ' → 배지') }));
   tracker.appendChild(stateRows);
 
   if (ctx.state.metricsError || !(state.metrics && state.metrics.length)) {

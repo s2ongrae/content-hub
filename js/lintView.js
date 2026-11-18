@@ -6,7 +6,7 @@
  * 초안은 이 브라우저에만 저장한다(새로고침해도 남게).
  */
 
-import { lintBlog, loadLintRules } from './blogLint.js';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261118';
 
 const DRAFT_KEY = 'contenthub.lint_draft.v1';
 

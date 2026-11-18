@@ -241,7 +241,7 @@ export function renderPerfView(main, ctx) {
 
   const status = state.metricsError;
   if (status && status !== 'ERR_NO_CONFIG') {
-    const msg = (status === 'ERR_NOT_IMPLEMENTED' || status === 'ERR_NOT_FOUND')
+    const msg = (status === 'ERR_NOT_IMPLEMENTED' || status === 'ERR_UNKNOWN_ACTION' || status === 'ERR_NOT_FOUND')
       ? '성과 기록 API가 아직 서버에 없습니다 — GAS를 재배포하면 이 화면에서 숫자를 저장할 수 있습니다. 지금은 화면만 보입니다.'
       : '성과 숫자를 읽지 못했습니다(' + status + '). 잠시 뒤 새로고침해 보세요.';
     const b = banner ? banner('info', 'ⓘ', '성과 기록 준비 중', msg) : h('div', { class: 'panel' }, h('p', { class: 'hint', text: msg }));

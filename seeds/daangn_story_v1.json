@@ -19,7 +19,7 @@
     "min_duration_sec": 10,
     "min_description_chars": 30,
     "valid_views_per_month": 2000,
-    "notify": "조건을 채우면 다음 날 오전 11시에 알림",
+    "notify": "다음 날 오전 11시",
     "submit_within_days": 3,
     "submit_path": "당근폼 프로필 제출",
     "keep_stories_per_month": 2,
@@ -30,9 +30,9 @@
     "base_changed_at": "2026-11-01",
     "base_before_krw": [300, 2000],
     "base_timing": "업로드 즉시 확정",
-    "performance": "월 집계 후 다음 달 5일 전후, 월 예산 내 성과 비중 배분",
+    "performance": "다음 달 5일 전후 월 집계",
     "performance_min_krw": 1000,
-    "payout": "당근페이 필수(미가입·정지 시 미지급, 소급 없음)"
+    "payout": "당근페이 필수(미가입·정지 시 미지급)"
   },
   "spec": {
     "duration_sec": [15, 25],

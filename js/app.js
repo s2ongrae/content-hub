@@ -9,9 +9,9 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics } from './perfView.js';
-import { renderLintView } from './lintView.js';
-import { renderDaangnSection, loadDaangnSeed } from './daangnView.js';
+import { renderPerfView, loadMetrics } from './perfView.js?v=20261118';
+import { renderLintView } from './lintView.js?v=20261118';
+import { renderDaangnSection, loadDaangnSeed } from './daangnView.js?v=20261118';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
