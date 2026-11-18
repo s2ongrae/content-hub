@@ -170,7 +170,7 @@ export async function composeBlog(input) {
   const text = [title, '', head, '', body, '', tail].join('\n');
   const bannedHits = BANNED_PHRASES.filter((w) => text.indexOf(w) >= 0);
   const twoLineBlocks = frozen.filter((b) => b.text.split('\n').length >= 2).length;
-  const placeholders = (text.match(/\[확인 필요\]|\[한 줄 확인 필요\]|\[가게 이름\]/g) || []).length;
+  const placeholders = (text.match(/\[[^\]]*확인 필요[^\]]*\]/g) || []).length;
   const exposedUrl = /https?:\/\//.test(text.replace(/\[LINK_CARD:[^\]]*\]/g, ''));
 
   return {
