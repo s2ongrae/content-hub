@@ -85,7 +85,11 @@ export function composeDaangn({ facts, blocks, slots }) {
   const place = clean(f.place_name) || '[가게]';
   const dong = clean(f.region_dong) || '대전';
   const segs = (Array.isArray(slots) ? slots : []);
-  const tipLines = pickLines(blocks, 22, 1);
+  // 팁은 앞머리 훅이 아니라 뒤쪽 문장에서 고른다(첫 줄은 보통 도입 챕터다)
+  const allLines = [];
+  (blocks || []).forEach((b) => { if (b && b.origin === 'USER') b.text.split('\n').map((x) => x.trim()).filter(Boolean).forEach((x) => allLines.push(x)); });
+  const tips = allLines.slice(1).filter((x) => x.length >= 10 && x.length <= 40).sort((a, b) => b.length - a.length);
+  const tipLines = tips.slice(0, 1);
   const price = short(f.price_menu, 30);
   const first = '[' + dong + ' ' + place + ']' + (price ? ' ' + price : '');
   const second = tipLines.length ? tipLines[0] : short(f.wait_time || f.parking, 30);

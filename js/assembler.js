@@ -49,7 +49,11 @@ export function makeHashtags(facts) {
   const place = clean(f.place_name).replace(/\s+/g, '');
   const cat = clean(f.category).replace(/\s+/g, '');
   const kws = String(f.target_keywords || '').split(',').map((s) => s.trim().replace(/\s+/g, '')).filter(Boolean);
-  const out = ['대전맛집', '유성맛집', dong ? dong + '맛집' : ''].concat(kws, [place, cat ? cat.replace(/[·/]/g, '') : '', '내돈내산', '대전청년']);
+  const catClean = cat ? cat.replace(/[·/]/g, '') : '';
+  const out = ['대전맛집', '유성맛집', dong ? dong + '맛집' : ''].concat(kws, [place, catClean, '내돈내산', '대전청년']);
+  // 10개를 못 채우면 같은 재료로 만든 변형을 채운다(억지 신조어 금지)
+  const spare = [dong ? dong + catClean : '', catClean ? catClean + '맛집' : '', dong ? '대전' + dong : '', place ? place + '후기' : '', dong ? dong + '야장' : ''];
+  spare.forEach((t) => { if (t) out.push(t); });
   const uniq = [];
   out.forEach((t) => {
     const v = String(t || '').replace(/^#/, '').trim();
@@ -129,14 +133,16 @@ export async function composeBlog(input) {
   const frozen = freezeBlocks(userBlocks);
   const originalHash = await sha256Hex(userBodyText(frozen));
 
-  const photos = (opts.media || []).filter((m) => m.kind !== 'VIDEO');
+  const photos = (opts.media || []).filter((m) => m.kind !== 'VIDEO').slice(0, 22);
+  const perBlock = Math.max(1, Math.ceil(photos.length / Math.max(frozen.length, 1)));
   const bodyParts = [];
+  let used = 0;
   frozen.forEach((b, i) => {
     bodyParts.push(b.text);
-    const p = photos[i];
-    if (p && p.name) bodyParts.push('[[PHOTO:' + p.name + ']]');
-    else bodyParts.push('');
+    const chunk = photos.slice(i * perBlock, (i + 1) * perBlock);
+    chunk.forEach((p) => { if (p && p.name) { bodyParts.push('[[PHOTO:' + p.name + ']]'); used += 1; } });
   });
+  photos.slice(used).forEach((p) => { if (p && p.name) bodyParts.push('[[PHOTO:' + p.name + ']]'); });
   const body = bodyParts.filter((s, i, arr) => !(s === '' && arr[i - 1] === '')).join('\n\n').trim();
 
   const info = factLines(f);
