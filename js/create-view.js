@@ -139,7 +139,7 @@ export function renderCreateView(main, ctx) {
       h('span', { class: 'field-label', text: '사진·영상 목록' }),
       driveEl,
       mediaEl),
-    h('p', { class: 'hint', text: '드라이브 폴더를 읽는 기능은 GAS 배포 뒤에 켜집니다. 지금은 파일명을 붙여넣으면 바로 됩니다.' }),
+    h('p', { class: 'hint', text: '드라이브 폴더 링크를 넣고 [📁 드라이브 폴더 읽기]를 누르면 파일 목록을 가져옵니다(최대 100개). 안 되면 파일명을 한 줄에 하나씩 붙여넣어도 됩니다.' }),
     (() => {
       const scan = h('button', { class: 'btn sm', type: 'button', text: '📁 드라이브 폴더 읽기' });
       scan.addEventListener('click', async () => {
@@ -429,7 +429,7 @@ export function renderCreateView(main, ctx) {
         order.textContent = '✓ 오더 접수 ' + (id || '');
       } catch (err) {
         order.textContent = '🤖 노트북에 오더 보내기';
-        toast('오더 전송은 아직 꺼져 있습니다 — 문구를 복사해 포털에 붙여넣으세요', 'err');
+        toast('오더를 보내지 못했습니다 — [복사]로 문구를 복사해 포털 오더함에 붙여넣으면 그대로 실행됩니다', 'err');
       } finally { order.disabled = false; }
     });
 
