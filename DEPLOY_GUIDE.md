@@ -53,9 +53,25 @@
 | 4 | `Code.gs` | [`gas/Code.gs`](gas/Code.gs) — **기존 기본 파일에 덮어쓰기** |
 | 5 | `Notify.gs` | [`gas/Notify.gs`](gas/Notify.gs) |
 | 6 | `Onboarding.gs` | [`gas/Onboarding.gs`](gas/Onboarding.gs) |
+| 7 | `Orders.gs` | [`gas/Orders.gs`](gas/Orders.gs) — 원스톱 만들기 화면의 [📁 드라이브 폴더 읽기]·[🤖 노트북에 오더] |
 
 각 파일 오른쪽 위 **⋯ → 다운로드**로 받은 파일을 열어 전체 선택 · 복사해도 됩니다.
 저장 후 시트로 돌아가 **새로고침(F5)** 하면 상단에 **ContentHub OS** 메뉴가 생깁니다.
+
+### 3-1. 노트북 오더를 켜려면 (선택 · 30초)
+
+`#/create` 의 [🤖 노트북에 오더] 버튼은 `Orders.gs` 가 **집 노트북(hub-agent) 큐에 대신 넣어 주는** 방식입니다.
+큐 키는 브라우저에 절대 넣지 않고, Apps Script **프로젝트 설정 → 스크립트 속성**에만 둡니다.
+
+| 속성 | 값 |
+|---|---|
+| `QUEUE_EXEC_URL` | 포털(Command_Queue) 웹앱 `/exec` 주소 (`https://script.google.com/macros/s/…/exec`) |
+| `QUEUE_TOKEN` | 그 웹앱의 키(포털 오더함에 쓰는 것과 같은 값) |
+| `QUEUE_WORKSPACE` | (선택) 기본 `content-hub` |
+| `QUEUE_ENGINE` | (선택) `auto`(기본) · `claude` · `agy` · `freellmapi` |
+
+이 두 값이 없으면 버튼은 `ERR_SERVER_CONFIG`(“QUEUE_EXEC_URL 이 없거나 형식이 다릅니다”)로 **분명히 실패**합니다 —
+조립본은 이미 저장돼 있으니 화면을 잠그지 않고 `[오더 문구 복사]`로 포털 오더함에 붙여넣으면 됩니다.
 
 ## 4. 초기 설치 (20초)
 

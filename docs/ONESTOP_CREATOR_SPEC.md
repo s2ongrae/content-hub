@@ -27,8 +27,8 @@
 | `js/app.js` | `renderRoute()` 해시 라우터, 보드 6열, `#/capture` 글감 폼(상호·동네·종류·키워드·지도·**드라이브 폴더 링크**·영수증) → `create_content` | 슬롯 가이드·조립·채널 선택·오더 전송 없음. 폴더 링크는 저장만 하고 **파일 목록을 읽지 않음** |
 | `js/studioView.js` | 숏폼 공방: 훅 21공식 채점, 대본 뼈대, EDL 컷 리스트, 제목·썸네일 린터, 댓글 4분류, 바이럴 배수 | 입력이 **손으로 쓴 텍스트**뿐. 미디어 슬롯과 연결되지 않음 |
 | `js/lintView.js` · `js/blogLint.js` | 블로그 8항목(제목 앞배치·길이·첫 화면·분량·사진 밀도·문단 호흡·짧은 줄·해시태그) | **링크 카드·노출 URL 검사 없음** |
-| `js/api.js` | POST text/plain, 멱등키, 30초 타임아웃, 오프라인 큐 | `hub_order`·`list_drive_media` 액션 없음 |
-| `gas/Auth.gs` | 액션 화이트리스트 9종(M1), 토큰·락·감사 | `hub_order`, `list_drive_media` 미등록 |
+| `js/api.js` | POST text/plain, 멱등키, 30초 타임아웃, 오프라인 큐 | `hub_order`·`list_drive_media` 는 GAS(`gas/Orders.gs`)에 구현·배포됨(2026-11-18) |
+| `gas/Auth.gs` | 액션 화이트리스트(M1), 토큰·락·감사 | `hub_order`(WRITE·longRunning) · `list_drive_media`(READ) 등록 |
 | `gas/Setup.gs` | Contents **37칸**(+시리즈·인스타 피드·당근), 23시트 | 원스톱 전용 칸 없음 → **칸을 늘리지 않고 payload에만 저장**한다 |
 | `seeds/` | `shorts_preset.json`(25초 6비트·메리 15초 4비트), `daangn_story_v1.json`, `blog_lint_rules_2026w48.json`, `skills/voice_kimseongrae.md` | 채널별 슬롯 룰 파일 없음 |
 

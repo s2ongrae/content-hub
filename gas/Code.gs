@@ -227,7 +227,10 @@ const M1_HANDLERS = {
   integrity_check: handleIntegrityCheck_,
   restore_from_snapshot: handleRestoreFromSnapshot_,
   rotate_token: handleRotateToken_,
-  run_coldstart_onboarding: handleRunColdstartOnboarding_
+  run_coldstart_onboarding: handleRunColdstartOnboarding_,
+  // 원스톱 만들기 화면 (2026-11-18, O4) — gas/Orders.gs
+  list_drive_media: handleListDriveMedia_,
+  hub_order: handleHubOrder_
 };
 
 function handleHealth_(ss, payload) {

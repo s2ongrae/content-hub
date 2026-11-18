@@ -29,6 +29,10 @@ const ACTION_WHITELIST = {
   restore_from_snapshot:{ mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   rotate_token:         { mode: 'WRITE', allowDegraded: true,  m1: true },
   run_coldstart_onboarding: { mode: 'WRITE', allowDegraded: false, m1: true },  // 콜드스타트 위저드
+  // 원스톱 만들기 화면 (2026-11-18, O4) — 드라이브 폴더 읽기 · 노트북 오더 프록시
+  //   hub_order 는 바깥 큐를 최대 30초 기다린다 → 라우터 락을 잡지 않는다(longRunning).
+  list_drive_media:     { mode: 'READ',  allowDegraded: true,  m1: true },
+  hub_order:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   // 파이프라인 상태머신 (M2 — 라우터만 연결, ERR_NOT_IMPLEMENTED)
   get_ready_queue:      { mode: 'READ',  allowDegraded: true,  m1: false },
   claim_task:           { mode: 'WRITE', allowDegraded: false, m1: false },
