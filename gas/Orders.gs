@@ -246,3 +246,39 @@ function handleHubOrder_(ss, payload, ctx) {
   });
   return out;
 }
+
+/* ------------------------------------------------------------------ *
+ * 연결 점검 — 편집기에서 이 함수 하나를 [실행]하면 큐 연결을 확인한다.
+ *
+ *   · ScriptProperties 의 QUEUE_EXEC_URL · QUEUE_TOKEN 으로 큐에 queue_status(읽기)만 부른다
+ *     → 오더를 만들지 않는다.
+ *   · 처음 실행할 때 UrlFetchApp 권한(script.external_request) 동의 창이 한 번 뜬다.
+ *     이 함수를 실행해 두면 #/create 의 [오더 보내기]가 바로 동작한다.
+ * ------------------------------------------------------------------ */
+function checkQueueLink() {
+  const props = PropertiesService.getScriptProperties();
+  const url = String(props.getProperty('QUEUE_EXEC_URL') || '').trim();
+  const token = String(props.getProperty('QUEUE_TOKEN') || '').trim();
+  if (!url || !token) {
+    return { ok: false, error: 'QUEUE_EXEC_URL · QUEUE_TOKEN 을 스크립트 속성에 넣어 주세요.' };
+  }
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'text/plain;charset=utf-8',
+    payload: JSON.stringify({ key: token, action: 'queue_status' }),
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  const text = res.getContentText();
+  let json = null;
+  try { json = JSON.parse(text); } catch (e) { json = null; }
+  if (!json) return { ok: false, error: '큐 응답이 JSON 이 아닙니다', status: res.getResponseCode(), preview: String(text).slice(0, 120) };
+  return {
+    ok: !!json.ok,
+    workspace: String(props.getProperty('QUEUE_WORKSPACE') || 'content-hub'),
+    engine: String(props.getProperty('QUEUE_ENGINE') || 'auto'),
+    queue: json.queue || null,
+    heartbeat: json.heartbeat || null,
+    raw_ok: json.ok
+  };
+}

@@ -70,6 +70,8 @@
 | `QUEUE_WORKSPACE` | (선택) 기본 `content-hub` |
 | `QUEUE_ENGINE` | (선택) `auto`(기본) · `claude` · `agy` · `freellmapi` |
 
+설정을 마쳤으면 왼쪽 **편집기**에서 함수 목록의 `checkQueueLink` 를 골라 **[▶ 실행]** 한 번 — 처음 한 번 UrlFetchApp 권한 동의 창이 뜹니다(고급 → 허용). 이것을 하지 않으면 버튼이 `ERR_QUEUE_UNREACHABLE`(“You do not have permission to call UrlFetchApp.fetch”)로 막힙니다. 실행 로그에 `queue:` 값이 보이면 연결 완료.
+
 이 두 값이 없으면 버튼은 `ERR_SERVER_CONFIG`(“QUEUE_EXEC_URL 이 없거나 형식이 다릅니다”)로 **분명히 실패**합니다 —
 조립본은 이미 저장돼 있으니 화면을 잠그지 않고 `[오더 문구 복사]`로 포털 오더함에 붙여넣으면 됩니다.
 
