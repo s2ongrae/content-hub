@@ -971,3 +971,6 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 
 /* 채널 칩 6개(대전 청년) — 좁은 화면에서 넘치면 다음 줄로 */
 .chrow { flex-wrap: wrap; row-gap: 3px; }
+
+/* 린터 결과로 스크롤할 때 상단 탭바에 제목이 가리지 않게 */
+.lint-result { scroll-margin-top: 74px; }

@@ -96,7 +96,7 @@ export async function renderLintView(main, ctx) {
         h('strong', { text: r.pass ? '통과 — 발행해도 됩니다' : (warn.length >= 3 ? '미달 — 손볼 곳이 ' + warn.length + '개' : '보완 — ' + warn.length + '개만 고치면 통과') }),
         h('span', { text: '주의 ' + near.length + ' · 고칠 것 ' + warn.length + ' · 기준 ' + rules.version })));
 
-    const panel = h('div', { class: 'panel' }, head);
+    const panel = h('div', { class: 'panel lint-result' }, head);
     const list = h('div', { class: 'lint-list' });
     r.items.forEach((it) => {
       list.appendChild(h('div', { class: 'lr-row', 'data-state': it.state },
@@ -118,10 +118,10 @@ export async function renderLintView(main, ctx) {
       panel.appendChild(h('p', { class: 'hint', style: 'margin-top:8px',
         text: '상위 24건 중앙값: ' + med.chars + '자 · 사진 ' + med.photos + '장 · 장당 ' + med.chars_per_photo
           + '자 · 문단 ' + med.avg_paragraph_chars + '자 · 짧은 줄 ' + med.short_lines + '개 · 첫 화면 정보 '
-          + med.first_screen_info_pct + '%' }));
+          + (med.first_screen_info_rate_pct != null ? med.first_screen_info_rate_pct : med.first_screen_info_pct) + '%' }));
     }
     resultHost.appendChild(panel);
-    resultHost.scrollIntoView({ block: 'start' });
+    panel.scrollIntoView({ block: 'start' });
   }
 
   runBtn.addEventListener('click', () => {
