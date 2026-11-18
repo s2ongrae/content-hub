@@ -206,6 +206,24 @@ Sheets `Contents` 칸은 **늘리지 않는다**(37칸 유지). 아래는 Drive 
 - 발행 절차(노트북·사람 공통, 자동 발행 시 필수):
   ① 카드 앞 설명 한 줄 입력 후 Enter → ② **URL만** 붙여넣기 후 Enter → ③ 네이버 에디터가 OG 링크 카드를 만들 때까지 최대 3초 대기(카드 DOM `se-oglink` / `se-module-oglink` 확인) → ④ 카드 위·아래에 남은 일반 URL 텍스트 줄을 지워 **카드 블록만** 남긴다.
 
+### 6.2-1 링크 카드 실태(실측)
+- `224459297302`(석암) = **기준**: `👉 같은 봉명동 술상 편: 미미삼겹 냉삼 솔직후기` 뒤에 링크 카드.
+- `224480755004`(미미삼겹) = 아직 `▶ 봉명동 다른 고기집 / 석암생소금구이 후기 / https://blog.naver.com/…` 처럼 **URL 줄글**. 린터가 잡아야 할 실제 위반 사례. 리뉴얼 때 카드로 바꾼다.
+
+### 6.2-2 생성 모드 톤 레퍼런스 (필수)
+
+원문이 없거나 부족해 **새로 쓸 때**는 `seeds/skills/tone_reference_v1.md`가 유일한 문체 기준이다(석암·미미삼겹 두 원글 전문 실측, 2026-11-18).
+
+| 모드 | 언제 | 본문 규칙 |
+|---|---|---|
+| `preserve` | 사용자 원문이 있음 | 원문 글자 그대로 + 앞뒤 추가만 (sha256 잠금) |
+| `draft` | 원문이 없거나 1~2줄뿐 | 톤 레퍼런스로 새로 쓴다. 사용자가 적어 준 줄은 **그대로 살린다** |
+
+`draft`가 지키는 5가지(톤 시드 §9): ① 두 줄 덩어리 3개 이상 ② 숫자는 입력값과 동일 ③ 자폭·직설 1~2회 ④ 금지어 0건 ⑤ 링크는 카드.
+로컬 비유는 대전 사람이 바로 아는 것(성심당·유성온천·트램·계룡산·갑천·대전역) 안에서만 고르고, 한 편 1~2개.
+거친 표현은 **원문 인용만** — 생성 모드에서 새 욕설·비하를 창작하지 않는다.
+노트북 LLM에 초안 보강을 맡길 때도 이 파일 경로를 프롬프트에 넣어 같은 제약을 건다.
+
 ### 6.3 채널 카테고리별 조립 함수
 
 | 함수 | 입력 | 출력 |
@@ -271,10 +289,26 @@ Sheets `Contents` 칸은 **늘리지 않는다**(37칸 유지). 아래는 Drive 
 | O2 | 조립 코어·블로그 | `js/assembler.js`(신규) | `buildCore`, `composeBlog`(정보카드·원문 그대로·링크 카드 마커·해시태그), `assertBodyUnchanged` | self-test에 `PASS blog: 원문 변형 0 · 링크카드 1~2 · 해시태그 10~12` |
 | O3 | 채널 조립기 | `js/assembler-channels.js`(신규) | `composeShorts/composeClip/composeDaangn/composeInstagram` (프리셋 seed를 읽어 비트·컷·자막·태그 수 생성) | self-test에 `PASS channels: 컷14~20 · 당근30자↑ · IG태그5` |
 | O4 | GAS 오더 프록시·드라이브 | `gas/Code.gs` + `gas/Auth.gs` | `hub_order`(화이트리스트 4종, UrlFetch, 30초 가드, 멱등키 전달), `list_drive_media`(최대 100개·15초 컷, Dimensions 없으면 파일명·default), 화이트리스트 2줄 | `/exec` POST `{"action":"list_drive_media"}` → `ok:true` 또는 `ERR_NO_FOLDER`; 미허용 타입 → `ERR_INVALID_ACTION` |
-| O5 | 만들기 화면 | `js/createView.js`(신규) + `index.html` | `#/create`(3단계·채널 6카테고리·슬롯 표·미리보기·복사·오더 버튼), 탭 `글감→만들기`, 옛 `#/capture` 리다이렉트 | 폰 360에서 가로 스크롤 0, 콘솔 에러 0, 오프라인에서도 슬롯·조립 표시 |
-| O6 | 링크 카드 린터 | `js/blogLint.js` + `js/lintView.js` | §7 3항목 추가(점수 계산 제외), 결과 카드에 표시 | `URL 노출 1건 넣으면 link_card=warn`, 카드만 있으면 pass |
+| O5 | 만들기 화면 | `js/create-view.js`(신규) + `js/app.js`(라우트 한 줄) | `#/create`(3단계·채널 카테고리·슬롯 표·미리보기·복사·오더 버튼), 옛 `#/capture`도 같은 화면 | 폰 360에서 가로 스크롤 0, 콘솔 에러 0, 오프라인에서도 슬롯·조립 표시 |
+| O6 | 탭 이름 | `index.html` | `data-route="capture"` → `create`, 라벨 `글감` → `만들기` | `data-route="create"` 1건 · `capture` 0건 |
+| O7 | 링크 카드 린터 | `js/blogLint.js` + `js/lintView.js` | §7 3항목 추가(점수 계산 제외), 결과 카드에 표시 | `URL 노출 1건 넣으면 link_card=warn`, 카드만 있으면 pass |
+| O8 | 생성 모드·톤 시드 연결 | `js/assembler.js` + `tools/onestop_selftest5.mjs` | `composeBlog({mode:'preserve'|'draft'})` 분기. `draft`는 `seeds/skills/tone_reference_v1.md`를 읽어 ①두 줄 덩어리 3개↑ ③자폭 1~2회 ⑤카드 링크를 강제하고, 없는 수치는 `[확인 필요]`로 비운다. 사용자가 적은 줄은 그대로 보존. 노트북 오더 프롬프트에 톤 시드 경로를 붙인다 | self-test: `preserve` 원문 변형 0 · `draft` 두 줄 덩어리 3개↑ · 금지어 0 · `[확인 필요]` 표기 |
 
-`app.js`는 손대지 않는다(O5가 `index.html`에서 새 모듈을 직접 로드하고, 라우터 확장은 `createView.js`가 `window.__renderCreate`를 노출하는 방식). — 단, `app.js` 수정이 꼭 필요하면 **O5를 2개로 쪼개** `app.js` 1파일만 다루는 오더를 따로 낸다.
+`app.js`는 라우트 매핑 **한 줄 + import 한 줄**만 고친다(O5). 그 이상을 고쳐야 하면 O5를 쪼개 `app.js`만 다루는 오더를 따로 낸다.
+
+실제 접수한 오더(2026-11-18 15:14, 전부 `engine: freellmapi`·자동 승인):
+
+| 라벨 | ID | 내용 |
+|---|---|---|
+| 1/7 | `Q-20261118-151405-ytq2` | 슬롯 엔진 + selftest (O1) |
+| 2/7 | `Q-20261118-151409-yuyv` | 블로그 조립기 (O2) |
+| 5/7 | `Q-20261118-151412-api5` | 만들기 화면 (O5) |
+| 7/7 | `Q-20261118-151414-1mw1` | 링크 카드 린터 (O7) |
+| 3/7 | `Q-20261118-151417-f33u` | 채널 조립기 (O3) |
+| 4/7 | `Q-20261118-151420-wcdh` | GAS Drive·오더 프록시 (O4) |
+| 6/7 | `Q-20261118-151424-37qk` | 탭 이름 (O6) |
+
+큐는 FIFO·1건씩이고 각 오더는 앞 오더에 `depends_on`으로 매달려 있다(앞이 FAILED면 뒤는 REJECTED → 그때만 다시 접수). freellmapi는 워커 게이트상 HOLD 엔진이라 통과해도 main직푸시가 아니라 `auto-review/<ID>` 브랜치로 보존된다 — 검토·머지가 한 단계 남는다.
 
 ---
 
@@ -298,6 +332,7 @@ Sheets `Contents` 칸은 **늘리지 않는다**(37칸 유지). 아래는 Drive 
 | 실패 UX | 화면 초기화 금지, 주황 배너 + `[오더 다시 보내기] [조립본 복사] [실패함 보관]` | §8.3 |
 | 오더 분할 | 의존성 순서(코어 → 조립기 → 린터 → GAS → UI), 파일 1~2개 | §9 |
 | 링크 카드 | 설명 한 줄 + `[LINK_CARD: url]` 토큰, 린터 3항목, 발행 4단계 | §6.2, §7 |
+| 생성 모드 톤 | 두 원글(석암·미미삼겹) 실측을 `seeds/skills/tone_reference_v1.md`로 내장 → `draft` 모드의 문체 기준 | §6.2-2, 시드 파일 |
 
 **내가 다르게 간 곳(이유 있음)**
 - 제미니는 `js/create-core.js`(코어+슬롯) / `js/composers.js`(5개 조립기) 2파일로 묶었지만, freellmapi 5분 컷에서 400줄 파일은 실패 확률이 높아 **`slot-engine` → `assembler` → `assembler-channels` 3개로 더 쪼갰다**(O1~O3). 공개 API 이름(`buildCore`/`buildSlotGuide`/`compose*`)은 제미니 안과 같게 유지한다.
