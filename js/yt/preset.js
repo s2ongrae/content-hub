@@ -26,11 +26,13 @@ export async function loadPreset(force) {
 
 /** 트랙에 맞는 프리셋을 고른다 — 변형이 있으면 변형, 없으면 기본. */
 export function pickPreset(data, brand) {
+  const baseSlot = data.slot_seconds || (data.beats ? data.beats[data.beats.length - 1].end : 25);
   const variants = data.variants || [];
   const v = variants.filter((x) => (x.tracks || []).indexOf(brand) >= 0)[0];
-  if (!v) return { ...data, is_variant: false };
+  if (!v) return { ...data, slot_seconds: baseSlot, is_variant: false };
   return {
     ...data,
+    slot_seconds: baseSlot,
     ...v,
     is_variant: true,
     channels: data.channels,
@@ -65,6 +67,7 @@ export function buildScript(preset, ctx = {}) {
     end: b.end,
     timecode: `${b.start.toFixed(1)}–${b.end.toFixed(1)}초`,
     speech: fill(b.speech),
+    guide: b.guide || '',
     screen: b.screen,
     caption: b.caption,
     sound: b.sound,
@@ -103,9 +106,9 @@ export function scriptToText(result) {
     ? `무내레이션 · 자막 ${result.eojeol}어절 · 슬롯 ${result.slot_seconds}초 · 예상 컷 ${result.cuts_expected}개`
     : `말 ${result.eojeol}어절 · ${result.speech_seconds}초(분당 ${result.rate}어절) · 슬롯 ${result.slot_seconds}초 · 예상 컷 ${result.cuts_expected}개`);
   lines.push('');
-  lines.push('구간\t말\t화면(ON SCREEN)\t자막·배치');
+  lines.push('구간\t말\t지시\t화면(ON SCREEN)\t자막·배치');
   result.beats.forEach((b) => {
-    lines.push(`${b.timecode}\t${b.speech}\t${b.screen}\t${b.caption}`);
+    lines.push(`${b.timecode}\t${b.speech}\t${b.guide}\t${b.screen}\t${b.caption}`);
   });
   lines.push('');
   lines.push('컷 리듬: 평균 ' + result.angle_seconds_avg + '초, 첫 컷 1.0초 안, 한 샷 3초 넘기지 않기');

@@ -60,8 +60,8 @@ export function renderStudio(host, ctx) {
   const { h, toast, state } = ctx;
   const brand = state.brand;
   const brandNote = brand === 'ppiyak_kimmary'
-    ? '메리 트랙 자막: 나눔스퀘어라운드 64px · 상단 배지는 쓰지 않고 하단 안전영역(y≤1420)만.'
-    : '대전 청년 자막: Pretendard 68px · 상단 훅 뱃지(y=280) + 하단 y≤1420.';
+    ? '메리 트랙: 무내레이션 15초 프리셋 · 나눔스퀘어라운드 64px(1080폭 기준) · 상단 배지 없이 하단 안전영역만.'
+    : '대전 청년: 25초 정보형 프리셋 · Pretendard 68px(1080폭 기준) · 상단 훅 뱃지 + 하단 안전선(높이의 73.9%).';
 
   host.replaceChildren();
   host.appendChild(h('div', { class: 'panel' },
@@ -248,7 +248,7 @@ function paintScript(slot, presetRaw, ctx) {
         h('th', { text: '구간' }), h('th', { text: preset.silent ? '자막' : '말' }), h('th', { text: '화면(ON SCREEN)' }), h('th', { text: '자막·소리' }))),
       h('tbody', null, result.beats.map((b) => h('tr', null,
         h('td', { class: 'mono' }, h('div', { text: b.timecode }), h('div', { class: 'dim', text: b.label })),
-        h('td', { text: b.speech }),
+        h('td', null, h('div', { text: b.speech }), b.guide ? h('div', { class: 'dim', text: b.guide }) : null),
         h('td', { text: b.screen }),
         h('td', null, h('div', { text: b.caption }), h('div', { class: 'dim', text: b.sound })))))));
 
