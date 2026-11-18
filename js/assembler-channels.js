@@ -42,7 +42,7 @@ export function composeShorts({ facts, blocks, slots, brand }) {
     time: s.start + '–' + s.end + 's',
     media: s.media || '[컷 비어 있음]',
     // 자막은 사용자 문장이나 확인된 숫자만. 안내문(s.note)은 자막으로 쓰지 않는다.
-    subtitle: /HOOK/.test(s.role || '') ? hook : (/PROOF-1/.test(s.role || '') ? priceTag : ''),
+    subtitle: (i === 0 || /HOOK/.test(s.slot_id || '')) ? hook : (/PROOF-1/.test(s.slot_id || '') ? priceTag : ''),
     guide: s.note || ''
   }));
   const lines = pickLines(blocks, 14, 6);
