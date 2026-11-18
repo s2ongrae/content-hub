@@ -222,12 +222,12 @@ function paintScript(slot, presetRaw, ctx) {
   const grid = h('div', { class: 'studio-form' },
     field('place', '가게·등장 대상', preset.silent ? '예: 메리 (브리티쉬 숏헤어)' : '예: 미미삼겹 (봉명동)', 'input'),
     field('hook', preset.silent ? '첫 자막(훅)' : '첫 문장(훅)', '①의 채점 1위를 넣거나 직접 씁니다', 'area'),
-    field('point', '이 영상에서 알게 되는 것 한 가지', '예: 1인 14,000원에 오는 동선', 'input'),
-    field('price', '확인한 가격', '예: 냉삼 1인분 160g 14,000원', 'input'),
-    field('wait', '확인한 대기', '예: 금요일 19시 16팀, 30분', 'input'),
-    field('con', '실제로 겪은 단점', '예: 전용 주차장 없음', 'input'),
+    field('point', '이 영상에서 알게 되는 것 한 가지', '예: 이 영상에서 알게 되는 것 1개', 'input'),
+    field('price', '확인한 가격', '예: 14,000원 (확인한 값)', 'input'),
+    field('wait', '확인한 대기', '예: 16팀, 30분 (확인한 값)', 'input'),
+    field('con', '실제로 겪은 단점', '예: 실제로 겪은 불편 1개', 'input'),
     field('total', '총액·1인 금액', '예: 3명 42,000원', 'input'),
-    field('when', '저장해 둘 상황', '예: 봉명동에서 고기 당길 때', 'input'));
+    field('when', '저장해 둘 상황', '예: 금요일 저녁, 고기 당길 때', 'input'));
   p.appendChild(grid);
 
   const out = h('div', { class: 'studio-out' });
