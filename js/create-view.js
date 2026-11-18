@@ -49,7 +49,7 @@ export function renderCreateView(main, ctx) {
   const { h, api, toast, pageHead, friendlyError } = ctx;
   const st = load();
 
-  const guideHost = h('div', { class: 'panel' }, h('h3', null, '② 채널과 슬롯'), h('p', { class: 'hint', text: '재료를 넣으면 여기에 채널별 배치가 나옵니다.' }));
+  const guideHost = h('div', { class: 'panel' }, h('h3', null, '③ 채널별 슬롯'), h('p', { class: 'hint', text: '재료를 넣으면 여기에 채널별 배치가 나옵니다.' }));
   const resultHost = h('div');
   const warnHost = h('div');
 
@@ -239,6 +239,18 @@ export function renderCreateView(main, ctx) {
 
   async function paint() {
     const my = ++seq;
+    const hasInput = !!(text(st.place_name).trim() || text(st.memo).trim() || text(st.media_paste).trim());
+    if (!hasInput) {
+      while (warnHost.firstChild) warnHost.removeChild(warnHost.firstChild);
+      while (guideHost.firstChild) guideHost.removeChild(guideHost.firstChild);
+      guideHost.appendChild(h('h3', null, '③ 채널별 슬롯'));
+      guideHost.appendChild(h('p', { class: 'hint', text: '위에 재료를 넣으면 채널별 배치가 여기에 나옵니다.' }));
+      while (resultHost.firstChild) resultHost.removeChild(resultHost.firstChild);
+      resultHost.appendChild(h('div', { class: 'panel' },
+        h('h3', null, '④ 완성본'),
+        h('p', { class: 'hint', text: '가게 이름이나 방문 메모를 넣으면 그 자리에서 완성본이 나옵니다. AI가 문장을 고쳐 쓰지 않습니다.' })));
+      return;
+    }
     const g = await build();
     if (my !== seq) return;
     const ch = st.channel;
@@ -253,7 +265,7 @@ export function renderCreateView(main, ctx) {
 
     /* 슬롯 가이드 */
     while (guideHost.firstChild) guideHost.removeChild(guideHost.firstChild);
-    const title = h('h3', null, '② 채널과 슬롯');
+    const title = h('h3', null, '③ 채널별 슬롯');
     guideHost.appendChild(title);
     guideHost.appendChild(h('p', { class: 'hint', text: '원문 ' + g.blocks.length + '문단 · 해시 ' + g.user_body_sha256.slice(0, 8) + '… · 미디어 ' + g.media.length + '개' }));
     const pick = ch === 'ig' ? (st.igKind === 'feed' ? 'ig_feed' : 'ig_reels') : ch;
