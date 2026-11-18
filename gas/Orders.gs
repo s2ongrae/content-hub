@@ -234,9 +234,15 @@ function handleHubOrder_(ss, payload, ctx) {
       { status: (res && res.getResponseCode && res.getResponseCode()) || 0, preview: String(text || '').slice(0, 160) });
   }
   if (!json.ok) {
-    const e = json.error || {};
-    throw createAppError_('ERR_QUEUE_REJECTED', '큐가 오더를 받지 않았습니다: ' + (e.message || e.code || '거절'),
-      { queue_code: e.code || '', attempts: 0 });
+    // 포털은 오류를 문자열('unauthorized')로도, 객체({code,message})로도 준다 — 둘 다 읽는다.
+    const e = (json.error && typeof json.error === 'object') ? json.error : {};
+    const msg = e.message || (typeof json.error === 'string' ? json.error : '') || '큐가 거절';
+    const code = String(e.code || json.code || '');
+    const hint = /unauthorized/i.test(msg) ? ' — QUEUE_TOKEN 이 그 웹앱의 키와 다릅니다'
+      : (code === 'workspace' ? ' — QUEUE_WORKSPACE 값이 큐의 허용 목록에 없습니다'
+      : (code === 'too_long' || code === 'bad_request' ? ' — 오더 내용을 줄여 주세요' : ''));
+    throw createAppError_('ERR_QUEUE_REJECTED', '큐가 오더를 받지 않았습니다: ' + msg + hint,
+      { queue_code: code });
   }
 
   const out = hubOrderResult_(json, type, workspace, prompt);

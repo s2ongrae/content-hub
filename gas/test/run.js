@@ -255,6 +255,13 @@ A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code
 o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render' }, { brand: 'daejeon_youth' });
 eq('큐 거절은 ERR_QUEUE_REJECTED', o.code, 'ERR_QUEUE_REJECTED');
 ok('거절 사유를 그대로 보여준다', /다른 저장/.test(o.message || ''), o.message);
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: 'unauthorized' }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render' }, { brand: 'daejeon_youth' });
+eq('문자열 오류도 ERR_QUEUE_REJECTED', o.code, 'ERR_QUEUE_REJECTED');
+ok('문자열 오류에 맞는 안내를 붙인다', /QUEUE_TOKEN/.test(o.message || ''), o.message);
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: '작업 위치가 허용 목록에 없어요', code: 'workspace' }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render' }, { brand: 'daejeon_youth' });
+ok('워크스페이스 거절은 무엇을 고칠지 알려준다', /QUEUE_WORKSPACE/.test(o.message || ''), o.message);
 A.env.setFetchReply({ code: 200, body: '<html>로그인 페이지</html>' });
 o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render' }, { brand: 'daejeon_youth' });
 eq('JSON 이 아니면 ERR_QUEUE_UNREACHABLE', o.code, 'ERR_QUEUE_UNREACHABLE');
