@@ -10,13 +10,15 @@
  */
 
 import { api } from './api.js';
+import { renderStudio } from './studioView.js';
+import { loadFormulas, scoreHook } from './yt/hookscore.js';
 
 const PACK_URL = 'seeds/series_pack_2026w47.json';
 const AB_KEY = 'contenthub.hook_ab.v1';
 
 let packCache = null;
 let openKey = null;      // 열려 있는 편 (seriesId:ep)
-let subTab = 'series';   // series | keywords | hooks
+let subTab = 'series';   // series | studio | keywords | hooks
 let abTarget = null;     // 체크리스트 대상 편
 
 export async function loadPack(force) {
@@ -96,7 +98,7 @@ export function renderSeriesView(main, ctx) {
       h('span', { class: 'tag', text: brand === 'ppiyak_kimmary' ? '삐약 김메리' : '대전 청년' }))));
 
   const seg = h('div', { class: 'seg', role: 'tablist', 'aria-label': '시리즈 화면 전환' });
-  [['series', '연재 대본'], ['keywords', '검색어 모음'], ['hooks', '첫 문장 비교']].forEach(([key, label]) => {
+  [['series', '연재 대본'], ['studio', '🎬 숏폼 공방'], ['keywords', '검색어 모음'], ['hooks', '첫 문장 비교']].forEach(([key, label]) => {
     seg.appendChild(h('button', {
       type: 'button', class: 'seg-btn', role: 'tab', 'data-sub': key,
       'aria-selected': subTab === key ? 'true' : 'false',
@@ -114,6 +116,7 @@ export function renderSeriesView(main, ctx) {
   loadPack().then((pack) => {
     host.replaceChildren();
     if (subTab === 'series') renderSeries(host, pack, brand, ctx);
+    else if (subTab === 'studio') renderStudio(host, { ...ctx, _seedHooks: seedHooks(pack, brand) });
     else if (subTab === 'keywords') renderKeywords(host, pack, brand, ctx);
     else renderHooks(host, pack, brand, ctx);
   }).catch((err) => {
@@ -122,6 +125,16 @@ export function renderSeriesView(main, ctx) {
       h('p', { class: 'hint', text: friendlyError(err) || String(err) }),
       h('p', { class: 'hint', text: '주소가 https://s2ongrae.github.io/content-hub/ 인지, seeds/series_pack_2026w47.json 이 함께 배포됐는지 확인하세요.' })));
   });
+}
+
+/* 이 브랜드 시드 편들의 첫 2초 훅(중복 제거) — 공방에서 채점·대본 뼈대에 바로 쓴다 */
+function seedHooks(pack, brand) {
+  const out = [];
+  pack.series.filter((s) => s.brand === brand).forEach((s) => s.episodes.forEach((e) => {
+    const v = (e.hook_2s || '').trim();
+    if (v && out.indexOf(v) < 0 && out.length < 8) out.push(v);
+  }));
+  return out;
 }
 
 /* ────────────────────────── 시리즈 ────────────────────────── */
@@ -194,6 +207,14 @@ function episodeDetail(series, ep, ctx) {
     kvRow(h, '다음 편 궁금하게 남기는 힌트', ep.open_loop),
     kvRow(h, '해시태그', ep.hashtags.join(' '), true));
   box.appendChild(facts);
+
+  // 생성된 시드의 첫 문장을 같은 규칙으로 즉시 채점한다(공방 ①과 같은 함수)
+  const hookLine = h('p', { class: 'hint', text: '첫 문장 채점 중…' });
+  loadFormulas().then((formulas) => {
+    const r = scoreHook(ep.hook_2s, formulas);
+    hookLine.textContent = `첫 문장 채점: ${r.verdict}점 · ${r.band} · 공식 ${r.formula} · 가장 약한 곳 ${r.weakest_label} — ${r.fix}`;
+  }).catch(() => { hookLine.textContent = '첫 문장 채점을 불러오지 못했습니다.'; });
+  box.appendChild(hookLine);
 
   const table = h('table', { class: 'seed-table' },
     h('thead', null, h('tr', null,

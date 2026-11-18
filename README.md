@@ -33,6 +33,11 @@ css/style.css           # 브랜드 테마(네이비·오렌지 / 코랄·크림
 js/api.js               # 30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 미설정 시 ERR_NO_CONFIG
 js/quickApprove.js      # 폰 10초 승인 카드 스택
 js/app.js               # 해시 라우터 · 브랜드 스위처 · 화면 6종 (렌더링 textContent 전용)
+js/studioView.js        # 숏폼 공방(연재 탭) — 훅 채점·대본 뼈대·제목/썸네일·컷 리스트·댓글·바이럴
+js/yt/                  # 무료 MIT 스킬의 계산을 한국어로 옮긴 모듈(hookscore·titlelint·edl·viral·preset·comments)
+seeds/skills/           # 숏폼 프리셋·훅 공식·댓글 규칙·말투(웹앱과 파이썬 도구가 함께 읽는 데이터)
+tools/yt/               # 노트북·클로드 코드용 파이썬 도구 4개 + 스킬 설치 스크립트
+.claude/skills/yt-*     # 클로드가 바로 부르는 숏폼·유튜브 스킬 12개
 gas/Setup.gs            # 23시트 · Drive 폴더 · 토큰(비노출) · 시딩 · 트리거
 gas/Auth.gs             # 상수시간 토큰 · 화이트리스트 · tryLock(1800) · 멱등 · 민감필드 차단 · 쿼터 서킷
 gas/Backup.gs           # 일/주/월 스냅샷 · 80개 배치+이어하기 · manifest · 보존 · 복구 · 무결성 6종
@@ -46,6 +51,23 @@ appsscript.json          # timeZone Asia/Seoul, V8, WebApp(USER_DEPLOYING / ANYO
 tools/make_icons.py      # 아이콘 생성기 (Pillow)
 DEPLOY_GUIDE.md         # 시트 + GAS 3분 배포 가이드
 ```
+
+## 숏폼 공방 (연재 탭 → 🎬 숏폼 공방)
+
+무료 공개 스킬(`Jakeschincariol/youtube-agent-skill`, MIT)과 당근 스토리 숏폼 관찰을 이 채널에 맞게 옮겼습니다.
+**서버·API 키 없이 브라우저에서 계산**하고, 규칙 데이터는 `seeds/skills/*.json` 하나를 웹앱과 파이썬 도구가 같이 읽습니다.
+
+| 도구 | 하는 일 |
+|---|---|
+| ① 훅 채점 | 21개 공식 분류 + 5속성(특정성·호명·손실·호기심·간결), 최종 = 평균 60% + 최약 40% |
+| ② 대본 뼈대 | 당근 프리셋 비트(0~2초 훅 → 약속 → 증거 2 → 페이오프 → 요청) + 타임코드·ON SCREEN·자막 배치, 카드로 저장 |
+| ③ 패키지 | 제목 + 썸네일 한 쌍 린터(폭 기준 60/40, 중복·숫자 없음) |
+| ④ 컷편집 | SRT → DEAD·FILLER·REPEAT 컷 타임코드 + 살릴 곳의 화면 지시 |
+| ⑤ 댓글 | 4분류 + 말투 파일 기반 답장 초안 + 고정 1개 |
+| ⑥ 바이럴 | 채널별 중위수 대비 배수(2.0배 이상 강조) |
+
+노트북·클로드 코드에서는 같은 도구를 1줄로 붙입니다: `bash tools/yt/install_skills.sh` → `~/.claude/skills/yt-*`.
+자세한 규칙: [`docs/SHORTS_PRESET_v1.md`](docs/SHORTS_PRESET_v1.md), 스킬 목록: [`.claude/skills/README.md`](.claude/skills/README.md).
 
 ## 보안 원칙
 

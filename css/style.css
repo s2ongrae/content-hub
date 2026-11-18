@@ -786,3 +786,54 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 @media (max-width: 699px) {
   .ccard { padding: 9px 12px; }
 }
+
+/* ==========================================================================
+   숏폼 공방 (js/studioView.js) — 무료 스킬 도구 화면
+   기존 토큰(--surface/--line/--tx/--warn/--ok/--accent)만 쓴다. 브랜드 테마가 그대로 먹는다.
+   ========================================================================== */
+.studio-slot { margin-bottom: 12px; }
+.studio-out { margin-top: 10px; }
+.studio-out h4 { margin: 12px 0 6px; font-size: 13px; color: var(--tx); }
+.studio-foot { font-size: 11.5px; color: var(--tx-3); line-height: 1.6; margin-top: 4px; }
+.panel.inner { background: var(--bg-soft); border: 1px solid var(--line-soft); box-shadow: none; }
+.hint.warn { color: var(--warn); }
+
+.textarea {
+  width: 100%; min-height: 64px; padding: 10px 11px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg-soft); color: var(--tx);
+  font: inherit; line-height: 1.55; resize: vertical;
+}
+.textarea.mono, .kv-v.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.input {
+  width: 100%; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg-soft); color: var(--tx); font: inherit;
+}
+.input.short { width: 88px; }
+.inline-field { display: flex; align-items: center; gap: 6px; }
+
+.studio-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.studio-form .field { margin: 0; }
+@media (max-width: 699px) { .studio-form { grid-template-columns: 1fr; } }
+
+.hook-card { border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg-soft); }
+.hook-card.top { border-color: var(--ok, #4ec9a0); }
+.hook-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.hook-rank { font-size: 11px; font-weight: 700; color: var(--tx-3); letter-spacing: .02em; }
+.hook-text { font-size: 14px; line-height: 1.45; flex: 1 1 200px; }
+.prop-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 9px 0 6px; }
+@media (max-width: 699px) { .prop-grid { grid-template-columns: repeat(2, 1fr); } }
+.prop { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tx-2); }
+.prop b { font-variant-numeric: tabular-nums; color: var(--tx); }
+.prop-k { min-width: 34px; color: var(--tx-3); }
+.meter { flex: 1 1 auto; height: 6px; border-radius: 99px; background: var(--line-soft); overflow: hidden; min-width: 30px; }
+.meter-fill { height: 100%; background: var(--accent, #5b8cff); }
+.meter-fill[data-band="약함"] { background: var(--warn); }
+.meter-fill[data-band="튼튼"] { background: var(--ok, #4ec9a0); }
+
+.lint-list { display: flex; flex-direction: column; gap: 4px; }
+.lint-row { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.5; }
+.lint-code { flex: 0 0 84px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--tx-3); }
+.lint-row.issue .lint-code { color: var(--warn); }
+.lint-row.good .lint-code { color: var(--ok, #4ec9a0); }
+
+.seed-table tbody tr.outlier { background: color-mix(in srgb, var(--ok, #4ec9a0) 7%, transparent); }
