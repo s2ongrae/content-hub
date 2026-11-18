@@ -6,7 +6,7 @@
 |---|---|
 | `github.com/Jakeschincariol/youtube-agent-skill` (MIT) | 훅 21공식·5속성 채점, 제목+썸네일 한 쌍 린터, SRT→컷편집 리스트, 채널 중위수 대비 아웃라이어 |
 | 게으른빌더 `social-media-skills`의 `voice-builder` | 말투를 문서 하나로 고정(`seeds/skills/voice_kimseongrae.md`) |
-| 당근 스토리 숏폼(`daangn.com/kr/shorts/5ZEkCUWA`) | 1~2초 현장 클로즈업 훅, 1~2초 컷 리듬, 10자 안팎 자막, 중간 단점 1회, 마지막 요청 1개 |
+| 당근 스토리 숏폼(`daangn.com/kr/shorts/5ZEkCUWA`) | 1~2초 현장 클로즈업 훅, 1~2초 컷 리듬, 10자 안팎 자막, 중간 단점 1회, 마지막 요청 1개. 영상 제목도 같은 문법: "대전 은박지로 꽁꽁 감싸서 나오…" — 형용사 없이 눈에 보이는 디테일 하나 + 잘린 궁금증 |
 
 ## 파일
 
