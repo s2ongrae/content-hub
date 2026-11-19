@@ -166,7 +166,7 @@ a { color: var(--accent-2); }
 /* ───────────── 탭 ───────────── */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
-  display: grid; grid-template-columns: repeat(9, 1fr);
+  display: grid; grid-template-columns: repeat(10, 1fr);
   gap: 2px; padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--bg-soft) 92%, transparent);
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
@@ -974,3 +974,67 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 
 /* 린터 결과로 스크롤할 때 상단 탭바에 제목이 가리지 않게 */
 .lint-result { scroll-margin-top: 112px; }
+
+/* ==========================================================================
+   내 블로그(#/blog) — 2026-11-19
+   ========================================================================== */
+@media (min-width: 700px) { .kpi-grid.blog-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 699px) { .kpi-grid.blog-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.vbars { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding: 4px 0; }
+.vbar { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
+.vbar i { display: block; width: 100%; border-radius: 3px 3px 1px 1px; background: var(--accent); opacity: .85; }
+.vbar.none i { height: 2px !important; background: var(--line); opacity: 1; }
+.vbar.today i { opacity: .45; }
+.vbar-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--tx-3); margin-top: 4px; }
+
+.btn.xs { min-height: 28px; padding: 0 9px; font-size: 11.5px; }
+.blog-row { align-items: flex-start; }
+.blog-row .blog-link { display: block; color: var(--tx); text-decoration: none; }
+.blog-row .blog-link:hover { color: var(--accent); }
+.blog-side { flex-wrap: wrap; justify-content: flex-end; max-width: 46%; }
+.blog-num { font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--tx-2); }
+.delta { font-style: normal; font-size: 10.5px; margin-left: 3px; color: var(--tx-3); }
+.delta.up { color: var(--ok); }
+@media (max-width: 699px) {
+  .blog-row { flex-direction: column; gap: 6px; }
+  .blog-row .l-title { white-space: normal; }
+  .blog-side { max-width: none; justify-content: flex-start; }
+}
+
+.blog-lint:empty { display: none; }
+.blog-lint { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 10px; font-size: 12px; }
+.blog-lint-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; color: var(--tx-3); }
+.blog-lint-head .score { font-size: 15px; }
+.blog-lint-head .score.good { color: var(--ok); }
+.blog-lint-head .score.mid { color: var(--accent); }
+.blog-lint-head .score.low { color: var(--danger); }
+.blog-lint-ok { margin-top: 4px; color: var(--ok); }
+.blog-lint-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.blog-lint-list li { display: flex; gap: 6px; line-height: 1.45; color: var(--tx-2); }
+.blog-lint-list li b { flex: 0 0 auto; font-size: 10.5px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); }
+.blog-lint-list li.warn b { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.blog-lint-list li.near b { color: var(--accent); }
+
+.cat-list { display: grid; gap: 8px; }
+.cat-row { display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12.5px; }
+.cat-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-bar { height: 8px; background: var(--line-soft); border-radius: 4px; overflow: hidden; }
+.cat-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.cat-num { color: var(--tx-3); font-size: 11.5px; white-space: nowrap; }
+@media (max-width: 400px) { .cat-row { grid-template-columns: minmax(0, 1fr) auto; } .cat-bar { grid-column: 1 / -1; order: 3; } }
+
+.rank-pos { font-size: 15px; font-variant-numeric: tabular-nums; }
+.rank-pos.top { color: var(--ok); }
+.rank-form { display: flex; gap: 6px; margin-top: 10px; }
+.rank-form input { flex: 1 1 auto; min-width: 0; }
+.rank-form .btn { flex: 0 0 auto; white-space: nowrap; }
+.kw-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.kw-chip { font-size: 11.5px; padding: 4px 9px; border-radius: 999px; border: 1px dashed var(--line); background: transparent; color: var(--tx-2); }
+.kw-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+.blog-setup summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+.blog-setup ol { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 12px; color: var(--tx-3); line-height: 1.55; }
+/* 긴 제목이 grid 칸을 밀어 폰에서 가로 스크롤이 생기지 않게 */
+.list.blog-list, .list.rank-list { grid-template-columns: minmax(0, 1fr); }
+.list.rank-list .lrow { min-width: 0; }

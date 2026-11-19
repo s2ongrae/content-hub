@@ -13,6 +13,7 @@ import { renderPerfView, loadMetrics } from './perfView.js?v=20261118';
 import { renderLintView } from './lintView.js?v=20261118';
 import { renderDaangnSection, loadDaangnSeed } from './daangnView.js?v=20261118';
 import { renderCreateView } from './create-view.js?v=20261118x';
+import { renderBlogView } from './blogView.js?v=20261119a';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -440,6 +441,7 @@ function renderRoute() {
     capture: renderCapture,
     review: renderReview,
     perf: (main) => renderPerfView(main, ctx),
+    blog: (main) => renderBlogView(main, ctx),
     lint: (main) => renderLintView(main, ctx) || null,
     series: (main) => renderSeriesView(main, { h, state, toast, friendlyError }),
     knowhow: renderKnowHow,

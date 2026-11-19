@@ -225,6 +225,12 @@ export class ContentHubApi {
   /* 성과(Metrics) — 발행 뒤 채널별 숫자를 시계열로 쌓는다 */
   listMetrics(filters = {}) { return this.post('list_metrics', filters); }
 
+  // 내 블로그(#/blog) — gas/Blog.gs. 가져오기·순위 확인은 네이버를 부르므로 넉넉히 기다린다.
+  listBlogStats(filters = {}) { return this.post('list_blog_stats', filters); }
+  blogSync(data = {}) { return this.post('blog_sync', data, null, { timeoutMs: 90000 }); }
+  blogPostBody(data) { return this.post('blog_post_body', data, null, { timeoutMs: 45000 }); }
+  blogRankCheck(data) { return this.post('blog_rank_check', data, null, { timeoutMs: 90000 }); }
+
   recordMetrics(data, action) {
     return this.post('record_metrics', data, action ? action.key : null);
   }
