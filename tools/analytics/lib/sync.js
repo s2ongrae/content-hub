@@ -37,10 +37,26 @@ function flattenTracks(config) {
       brand: t.brand || '',
       youtube_channel_id: (t.youtube && t.youtube.channel_id) || '',
       monetized: !!(t.youtube && t.youtube.monetized),
-      ig_user_id: (t.instagram && t.instagram.ig_user_id) || ''
+      ig_user_id: (t.instagram && t.instagram.ig_user_id) || '',
+      ig_token_env: (t.instagram && t.instagram.token_env) || ''
     });
   });
   return out;
+}
+
+/**
+ * 인스타 토큰 해석 — 트랙이 token_env 를 지정하면 그 이름의 토큰만 쓴다(페이지 토큰은 자기 페이지·IG 만 읽는다).
+ * 지정이 없으면 지금까지처럼 공용 IG_ACCESS_TOKEN 을 쓴다.
+ */
+function igTokenByName(env, name) {
+  const e = env || {};
+  if (!name) return '';
+  if (name === 'IG_ACCESS_TOKEN') return String(e.igAccessToken || '');
+  return String((e.igTokens && e.igTokens[name]) || '');
+}
+
+function igTokenOf(env, track) {
+  return igTokenByName(env, (track && track.ig_token_env) || 'IG_ACCESS_TOKEN');
 }
 
 function linkOf(config, externalId, fallbackBrand) {
@@ -58,6 +74,9 @@ function buildPlan(config, env) {
   const tracks = flattenTracks(config);
   const ytChannels = tracks.filter((t) => t.youtube_channel_id && !/^REPLACE/.test(t.youtube_channel_id));
   const igUsers = tracks.filter((t) => t.ig_user_id && !/^REPLACE/.test(t.ig_user_id));
+  const igReady = igUsers.filter((t) => !!igTokenOf(e, t));
+  const igTokenNames = Array.from(new Set(igUsers.map((t) => t.ig_token_env || 'IG_ACCESS_TOKEN')));
+  const igMissingTokens = igTokenNames.filter((name) => !igTokenByName(e, name));
   const windowDays = Number((config && config.collect && config.collect.window_days) || 45);
   return {
     window_days: windowDays,
@@ -74,12 +93,12 @@ function buildPlan(config, env) {
       ].filter(Boolean)
     },
     instagram: {
-      configured: !!(e.igAccessToken && igUsers.length),
-      accounts: igUsers.length,
-      calls_per_run: e.igAccessToken && igUsers.length ? igUsers.length * 2 : 0,
+      configured: !!igReady.length,
+      accounts: igReady.length,
+      calls_per_run: igReady.length * 2,
       missing: [
-        e.igAccessToken ? '' : 'IG_ACCESS_TOKEN',
-        igUsers.length ? '' : 'tracks[].instagram.ig_user_id'
+        igUsers.length ? '' : 'tracks[].instagram.ig_user_id',
+        igMissingTokens.length ? igMissingTokens.join(' · ') : ''
       ].filter(Boolean)
     },
     gas: {
@@ -184,10 +203,15 @@ async function runSync(opts) {
       notices.push({ level: 'warn', code: 'IG_SKIPPED', message: '인스타 토큰 또는 계정 ID 가 없어 인스타만 건너뜁니다.' });
     } else {
       for (const t of tracks.filter((x) => x.ig_user_id && !/^REPLACE/.test(x.ig_user_id))) {
+        const token = igTokenOf(env, t);
+        if (!token) {
+          notices.push({ level: 'warn', code: 'IG_TOKEN_MISSING', message: '인스타 토큰이 없어 ' + t.track + ' 는 건너뜁니다(' + (t.ig_token_env || 'IG_ACCESS_TOKEN') + ').' });
+          continue;
+        }
         try {
           const ig = await collectInstagram({
             igUserId: t.ig_user_id,
-            token: env.igAccessToken,
+            token,
             fetchImpl: o.fetchImpl,
             now,
             windowDays: plan.window_days

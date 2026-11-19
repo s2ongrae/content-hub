@@ -55,6 +55,7 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_OAUTH_TOKEN: ${{ secrets.YOUTUBE_OAUTH_TOKEN }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_ACCESS_TOKEN_MERRY: ${{ secrets.IG_ACCESS_TOKEN_MERRY }}
           IG_TOKEN_EXPIRES_AT: ${{ secrets.IG_TOKEN_EXPIRES_AT }}
           GAS_WEBAPP_URL: ${{ secrets.GAS_WEBAPP_URL }}
           GAS_API_TOKEN: ${{ secrets.GAS_API_TOKEN }}

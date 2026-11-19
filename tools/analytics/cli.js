@@ -12,6 +12,8 @@
  * 환경변수(시크릿은 여기로만 들어온다 — 파일·인자로 넘기지 않는다)
  *   YOUTUBE_API_KEY, YOUTUBE_OAUTH_TOKEN(선택), IG_ACCESS_TOKEN, IG_TOKEN_EXPIRES_AT(선택),
  *   GAS_WEBAPP_URL, GAS_API_TOKEN
+ *   트랙별 인스타 토큰: config 의 tracks[].instagram.token_env 에 이름을 적으면 그 환경변수를 쓴다
+ *   (예: track_b → IG_ACCESS_TOKEN_MERRY). 페이지 토큰은 자기 페이지·IG 만 읽기 때문.
  *
  * 종료코드: 0 성공 / 1 수집 자체가 실패 / 2 설정 오류
  */
@@ -48,6 +50,7 @@ function envOf() {
     youtubeApiKey: e.YOUTUBE_API_KEY || '',
     youtubeOAuthToken: e.YOUTUBE_OAUTH_TOKEN || '',
     igAccessToken: e.IG_ACCESS_TOKEN || '',
+    igTokens: { IG_ACCESS_TOKEN_MERRY: e.IG_ACCESS_TOKEN_MERRY || '' },
     igTokenExpiresAt: e.IG_TOKEN_EXPIRES_AT || '',
     gasUrl: e.GAS_WEBAPP_URL || '',
     gasToken: e.GAS_API_TOKEN || ''
