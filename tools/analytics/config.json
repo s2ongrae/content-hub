@@ -3,13 +3,23 @@
   "tracks": {
     "track_a": {
       "brand": "daejeon_youth",
-      "youtube": { "channel_id": "UCbUGlWgsVyN6kl5K9AOr-4g", "monetized": false },
-      "instagram": { "ig_user_id": "REPLACE_WITH_TRACK_A_IG_USER_ID" }
+      "youtube": {
+        "channel_id": "UCbUGlWgsVyN6kl5K9AOr-4g",
+        "monetized": false
+      },
+      "instagram": {
+        "ig_user_id": "17841448009241828"
+      }
     },
     "track_b": {
       "brand": "ppiyak_kimmary",
-      "youtube": { "channel_id": "UCRkQ-KEAdKsofE-z3ynK_RQ", "monetized": false },
-      "instagram": { "ig_user_id": "REPLACE_WITH_TRACK_B_IG_USER_ID" }
+      "youtube": {
+        "channel_id": "UCRkQ-KEAdKsofE-z3ynK_RQ",
+        "monetized": false
+      },
+      "instagram": {
+        "ig_user_id": "REPLACE_WITH_TRACK_B_IG_USER_ID"
+      }
     }
   },
   "collect": {
