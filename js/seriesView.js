@@ -21,6 +21,11 @@ let openKey = null;      // 열려 있는 편 (seriesId:ep)
 let subTab = 'series';   // series | studio | keywords | hooks
 let abTarget = null;     // 체크리스트 대상 편
 
+/** 다른 화면(카드 상세 '제작' 탭)에서 연재 화면의 하위 탭을 정해 두고 들어올 때 쓴다. */
+export function openSeriesTab(key) {
+  if (['series', 'studio', 'keywords', 'hooks'].indexOf(key) >= 0) subTab = key;
+}
+
 export async function loadPack(force) {
   if (packCache && !force) return packCache;
   const res = await fetch(`${PACK_URL}?v=2026w47`, { cache: 'no-cache' });

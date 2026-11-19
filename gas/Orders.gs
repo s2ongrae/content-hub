@@ -10,7 +10,9 @@
  *      · ScriptProperties: QUEUE_EXEC_URL · QUEUE_TOKEN  (필수)
  *                          QUEUE_WORKSPACE(기본 content-hub) · QUEUE_ENGINE(기본 auto)
  *      · 허용 타입 4종: content_render · content_upload · content_stats · blog_neighbor
- *      · 큐에 들어가는 실제 타입은 claude_prompt(mode=edit) 다 — Command_Queue 가 아는 타입이
+ *      · content_render + inputs(영상 파일 이름) 는 큐에 실제 타입 content_render 로 들어간다(계약 v1, 위험 작업·승인 필요).
+ *        큐가 그 타입을 모르면 ERR_QUEUE_TYPE_UNKNOWN 으로 알린다(옛 동작으로 되돌리지 않는다).
+ *      · 그 밖의 오더는 큐에 claude_prompt(mode=edit) 로 들어간다 — Command_Queue 가 아는 타입이
  *        5종(git_pull·claude_prompt·smartstore_api_relay·toss_sync·git_push)뿐이라서,
  *        논리 타입은 프롬프트 첫 줄과 응답(type)에 남긴다.
  *
@@ -166,19 +168,67 @@ function hubOrderPrompt_(type, payload) {
   return text;
 }
 
+/* ------------------------------------------------------------------ *
+ * 영상 렌더 오더(계약 v1) — 큐에 실제 타입 content_render 를 넣는다(claude_prompt 가 아니다).
+ *   payload 에 inputs(영상 파일 이름 목록)가 있는 content_render 만 이 경로를 탄다.
+ *   inputs 가 없는 옛 content_render(#/create 의 조립본 오더)는 그대로 claude_prompt 경로다.
+ *   노트북이 inbox/<content_id>/ 안의 파일만 읽는다 — 여기서는 경로가 아니라 '이름'만 통과시킨다.
+ * ------------------------------------------------------------------ */
+const RENDER_CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const RENDER_FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
+const RENDER_EXT_RE = /\.(mp4|mov|m4v)$/i;
+const RENDER_PROFILES = ['captions', 'bgm'];
+const RENDER_BRANDS = ['daejeon_youth', 'ppiyak_kimmary'];
+const RENDER_MAX_INPUTS = 8;
+
+function isRealRenderOrder_(type, payload) {
+  return type === 'content_render' && !!payload && Array.isArray(payload.inputs);
+}
+
+/** 렌더 오더 payload 를 검사해 큐에 보낼 모양(고정 키 5개 이하)으로 돌려준다. 어긋나면 ERR_VALIDATION_FAILED. */
+function hubRenderPayload_(payload) {
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  const contentId = String(payload.content_id || '');
+  if (!RENDER_CONTENT_ID_RE.test(contentId)) throw bad('content_id 는 영문·숫자·_·- 40자 이내여야 합니다.');
+  const brand = String(payload.brand || '');
+  if (RENDER_BRANDS.indexOf(brand) === -1) throw bad('brand 가 올바르지 않습니다.');
+  const inputs = payload.inputs;
+  if (!inputs.length || inputs.length > RENDER_MAX_INPUTS) throw bad('inputs 는 1~' + RENDER_MAX_INPUTS + '개여야 합니다.');
+  const names = [];
+  for (let i = 0; i < inputs.length; i++) {
+    const n = inputs[i];
+    if (typeof n !== 'string' || !RENDER_FILE_RE.test(n) || n.indexOf('..') !== -1 || n.charAt(0) === '.' || !RENDER_EXT_RE.test(n)) {
+      throw bad('inputs 에는 파일 이름(mp4·mov·m4v)만 넣을 수 있습니다: ' + String(n).slice(0, 40));
+    }
+    if (names.indexOf(n) === -1) names.push(n);
+  }
+  const profile = payload.profile === undefined || payload.profile === null || payload.profile === '' ? 'captions' : String(payload.profile);
+  if (RENDER_PROFILES.indexOf(profile) === -1) throw bad('profile 은 captions 또는 bgm 이어야 합니다.');
+  const out = { content_id: contentId, brand: brand, inputs: names, profile: profile };
+  if (payload.crop_x !== undefined && payload.crop_x !== null && payload.crop_x !== '') {
+    const c = Number(payload.crop_x);
+    if (!isFinite(c) || c < 0 || c > 1) throw bad('crop_x 는 0~1 사이 숫자여야 합니다.');
+    out.crop_x = c;
+  }
+  return out;
+}
+
 /** 큐 응답(JSON)에서 사람이 볼 값만 꺼낸다. */
-function hubOrderResult_(json, type, workspace, prompt) {
+function hubOrderResult_(json, type, workspace, prompt, queueType) {
   const item = (json && json.item) || {};
   const id = String(item.id || (json && json.order_id) || '');
   return {
     order_id: id,
     status: String(item.status || (json && json.status) || ''),
     type: type,
-    queue_type: 'claude_prompt',
+    queue_type: queueType || 'claude_prompt',
     workspace: workspace,
-    prompt_chars: prompt.length,
-    note: String((json && json.note) || ''),
-    duplicate: !!(json && json.duplicate)
+    prompt_chars: prompt ? prompt.length : 0,
+    note: String((json && json.note) || (item && item.note) || ''),
+    duplicate: !!(json && json.duplicate),
+    needs_approval: !!((json && json.needs_approval) || (item && item.needs_approval)),
+    risk_level: String((json && json.risk_level) || (item && item.risk_level) || ''),
+    approval_expires_at: String((json && json.approval_expires_at) || (item && item.approval_expires_at) || '')
   };
 }
 
@@ -203,14 +253,28 @@ function handleHubOrder_(ss, payload, ctx) {
   const workspace = String(props.getProperty('QUEUE_WORKSPACE') || 'content-hub').trim() || 'content-hub';
   const engine = String(props.getProperty('QUEUE_ENGINE') || 'auto').trim() || 'auto';
 
-  const prompt = hubOrderPrompt_(type, payload);
-  const body = {
-    key: token,
-    action: 'queue_enqueue',
-    type: 'claude_prompt',
-    workspace: workspace,
-    payload: { prompt: prompt, mode: 'edit', engine: engine }
-  };
+  const realRender = isRealRenderOrder_(type, payload);
+  let prompt = '';
+  let body;
+  if (realRender) {
+    // 검증 실패는 큐를 부르기 전에 끝낸다(설정 검사 뒤라도 외부 호출은 하지 않는다).
+    body = {
+      key: token,
+      action: 'queue_enqueue',
+      type: 'content_render',
+      workspace: workspace,
+      payload: hubRenderPayload_(payload)
+    };
+  } else {
+    prompt = hubOrderPrompt_(type, payload);
+    body = {
+      key: token,
+      action: 'queue_enqueue',
+      type: 'claude_prompt',
+      workspace: workspace,
+      payload: { prompt: prompt, mode: 'edit', engine: engine }
+    };
+  }
 
   let res, text;
   try {
@@ -238,6 +302,12 @@ function handleHubOrder_(ss, payload, ctx) {
     const e = (json.error && typeof json.error === 'object') ? json.error : {};
     const msg = e.message || (typeof json.error === 'string' ? json.error : '') || '큐가 거절';
     const code = String(e.code || json.code || '');
+    // 큐(Apps Script)가 아직 content_render 를 모르는 동안: 옛 동작으로 되돌리지 않고 분명히 알린다.
+    if (realRender && (code === 'ERR_UNKNOWN_TYPE' || /ERR_UNKNOWN_TYPE|허용되지 않은 작업 타입/.test(msg))) {
+      throw createAppError_('ERR_QUEUE_TYPE_UNKNOWN',
+        '노트북 큐가 아직 영상 렌더(content_render)를 모릅니다. 큐 Apps Script 를 새 버전으로 배포한 뒤 다시 보내 주세요(오더는 만들어지지 않았습니다).',
+        { queue_code: code || 'ERR_UNKNOWN_TYPE' });
+    }
     const hint = /unauthorized/i.test(msg) ? ' — QUEUE_TOKEN 이 그 웹앱의 키와 다릅니다'
       : (code === 'workspace' ? ' — QUEUE_WORKSPACE 값이 큐의 허용 목록에 없습니다'
       : (code === 'too_long' || code === 'bad_request' ? ' — 오더 내용을 줄여 주세요' : ''));
@@ -245,7 +315,7 @@ function handleHubOrder_(ss, payload, ctx) {
       { queue_code: code });
   }
 
-  const out = hubOrderResult_(json, type, workspace, prompt);
+  const out = hubOrderResult_(json, type, workspace, prompt, realRender ? 'content_render' : 'claude_prompt');
   appendSystemHealth_({
     eventType: 'HUB_ORDER', status: 'SUCCESS', actor: 'api',
     detail: type + ' → ' + (out.order_id || '(id 없음)') + ' · ' + workspace

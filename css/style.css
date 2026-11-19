@@ -1342,3 +1342,66 @@ a.cmp-card:hover { border-color: var(--accent); }
 /* 품질 점검은 접어 둔다 */
 .ana-gate > summary { cursor: pointer; font-size: 12px; font-weight: 800; color: var(--tx-2); }
 .ana-gate[open] > summary { margin-bottom: 7px; }
+
+/* ───────── 제작 스텝퍼 (카드 상세 '제작' 탭) ───────── */
+.produce { display: grid; gap: 10px; }
+.pr-head { display: grid; gap: 6px; }
+.pr-prog { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 13px; }
+.pr-sub { font-size: 11.5px; color: var(--tx-3); }
+.pr-bar { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.pr-bar-in { height: 100%; background: var(--accent); border-radius: 999px; transition: width .2s; }
+.pr-save { font-size: 11.5px; color: var(--tx-3); min-height: 1.2em; }
+.pr-save.ok { color: var(--ok); }
+.pr-save.err { color: var(--danger); }
+.pr-list { display: grid; gap: 8px; }
+.pr-step { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.pr-step.open { border-color: var(--accent); }
+.pr-step-btn { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; }
+.pr-step-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pr-no { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font-size: 11.5px; color: var(--tx-2); flex: none; }
+.pr-title { flex: 1; font-size: 14px; font-weight: 700; color: var(--tx); }
+.pr-state { font-size: 11.5px; color: var(--tx-3); }
+.pr-state.done { color: var(--ok); }
+.pr-body { padding: 4px 14px 14px; display: grid; gap: 10px; border-top: 1px solid var(--line-soft); }
+.pr-body .hint { font-size: 12px; color: var(--tx-3); line-height: 1.6; margin: 0; }
+.pr-field { display: grid; gap: 5px; min-width: 0; }
+.pr-label { font-size: 12px; color: var(--tx-2); font-weight: 600; }
+.pr-ta, .pr-in, .pr-sel { width: 100%; box-sizing: border-box; background: var(--bg-soft); color: var(--tx); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font: inherit; font-size: 13px; }
+.pr-ta { resize: vertical; min-height: 84px; line-height: 1.55; }
+.pr-ta:focus, .pr-in:focus, .pr-sel:focus { outline: none; border-color: var(--accent); }
+.pr-two { display: grid; gap: 10px; grid-template-columns: 1fr; }
+@media (min-width: 700px) { .pr-two { grid-template-columns: 1fr 1fr; } }
+.pr-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pr-err { color: var(--danger); font-size: 12px; line-height: 1.5; }
+.pr-err:empty { display: none; }
+.pr-warnbox { border: 1px solid var(--line); border-left: 3px solid var(--warn); background: var(--bg-soft); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--tx-2); line-height: 1.6; word-break: break-word; }
+.pr-warnbox strong { color: var(--tx); }
+.pr-warnbox code { font-family: var(--mono); font-size: 12px; color: var(--accent-2); }
+.pr-soon { margin: 0; font-size: 13px; color: var(--tx-2); border: 1px dashed var(--line); border-radius: 10px; padding: 12px; line-height: 1.6; }
+.pr-pipe { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--tx-2); }
+.pr-pipe-i b { color: var(--tx-3); font-weight: 600; margin-right: 5px; }
+.pr-check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; cursor: pointer; }
+.pr-check input { margin-top: 3px; width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+.pr-check-t { display: block; font-size: 13.5px; color: var(--tx); font-weight: 600; }
+.pr-check-s { display: block; font-size: 12px; color: var(--tx-3); line-height: 1.55; margin-top: 2px; word-break: break-word; }
+.pr-brand { margin: 0; font-size: 12px; color: var(--tx-2); }
+.pr-banner { border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; border: 1px solid var(--line); background: var(--bg-soft); color: var(--tx-2); }
+.pr-banner strong { color: var(--tx); }
+.pr-banner.warn { border-color: var(--warn); }
+.pr-banner.err { border-color: var(--danger); }
+.pr-det summary { cursor: pointer; font-size: 12.5px; color: var(--tx-2); }
+.pr-pre { margin: 8px 0 0; padding: 10px 12px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: var(--tx-2); }
+.pr-kv { margin: 0; }
+.pr-h4 { margin: 4px 0 0; font-size: 12.5px; color: var(--tx); }
+.pr-tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.pr-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.pr-tbl th, .pr-tbl td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.pr-tbl th { color: var(--tx-3); font-weight: 600; font-size: 11.5px; }
+.pr-tbl tr:last-child td { border-bottom: 0; }
+.pr-judge { font-weight: 700; font-size: 11.5px; }
+.pr-judge.pass { color: var(--ok); }
+.pr-judge.warn { color: var(--warn); }
+.pr-judge.fail { color: var(--danger); }
+.pr-kv { display: grid; grid-template-columns: 1fr; gap: 0; }
+.pr-kv dt { font-size: 11.5px; color: var(--tx-3); margin-top: 8px; }
+.pr-kv dd { margin: 2px 0 0; font-size: 13px; color: var(--tx); word-break: break-all; }

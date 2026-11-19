@@ -264,10 +264,82 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     newFiles.forEach((f) => { src[f] = fs.readFileSync(path.join(ROOT, f), 'utf8'); });
     ok('innerHTML/outerHTML/insertAdjacentHTML 0건', newFiles.filter((f) => /\.js$/.test(f)).every((f) => !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(src[f])));
     ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', newFiles.every((f) => !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(src[f])));
-    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261119w/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261119x/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
     ok('하단 탭이 늘지 않았다(10개)', (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/class="tab"/g) || []).length === 10);
   } catch (err) {
     ok('트랙 채널 계약 시험', false, (err && err.stack) || err);
+  }
+
+  /* ⑥ 제작 스텝퍼 순수 로직 · 코드 규칙 (2026-11-19) */
+  console.log('[6] 제작 스텝퍼 (js/produceLogic.js · produceView.js)');
+  try {
+    const assert = require('assert');
+    const same = (a, b) => { try { assert.deepStrictEqual(a, b); return true; } catch (e) { return false; } };
+    const L = await import('file://' + path.join(ROOT, 'js', 'produceLogic.js'));
+
+    /* 입력 검사 — 노트북·GAS 와 같은 규칙 */
+    ok('파일 이름 줄바꿈·쉼표 분리', same(L.parseInputs('a.mp4\nb.mov, c.m4v').names, ['a.mp4', 'b.mov', 'c.m4v']));
+    ok('같은 이름은 한 번만', same(L.parseInputs('a.mp4\na.mp4').names, ['a.mp4']));
+    ok('한글·공백 이름 허용', L.parseInputs('01 외관.mp4').errors.length === 0);
+    ok('폴더 경로 거부', L.parseInputs('a/b.mp4').errors.length === 1 && L.parseInputs('a\\b.mp4').errors.length === 1);
+    ok('.. · 점 시작 거부', L.parseInputs('a..mp4').errors.length === 1 && L.parseInputs('.x.mp4').errors.length === 1);
+    ok('확장자 mp4·mov·m4v 만', L.parseInputs('a.txt').errors.length === 1 && L.parseInputs('a.MP4').errors.length === 0);
+    ok('9개는 거부', L.parseInputs(Array.from({ length: 9 }, (_, i) => 'v' + i + '.mp4').join('\n')).errors.length === 1);
+
+    /* 오더 payload 는 계약 키만 */
+    const okP = L.buildRenderPayload({ contentId: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', cropX: 0.5 });
+    ok('payload 계약 v1', okP.ok && same(okP.payload, { content_id: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', crop_x: 0.5 }), okP);
+    ok('crop_x 가 비면 키를 만들지 않는다', !('crop_x' in L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cropX: '' }).payload));
+    ok('profile 기본 captions', L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'] }).payload.profile === 'captions');
+    ok('잘못된 content_id·brand·crop_x·빈 inputs 거부', ['../x', 'a'.repeat(41)].every((id) => !L.buildRenderPayload({ contentId: id, brand: 'daejeon_youth', inputs: ['a.mp4'] }).ok)
+      && !L.buildRenderPayload({ contentId: 'CH-1', brand: 'x', inputs: ['a.mp4'] }).ok
+      && !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cropX: 2 }).ok
+      && !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: [] }).ok);
+
+    /* 표준 v3 숫자 */
+    ok('음량 프로필 = 표1 (자막만 -14/TP -1.8, BGM -16/TP -2.0)', L.PROFILES.captions.lufs === -14 && L.PROFILES.captions.tpMax === -1.8 && L.PROFILES.bgm.lufs === -16 && L.PROFILES.bgm.tpMax === -2.0);
+    ok('오더 TP 목표는 한도보다 여유(실측: 목표=한도면 한도를 넘었다)', L.PROFILES.captions.tpTarget < L.PROFILES.captions.tpMax && L.PROFILES.bgm.tpTarget < L.PROFILES.bgm.tpMax);
+    ok('캡컷 7단계', L.reviewSteps('daejeon_youth').length === 7 && L.reviewSteps('ppiyak_kimmary').length === 7);
+    ok('트랙별 줄당 글자 12/11', L.finishOf('daejeon_youth').cpl === 12 && L.finishOf('ppiyak_kimmary').cpl === 11);
+    ok('모르는 brand 는 대전 청년 값으로(안 터진다)', L.finishOf('zzz').cpl === 12);
+
+    /* 결과 report — 규격 대조는 화면이 다시 계산 */
+    const goodRep = { out: 'CH-1_clean.mp4', width: 1080, height: 1920, fps: 30, duration: 24.5, lufs: -14.1, tp: -2.1, checks: [{ id: 'codec', status: 'PASS', msg: 'h264' }] };
+    const pr = L.parseReport(JSON.stringify(goodRep));
+    ok('report 해석', pr.ok && pr.report.checks.length === 1, pr);
+    ok('규격 대조 전부 PASS', L.compareStandard(pr.report, 'captions').every((r) => r.status === 'PASS'));
+    ok('음량이 어긋나면 FAIL(-12 LUFS)', L.compareStandard(L.parseReport(Object.assign({}, goodRep, { lufs: -12 })).report, 'captions').find((r) => r.id === 'lufs').status === 'FAIL');
+    ok('TP 가 한도를 넘으면 FAIL(-1.73 — 실측 사례)', L.compareStandard(L.parseReport(Object.assign({}, goodRep, { tp: -1.73 })).report, 'captions').find((r) => r.id === 'tp').status === 'FAIL');
+    ok('해상도·fps·길이 어긋나면 FAIL', ['width', 'fps', 'duration'].every((k) => L.compareStandard(L.parseReport(Object.assign({}, goodRep, { [k]: k === 'duration' ? 120 : 1 })).report, 'captions').some((r) => r.status === 'FAIL')));
+    ok('값이 없으면 지어내지 않고 WARN(확인 못 함)', L.compareStandard(L.parseReport({ checks: [] }).report, 'captions').every((r) => r.status === 'WARN' && /확인 못 함/.test(r.msg)));
+    ok('숫자가 아니면 거부', !L.parseReport(Object.assign({}, goodRep, { lufs: 'loud' })).ok);
+    ok('status 가 PASS·WARN·FAIL 이 아니면 거부', !L.parseReport(Object.assign({}, goodRep, { checks: [{ id: 'x', status: 'OK' }] })).ok);
+    ok('JSON 이 아니면 거부', !L.parseReport('{깨짐').ok && !L.parseReport('[1]').ok);
+
+    /* 단계 완료 판정 — 오더를 보냈다고 끝이 아니다 */
+    const st0 = L.defaultState();
+    ok('빈 카드는 전부 미완료', Object.values(L.stepStatus(st0, 'daejeon_youth')).every((v) => v === false));
+    const stSent = L.normalizeState({ inputs: ['a.mp4'], render: { order_id: 'Q-1', status: 'WAITING_APPROVAL' } });
+    ok('오더만 보내면 렌더 단계는 미완료', L.stepStatus(stSent, 'daejeon_youth').render === false && L.stepStatus(stSent, 'daejeon_youth').material === true);
+    const stDone = L.normalizeState({ inputs: ['a.mp4'], profile: 'captions', render: { order_id: 'Q-1', report: pr.report } });
+    ok('규격 대조 FAIL 0 이면 렌더 완료', L.stepStatus(stDone, 'daejeon_youth').render === true);
+    const stBadRep = L.normalizeState({ inputs: ['a.mp4'], render: { report: L.parseReport(Object.assign({}, goodRep, { lufs: -9 })).report } });
+    ok('FAIL 이 있으면 렌더 미완료', L.stepStatus(stBadRep, 'daejeon_youth').render === false);
+    ok('SRT 단계는 언제나 미완료(준비 중)', L.STEPS.find((x) => x.key === 'srt').soon === true && L.stepStatus(stDone, 'daejeon_youth').srt === false);
+    const allReview = {}; L.reviewSteps('daejeon_youth').forEach((r) => { allReview[r.id] = true; });
+    ok('캡컷 7단계 모두 체크하면 마무리 완료', L.stepStatus(L.normalizeState({ review: allReview }), 'daejeon_youth').finish === true);
+    ok('손상된 저장값을 믿지 않는다', same(L.normalizeState({ inputs: 'x', profile: 'zz', review: { zz: true }, render: 5 }), L.defaultState()));
+
+    /* 코드 규칙 */
+    const pv = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
+    const pl = fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8');
+    ok('innerHTML/outerHTML/insertAdjacentHTML/document.write 0건', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(pv + pl));
+    ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(pv + pl));
+    ok('payload studio 키 한 개만 저장(시트 칸을 늘리지 않는다)', /patch: \{ studio: state \}/.test(pv));
+    ok('SRT 단계에 누를 수 있는 버튼이 없다', !/h\('button'/.test(pv.split('function bodySrt')[1].split('function bodyFinish')[0]));
+    ok('app.js 가 제작 탭을 연결한다', /produceSection/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')));
+  } catch (err) {
+    ok('제작 스텝퍼 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

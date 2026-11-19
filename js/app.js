@@ -19,6 +19,7 @@ import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './
 import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
+import { produceSection } from './produceView.js?v=20261119v';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -1812,12 +1813,12 @@ async function openDetail(contentId, opts = {}) {
     const payload = d.payload || null;
     /* 발행 전 카드는 '작성본'이 먼저 보여야 한다 — 이 카드가 무슨 내용인지가 첫 질문이니까 */
     const wantDraft = DRAFTISH.indexOf(String(d.status || m.status || '')) >= 0;
-    let tab = opts === 'src' ? 'src' : opts === 'ana' ? 'ana' : (wantDraft ? 'draft' : 'ana');
+    let tab = opts === 'src' ? 'src' : opts === 'ana' ? 'ana' : opts === 'produce' ? 'produce' : (wantDraft ? 'draft' : 'ana');
 
     const paintTabs = () => {
       if (!tabBar) return;
       clear(tabBar);
-      [['draft', '작성본'], ['ana', '분석'], ['src', '원문·메타']].forEach((pair) => {
+      [['draft', '작성본'], ['produce', '제작'], ['ana', '분석'], ['src', '원문·메타']].forEach((pair) => {
         tabBar.appendChild(h('button', {
           class: 'sheet-tab', type: 'button', role: 'tab', 'data-tab': pair[0],
           'aria-selected': pair[0] === tab ? 'true' : 'false',
@@ -1841,6 +1842,15 @@ async function openDetail(contentId, opts = {}) {
             draftCache.delete(contentId);
             refresh().then(() => { if (state.route === 'board') renderRoute(); });
           }
+        }));
+      } else if (tab === 'produce') {
+        body.appendChild(produceSection({
+          h,
+          detail: d,
+          meta: m,
+          brand: m.brand || state.brand,
+          toast,
+          onNavigate: (hash) => { if (dlg.open) dlg.close(); location.hash = hash; }
         }));
       } else if (tab === 'ana') {
         body.appendChild(analysisSection(contentId, d, m, payload, dlg));

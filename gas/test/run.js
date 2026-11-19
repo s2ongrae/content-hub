@@ -271,6 +271,79 @@ o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render' }, { br
 eq('네트워크 실패도 ERR_QUEUE_UNREACHABLE', o.code, 'ERR_QUEUE_UNREACHABLE');
 ok('토큰이 오류 문구에 새지 않는다', !/portal-key/.test(o.message || ''), o.message);
 
+console.log('\n[8b] 영상 렌더 오더(계약 v1) — 큐에 실제 타입 content_render');
+const okReply = { code: 200, body: JSON.stringify({ ok: true, item: { id: 'Q-20261119-210000-rend', status: 'WAITING_APPROVAL' }, needs_approval: true, risk_level: 'HIGH', approval_expires_at: '2026-11-19T21:15:00+09:00', note: '위험 작업 — 승인 필요' }) };
+A.env.setFetchReply(okReply);
+const goodRender = { type: 'content_render', content_id: 'CH-20261119-001', brand: 'daejeon_youth', inputs: ['01_외관.mp4', '02 메뉴판.mov'], profile: 'captions', crop_x: 0.4 };
+const fetchedBefore = A.env.fetched.length;
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
+ok('렌더 오더 접수', o.ok, o);
+const rs = A.env.fetched[A.env.fetched.length - 1];
+ok('큐를 한 번 불렀다', A.env.fetched.length === fetchedBefore + 1);
+eq('큐 타입은 content_render(claude_prompt 아님)', rs.body.type, 'content_render');
+eq('payload 는 계약 키뿐', Object.keys(rs.body.payload).sort().join(','), 'brand,content_id,crop_x,inputs,profile');
+ok('프롬프트·모드·엔진을 보내지 않는다(결정적 작업)', rs.body.payload.prompt === undefined && rs.body.payload.mode === undefined && rs.body.payload.engine === undefined);
+eq('입력 파일 이름이 그대로', rs.body.payload.inputs.join('|'), '01_외관.mp4|02 메뉴판.mov');
+eq('워크스페이스는 설정을 따른다', rs.body.workspace, 'content-hub');
+eq('응답 queue_type', o.ok && o.data.queue_type, 'content_render');
+eq('승인 필요를 돌려준다', o.ok && o.data.needs_approval, true);
+eq('위험도를 돌려준다', o.ok && o.data.risk_level, 'HIGH');
+ok('승인 기한을 돌려준다', o.ok && /2026-11-19T21:15/.test(o.data.approval_expires_at), o);
+ok('큐 토큰은 응답에 없다', o.ok && !JSON.stringify(o.data).includes('portal-key'));
+
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { profile: undefined, crop_x: undefined }), { brand: 'daejeon_youth' });
+ok('profile·crop_x 생략 가능', o.ok, o);
+const rs2 = A.env.fetched[A.env.fetched.length - 1];
+eq('profile 기본 captions', rs2.body.payload.profile, 'captions');
+ok('crop_x 를 만들어 넣지 않는다', !('crop_x' in rs2.body.payload));
+
+console.log('\n[8c] 렌더 오더 입력 검증 — 큐를 부르기 전에 막는다');
+const n0 = A.env.fetched.length;
+const badCases = [
+  ['content_id 에 경로', Object.assign({}, goodRender, { content_id: '../x' })],
+  ['content_id 41자', Object.assign({}, goodRender, { content_id: 'a'.repeat(41) })],
+  ['brand 틀림', Object.assign({}, goodRender, { brand: 'other' })],
+  ['inputs 비어 있음', Object.assign({}, goodRender, { inputs: [] })],
+  ['inputs 9개', Object.assign({}, goodRender, { inputs: Array.from({ length: 9 }, (_, i) => 'v' + i + '.mp4') })],
+  ['경로 구분자', Object.assign({}, goodRender, { inputs: ['a/b.mp4'] })],
+  ['역슬래시', Object.assign({}, goodRender, { inputs: ['a\b.mp4'] })],
+  ['상위 경로 ..', Object.assign({}, goodRender, { inputs: ['a..mp4'] })],
+  ['점으로 시작', Object.assign({}, goodRender, { inputs: ['.hidden.mp4'] })],
+  ['확장자 txt', Object.assign({}, goodRender, { inputs: ['a.txt'] })],
+  ['문자열 아님', Object.assign({}, goodRender, { inputs: [123] })],
+  ['profile 틀림', Object.assign({}, goodRender, { profile: 'loud' })],
+  ['crop_x 범위 밖', Object.assign({}, goodRender, { crop_x: 1.5 })],
+  ['crop_x 숫자 아님', Object.assign({}, goodRender, { crop_x: 'left' })]
+];
+badCases.forEach(([name, pl]) => {
+  const r = callHandler(A.ctx, 'handleHubOrder_', null, pl, { brand: 'daejeon_youth' });
+  eq('거부: ' + name, r.code, 'ERR_VALIDATION_FAILED');
+});
+ok('거부된 오더는 큐를 부르지 않았다', A.env.fetched.length === n0);
+
+console.log('\n[8d] 큐가 content_render 를 아직 모를 때(배포 전) — 앱이 깨지지 않게');
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code: 'ERR_UNKNOWN_TYPE', message: '허용되지 않은 작업 타입입니다: content_render' } }) });
+const n1 = A.env.fetched.length;
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
+eq('ERR_QUEUE_TYPE_UNKNOWN 으로 알린다', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
+ok('무엇을 하면 되는지 말한다(새 버전 배포)', /새 버전/.test(o.message || ''), o.message);
+ok('큐를 한 번만 불렀다 — claude_prompt 로 되돌려 다시 보내지 않는다', A.env.fetched.length === n1 + 1 && A.env.fetched[n1].body.type === 'content_render');
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: '허용되지 않은 작업 타입입니다: content_render' }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
+eq('문자열 오류도 같은 코드', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code: 'busy', message: '다른 저장이 진행 중이에요' } }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
+eq('다른 거절은 그대로 ERR_QUEUE_REJECTED', o.code, 'ERR_QUEUE_REJECTED');
+
+console.log('\n[8e] 옛 content_render(inputs 없음, #/create 조립본 오더)는 그대로 claude_prompt');
+A.env.setFetchReply(okReply);
+o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render', channel: 'shorts', place_name: '미미삼겹', slot_count: 7 }, { brand: 'daejeon_youth' });
+ok('옛 오더 접수', o.ok, o);
+const rs3 = A.env.fetched[A.env.fetched.length - 1];
+eq('큐 타입 claude_prompt', rs3.body.type, 'claude_prompt');
+eq('mode=edit', rs3.body.payload.mode, 'edit');
+eq('응답 queue_type', o.ok && o.data.queue_type, 'claude_prompt');
+
 /* ───────── 내 블로그 보기 (gas/Blog.gs, 2026-11-19) ───────── */
 
 /** 시트 흉내 — getRange(r,c,nr,nc).getValues/setValues 만 지원 */
