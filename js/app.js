@@ -20,7 +20,7 @@ import { draftSection, draftPreview } from './draftView.js?v=20261119m';
 
 const BRANDS = {
   daejeon_youth: { name: '대전 청년', emoji: '🍺', channels: '블로그 · 쇼츠 · 인스타(릴스·피드) · 클립 · 당근' },
-  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 인스타(릴스·피드) · 클립' }
+  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 릴스 · 클립' }
 };
 
 /* 화면에 보이는 말은 쉬운 한국어로. 시트·GAS 코드값(DRAFT·PUBLISHED·LINKED …)은 그대로 둔다. */
@@ -165,9 +165,9 @@ const channelState = (v) => {
   return 'none';
 };
 
-/* 트랙별 대상 채널 — 김메리는 블로그·당근을 쓰지 않는다. 대전 청년은 6칸(당근 포함). */
+/* 트랙별 대상 채널 — 김메리는 블로그·피드 사진·당근을 쓰지 않는다(쇼츠·릴스·클립 3개가 올라가면 그 소재는 끝). 대전 청년은 6칸(당근 포함). */
 const brandChannels = (brand) => (brand === 'ppiyak_kimmary'
-  ? CHANNELS.filter((c) => c.key !== 'blog' && c.key !== 'daangn')
+  ? CHANNELS.filter((c) => c.key !== 'blog' && c.key !== 'feed' && c.key !== 'daangn')
   : CHANNELS);
 
 /* 그 카드가 실제로 올리는 채널 — 일부러 건너뛴 채널은 분모에서 뺀다(1/5가 아니라 1/1로 보이게) */
