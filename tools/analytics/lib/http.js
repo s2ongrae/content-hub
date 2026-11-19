@@ -59,7 +59,7 @@ async function fetchJson(url, opts = {}) {
       throw lastErr;
     }
 
-    const parsed = parseBody(res);
+    const parsed = await parseBody(res);
     if (res.status >= 200 && res.status < 300) {
       return { ok: true, status: res.status, body: parsed, calls };
     }
@@ -91,8 +91,11 @@ async function withTimeout(fetchImpl, url, opts, timeoutMs) {
   }
 }
 
-/** 테스트용 주입 fetch 는 {status, body} 객체를 그대로 줄 수 있다. */
-function parseBody(res) {
+/** 테스트용 주입 fetch 는 {status, body} 객체를 그대로 줄 수 있다.
+ *  실제 fetch 의 Response 는 body 읽기가 비동기이므로 이 함수도 비동기다(await 필수) —
+ *  동기로 두면 body 가 Promise 인 채로 흘러 .items 같은 필드가 사라진다.
+ */
+async function parseBody(res) {
   if (res == null) return null;
   if (Object.prototype.hasOwnProperty.call(res, 'body') && typeof res.json !== 'function') {
     const b = res.body;

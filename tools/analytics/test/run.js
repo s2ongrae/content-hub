@@ -52,6 +52,11 @@ function fakeFetch(routes) {
     let err2 = null;
     try { await fetchJson('https://x.test/secret?key=SUPERSECRET123', { fetchImpl: h, retries: 0, secrets: ['SUPERSECRET123'] }); } catch (e) { err2 = e; }
     ok('오류 메시지·URL 에서 키를 지운다', !!err2 && !/SUPERSECRET123/.test(err2.message + JSON.stringify(err2.details)), err2 && err2.message);
+
+    /* 실제 fetch 의 Response 처럼 .json() 이 비동기인 응답 — 본문이 Promise 로 새지 않아야 한다 */
+    const real = async () => ({ status: 200, json: async () => ({ items: [{ id: 'UC_A' }] }) });
+    const res2 = await fetchJson('https://x.test/real', { fetchImpl: real });
+    ok('실제 Response 본문도 객체로 온다', !!(res2.body && res2.body.items && res2.body.items[0].id === 'UC_A'), res2.body);
   }
 
   /* ───────── 2. 유튜브 파싱 ───────── */
