@@ -84,6 +84,15 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('조립기 스모크', false, (err && err.message) || err);
   }
 
+  /* ④ 유튜브·인스타 자동 수집기 (tools/analytics) */
+  console.log('[4] 자동 수집 시험 (tools/analytics)');
+  {
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'analytics', 'test', 'run.js')], { encoding: 'utf8' });
+    const tail = String(r.stdout || '').trim().split('\n').slice(-1)[0] || '';
+    ok('자동 수집 시험 통과', r.status === 0, (r.stdout || '') + (r.stderr || ''));
+    if (r.status === 0) console.log('    ' + tail);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();

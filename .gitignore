@@ -9,3 +9,7 @@ config.local.js
 Thumbs.db
 node_modules/
 *.log
+
+# 자동 수집 실행 산출물(보고서)
+tools/analytics/out/
+# 채널·계정 ID 만 담는 실제 설정은 커밋한다(비밀값 없음) — API 키·토큰은 GitHub Actions Secrets 에만
