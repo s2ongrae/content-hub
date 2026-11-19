@@ -9,6 +9,11 @@
  *   ④ GAS 가 같은 중복 키를 다시 걸러 시트에 적고, 필요하면 Metrics 에도 한 줄 비춘다.
  *
  * 키가 하나도 없으면 아무 네트워크도 타지 않고 dry-run 계획만 돌려준다 — 설정 전에도 안전하게 돌려 볼 수 있다.
+ *
+ * 수익(revenue_krw)은 실제 값만 싣는다.
+ *   · ypp       : YouTube Analytics 가 보고한 채널 수익(수익창출 채널·OAuth 토큰이 있을 때만)
+ *   · confirmed : 사람이 확정한 협찬·제휴액(config.revenue.confirmed)
+ *   · 그 외에는 0 — 조회수 × 가정 단가 같은 계산값은 만들지 않는다.
  */
 
 const { fetchJson, AnalyticsError } = require('./http');
@@ -17,7 +22,7 @@ const { collectInstagram, tokenNotice } = require('./instagram');
 const {
   normalizeYoutubeVideo, normalizeYoutubeChannel, normalizeInstagramMedia, dedupeKey, kstDate
 } = require('./normalize');
-const { estimateRevenue, performanceScore, mediansByChannel } = require('./estimate');
+const { performanceScore, mediansByChannel } = require('./score');
 const { createLinker } = require('./ids');
 
 const GAS_MAX_ITEMS = 50;   // GAS 쓰기 락(1.8초)과 부딪히지 않게 작게 보낸다(제미니 구현 리뷰 반영)
@@ -62,6 +67,7 @@ function buildPlan(config, env) {
       calls_per_run: ytChannels.length ? ytChannels.length * 2 + ytChannels.length : 0,
       units_per_run: ytChannels.length ? ytChannels.length * 2 + ytChannels.length : 0,
       analytics_api: !!(e.youtubeOAuthToken && ytChannels.some((t) => t.monetized)),
+      revenue_api: !!(e.youtubeOAuthToken && ytChannels.some((t) => t.monetized)),
       missing: [
         e.youtubeApiKey ? '' : 'YOUTUBE_API_KEY',
         ytChannels.length ? '' : 'tracks[].youtube.channel_id'
@@ -100,6 +106,7 @@ async function runSync(opts) {
   const notices = [];
   const errors = [];
   const rows = [];
+  const yppRevenue = {};   // 영상 ID → YouTube 가 보고한 수익(원). 보고가 없으면 비어 있다.
   let mode = 'live';
 
   if (!plan.youtube.configured && !plan.instagram.configured) {
@@ -148,12 +155,24 @@ async function runSync(opts) {
           accessToken: env.youtubeOAuthToken,
           startDate: shiftDate(now, -7),
           endDate: kstDate(now),
+          metrics: 'views,estimatedMinutesWatched,averageViewPercentage,estimatedRevenue',
+          currency: 'KRW',
           fetchImpl: o.fetchImpl
         });
         if (res.status === 'SKIPPED') {
           notices.push({ level: 'warn', code: 'YT_ANALYTICS_SKIPPED', message: '수익화 전 채널이라 Analytics API 수익 지표를 건너뜁니다(' + t.track + ').' });
         } else if (res.status === 'ERROR') {
           errors.push({ source: 'youtube-analytics', code: res.reason, message: 'Analytics API 호출 실패', reason: res.reason });
+        } else {
+          let withRevenue = 0;
+          res.rows.forEach((r) => {
+            const vid = String(r.video || '');
+            const krw = Math.round(Number(r.estimatedRevenue) || 0);
+            if (vid && krw > 0) { yppRevenue[vid] = krw; withRevenue += 1; }
+          });
+          if (withRevenue) {
+            notices.push({ level: 'info', code: 'YT_REVENUE', message: 'YouTube 보고 수익(최근 7일) ' + withRevenue + '건을 함께 실었습니다(' + t.track + ').' });
+          }
         }
       }
     }
@@ -187,7 +206,7 @@ async function runSync(opts) {
   }
 
   const deduped = dedupe(rows);
-  const enriched = applyRevenueAndScore(deduped, config);
+  const enriched = applyRevenueAndScore(deduped, config, yppRevenue);
 
   return {
     mode,
@@ -215,27 +234,46 @@ function dedupe(rows) {
   return Array.from(seen.values());
 }
 
-/** 행마다 예상 수익·성과 점수를 붙인다(점수는 같은 표면 중위수 기준). */
-function applyRevenueAndScore(rows, config) {
+/**
+ * 사람이 확정한 협찬·제휴액 — config.revenue.confirmed[외부ID].
+ *   "VIDEO_ID": 300000                  (숫자만 써도 된다)
+ *   "VIDEO_ID": { "krw": 300000, "label": "브랜드 협찬" }
+ * @returns {{krw:number, label:string}|null}
+ */
+function confirmedRevenueOf(config, externalId) {
+  const map = (config && config.revenue && config.revenue.confirmed) || {};
+  const hit = map[String(externalId || '')];
+  if (hit == null) return null;
+  if (typeof hit === 'number') return { krw: Math.round(hit), label: '' };
+  const krw = Math.round(Number(hit.krw) || 0);
+  return { krw: krw, label: String(hit.label || '') };
+}
+
+/**
+ * 행마다 수익(실제 값만)·성과 점수를 붙인다(점수는 같은 표면 중위수 기준).
+ * 수익 출처가 없으면 0원·출처 없음으로 남긴다 — 추정값으로 채우지 않는다.
+ * @param {Array} rows 정규화된 행
+ * @param {object} config 설정(확정 협찬액)
+ * @param {object} [ypp] 영상 ID → YouTube 보고 수익(원)
+ */
+function applyRevenueAndScore(rows, config, ypp) {
   const medians = mediansByChannel(rows);
-  const rpmTable = (config && config.revenue && config.revenue.rpm_krw) || null;
-  const monetizedByBrand = {};
-  flattenTracks(config).forEach((t) => { monetizedByBrand[t.brand] = t.monetized; });
+  const reported = ypp || {};
   return (rows || []).map((r) => {
-    const est = estimateRevenue({
-      source: r.source,
-      channel: r.channel,
-      views: r.views,
-      monetized: !!monetizedByBrand[r.brand],
-      rpmTable
+    const out = Object.assign({}, r, {
+      revenue_krw: 0,
+      revenue_source: '',
+      score: performanceScore(r, { medianViews: medians[r.channel] || 0 })
     });
-    return Object.assign({}, r, {
-      revenue_krw: est.krw,
-      revenue_estimated: est.estimated,
-      rpm_assumed: est.rpm,
-      score: performanceScore(r, { medianViews: medians[r.channel] || 0 }),
-      note: [r.note, est.reason === 'OK' ? '' : est.reason].filter(Boolean).join(',')
-    });
+    const confirmed = confirmedRevenueOf(config, r.external_id);
+    if (confirmed && confirmed.krw > 0) {
+      out.revenue_krw = confirmed.krw;
+      out.revenue_source = 'confirmed';
+    } else if (reported[String(r.external_id || '')] > 0) {
+      out.revenue_krw = reported[String(r.external_id)];
+      out.revenue_source = 'ypp';
+    }
+    return out;
   });
 }
 
@@ -287,4 +325,4 @@ function shiftDate(now, days) {
   return kstDate(new Date(new Date(now).getTime() + days * 86400000));
 }
 
-module.exports = { flattenTracks, linkOf, buildPlan, runSync, dedupe, applyRevenueAndScore, toGasPayload, pushToGas, GAS_MAX_ITEMS };
+module.exports = { flattenTracks, linkOf, buildPlan, runSync, dedupe, confirmedRevenueOf, applyRevenueAndScore, toGasPayload, pushToGas, GAS_MAX_ITEMS };

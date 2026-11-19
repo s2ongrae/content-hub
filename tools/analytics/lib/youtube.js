@@ -12,7 +12,8 @@
  *  → 채널 2개 · 영상 100개 기준 하루 6 unit. 한 달 돌려도 180 unit.
  *
  * 수익화 전 채널에서 Analytics API 의 estimatedRevenue / monetizedPlayback 은 403 이 난다.
- * 이때는 배치를 멈추지 않고 MONETIZATION_NOT_ENABLED 로 표시해 건너뛴다(→ estimate.js 가 0원 처리).
+ * 이때는 배치를 멈추지 않고 MONETIZATION_NOT_ENABLED 로 표시해 건너뛴다(수익은 0원·출처 없음으로 남는다).
+ * 수익은 YouTube 가 보고한 값만 싣는다 — 우리가 조회수로 다시 계산하지 않는다.
  */
 
 const { fetchJson, AnalyticsError } = require('./http');
@@ -169,9 +170,10 @@ function withinWindow(iso, now, days) {
 }
 
 /**
- * (선택) YouTube Analytics API — 시청지속·시청시간·예상수익.
+ * (선택) YouTube Analytics API — 시청지속·시청시간·채널 보고 수익.
  * 수익화 전 채널은 403(monetization not enabled) → 배치를 멈추지 않고 건너뛴다.
- * @returns {Promise<{status:'OK'|'SKIPPED'|'ERROR', reason:string, rows:Array}>}
+ * 통화는 currency 로 고정해 받는다(기본 KRW) — 환율로 다시 계산하지 않는다.
+ * @returns {Promise<{status:'OK'|'SKIPPED'|'ERROR', reason:string, rows:Array}>
  */
 async function collectYoutubeAnalytics(opts) {
   const o = opts || {};
@@ -181,6 +183,7 @@ async function collectYoutubeAnalytics(opts) {
     'startDate=' + encodeURIComponent(o.startDate),
     'endDate=' + encodeURIComponent(o.endDate),
     'metrics=' + encodeURIComponent(o.metrics || 'views,estimatedMinutesWatched,averageViewPercentage'),
+    'currency=' + encodeURIComponent(o.currency || 'KRW'),
     'dimensions=video',
     'maxResults=200'
   ].join('&');

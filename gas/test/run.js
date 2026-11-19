@@ -445,7 +445,7 @@ ok('키가 틀리면 ERR_NO_NAVER_KEY · 비밀 안 샘', o.code === 'ERR_NO_NAV
 
   const a1 = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, {
     items: [
-      { source: 'youtube', channel: 'shorts', external_id: 'VID1', content_id: 'DY-1', brand: 'daejeon_youth', checkpoint: 'D7', collected_at: '2026-11-19T12:00:00+09:00', views: 1200, likes: 30, comments: 4, revenue_krw: 36, revenue_estimated: true, score: 72 },
+      { source: 'youtube', channel: 'shorts', external_id: 'VID1', content_id: 'DY-1', brand: 'daejeon_youth', checkpoint: 'D7', collected_at: '2026-11-19T12:00:00+09:00', views: 1200, likes: 30, comments: 4, revenue_krw: 36000, revenue_source: 'confirmed', score: 72 },
       { source: 'instagram', channel: 'feed', external_id: 'IG1', brand: 'daejeon_youth', checkpoint: 'LATEST', collected_at: '2026-11-19T12:00:00+09:00', reach: 900, likes: 40, saves: 12 }
     ]
   }, { brand: 'daejeon_youth' });
@@ -454,11 +454,11 @@ ok('키가 틀리면 ERR_NO_NAVER_KEY · 비밀 안 샘', o.code === 'ERR_NO_NAV
   eq('1건만 Metrics 로 비춤', a1.ok && a1.data.mirrored, 1);
   const sheet2 = ss2.getSheetByName('Analytics_Daily');
   ok('Analytics_Daily 시트를 스스로 만든다', !!sheet2);
-  eq('24컬럼 헤더', sheet2 && sheet2.getLastColumn(), 24);
+  eq('23컬럼 헤더', sheet2 && sheet2.getLastColumn(), 23);
   const rows2 = sheet2.getRange(2, 1, sheet2.getLastRow() - 1, sheet2.getLastColumn()).getValues();
   eq('행 2개', rows2.length, 2);
   const header2 = sheet2.getRange(1, 1, 1, 24).getValues()[0];
-  ok('추정 수익 컬럼은 TRUE 로 적힌다', String(rows2[0][header2.indexOf('revenue_estimated')]) === 'true', rows2[0]);
+  ok('수익 출처는 글자로 적힌다', String(rows2[0][header2.indexOf('revenue_source')]) === 'confirmed', rows2[0]);
   eq('Metrics 에 한 줄', metrics.getLastRow() - 1, 1);
 
   const a2 = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, {

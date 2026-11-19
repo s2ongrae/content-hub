@@ -8,7 +8,7 @@ const { fetchJson, AnalyticsError } = require('../lib/http');
 const yt = require('../lib/youtube');
 const ig = require('../lib/instagram');
 const nz = require('../lib/normalize');
-const est = require('../lib/estimate');
+const sc = require('../lib/score');
 const sync = require('../lib/sync');
 
 let passed = 0;
@@ -154,25 +154,40 @@ function fakeFetch(routes) {
   eq('Metrics 채널 매핑(롱폼 없음)', nz.metricChannelOf('longform'), '');
   eq('중복키', nz.dedupeKey(row), 'youtube|V1|shorts|D7|2026-11-19');
 
-  /* ───────── 6. 수익 추정·점수 ───────── */
-  console.log('[6] 수익 추정 — 추정 표시 · 인스타 숨김 · 점수');
-  const pre = est.estimateRevenue({ source: 'youtube', channel: 'shorts', views: 10000, monetized: false });
-  eq('수익화 전 쇼츠 10,000뷰 = 300원(30원/1,000)', pre.krw, 300);
-  eq('추정 표시', pre.estimated, true);
-  eq('사유', pre.reason, 'MONETIZATION_NOT_ENABLED');
-  eq('라벨', pre.label, '예상(추정)');
-  const long = est.estimateRevenue({ source: 'youtube', channel: 'longform', views: 10000, monetized: true });
-  eq('수익화 후 롱폼 10,000뷰 = 25,000원', long.krw, 25000);
-  const insta = est.estimateRevenue({ source: 'instagram', channel: 'reels', views: 999999 });
-  eq('인스타는 예상 수익 0', insta.krw, 0);
-  eq('인스타 사유', insta.reason, 'NO_PAYOUT');
-  const conf = est.estimateRevenue({ source: 'instagram', channel: 'feed', confirmedRevenue: 150000 });
-  eq('협찬 확정액은 남긴다', conf.krw, 150000);
+  /* ───────── 6. 수익·점수 — 추정 없음 ───────── */
+  console.log('[6] 수익 — 실제 값만 · 추정 모듈 제거 · 점수');
+  {
+    let gone = null;
+    try { require('../lib/estimate'); } catch (e) { gone = e; }
+    eq('추정 수익 모듈(estimate.js)은 없다', gone && gone.code, 'MODULE_NOT_FOUND');
+  }
+  eq('가정 단가 표도 없다', sc.DEFAULT_RPM_KRW, undefined);
+  eq('추정 함수도 없다', sc.estimateRevenue, undefined);
 
-  const med = est.mediansByChannel([{ channel: 'shorts', views: 100 }, { channel: 'shorts', views: 300 }, { channel: 'shorts', views: 200 }]);
+  const noRev = sync.applyRevenueAndScore([{ source: 'youtube', channel: 'shorts', external_id: 'V1', views: 10000, likes: 10, comments: 1, saves: 2 }], {}, {});
+  eq('자료 없으면 0원', noRev[0].revenue_krw, 0);
+  eq('출처도 비운다', noRev[0].revenue_source, '');
+  ok('조회수로 수익을 만들지 않는다', noRev[0].revenue_krw === 0, noRev[0]);
+
+  const confRows = sync.applyRevenueAndScore(
+    [{ source: 'instagram', channel: 'feed', external_id: 'M1', views: 0, reach: 900, likes: 40, comments: 4 }],
+    { revenue: { confirmed: { M1: { krw: 150000, label: '브랜드 협찬' } } } }, {}
+  );
+  eq('확정 협찬액은 싣는다', confRows[0].revenue_krw, 150000);
+  eq('출처 confirmed', confRows[0].revenue_source, 'confirmed');
+  eq('숫자만 적어도 된다', sync.applyRevenueAndScore([{ source: 'youtube', channel: 'shorts', external_id: 'V7', views: 1 }], { revenue: { confirmed: { V7: 50000 } } }, {})[0].revenue_krw, 50000);
+  eq('확정 금액 비교', sync.confirmedRevenueOf({ revenue: { confirmed: { V7: 50000 } } }, 'V7').krw, 50000);
+  eq('확정 없으면 null', sync.confirmedRevenueOf({}, 'V7'), null);
+
+  const yppRows = sync.applyRevenueAndScore([{ source: 'youtube', channel: 'longform', external_id: 'V2', views: 100, likes: 1 }], {}, { V2: 1200 });
+  eq('YouTube 보고 수익', yppRows[0].revenue_krw, 1200);
+  eq('출처 ypp', yppRows[0].revenue_source, 'ypp');
+  eq('확정이 있으면 확정 우선', sync.applyRevenueAndScore([{ source: 'youtube', channel: 'longform', external_id: 'V2', views: 100 }], { revenue: { confirmed: { V2: 7 } } }, { V2: 1200 })[0].revenue_source, 'confirmed');
+
+  const med = sc.mediansByChannel([{ channel: 'shorts', views: 100 }, { channel: 'shorts', views: 300 }, { channel: 'shorts', views: 200 }]);
   eq('표면 중위수', med.shorts, 200);
-  const s1 = est.performanceScore({ views: 200, likes: 10, comments: 2, saves: 3 }, { medianViews: 200 });
-  const s2 = est.performanceScore({ views: 40, likes: 0, comments: 0 }, { medianViews: 200 });
+  const s1 = sc.performanceScore({ views: 200, likes: 10, comments: 2, saves: 3 }, { medianViews: 200 });
+  const s2 = sc.performanceScore({ views: 40, likes: 0, comments: 0 }, { medianViews: 200 });
   ok('중위수 이상이 더 높은 점수', s1 > s2, { s1, s2 });
   ok('점수는 0~100', s1 <= 100 && s2 >= 0, { s1, s2 });
 
@@ -184,7 +199,7 @@ function fakeFetch(routes) {
       track_b: { brand: 'ppiyak_kimmary', youtube: { channel_id: 'UC_B' } }
     },
     collect: { window_days: 45 },
-    revenue: { rpm_krw: { shorts: 150 } },
+    revenue: { confirmed: { V1: { krw: 300000, label: '협찬' } } },
     links: { V1: { brand: 'daejeon_youth', content_id: 'C1' } }
   };
   {
@@ -208,9 +223,28 @@ function fakeFetch(routes) {
     const v = live.rows.find((r) => r.channel === 'shorts');
     eq('연결된 카드', v.content_id, 'C1');
     eq('D7 스냅샷', v.checkpoint, 'D7');
-    eq('수익화 전 추정 수익', v.revenue_krw, 150);
-    ok('추정 표시', v.revenue_estimated === true);
+    eq('확정 협찬액만 싣는다(조회수 계산 없음)', v.revenue_krw, 300000);
+    eq('수익 출처 confirmed', v.revenue_source, 'confirmed');
+    ok('추정 표시 필드는 더 이상 없다', v.revenue_estimated === undefined && v.rpm_assumed === undefined, v);
     ok('점수 계산됨', v.score > 0, v.score);
+  }
+  {
+    /* 수익창출 채널 + OAuth 토큰 — YouTube 가 보고한 수익만 싣는다 */
+    const cfgY = { tracks: { track_a: { brand: 'daejeon_youth', youtube: { channel_id: 'UC_A', monetized: true } } }, collect: { window_days: 45 } };
+    const f = fakeFetch([
+      { test: '/channels', reply: { body: { items: [{ id: 'UC_A', statistics: { subscriberCount: '5' }, contentDetails: { relatedPlaylists: { uploads: 'UU_A' } } }] } } },
+      { test: '/playlistItems', reply: { body: { items: [{ contentDetails: { videoId: 'V1', videoPublishedAt: '2026-11-18T00:00:00Z' } }] } } },
+      { test: '/videos', reply: { body: { items: [{ id: 'V1', snippet: { title: 'a', publishedAt: '2026-11-18T00:00:00Z' }, statistics: { viewCount: '100' }, contentDetails: { duration: 'PT20S' } }] } } },
+      { test: 'youtubeanalytics.googleapis.com', reply: { body: { columnHeaders: [{ name: 'video' }, { name: 'estimatedRevenue' }], rows: [['V1', 1234.6], ['V9', 500]] } } }
+    ]);
+    const live = await sync.runSync({ config: cfgY, env: { youtubeApiKey: 'KEY', youtubeOAuthToken: 'OAUTH' }, fetchImpl: f, now: new Date('2026-11-19T03:00:00Z') });
+    const v = live.rows.find((r) => r.external_id === 'V1');
+    eq('YouTube 보고 수익을 싣는다', v.revenue_krw, 1235);
+    eq('수익 출처 ypp', v.revenue_source, 'ypp');
+    const call = f.calls.find((u) => /youtubeanalytics/.test(u)) || '';
+    ok('보고 수익 지표를 요청한다', /estimatedRevenue/.test(call), call);
+    ok('통화는 KRW 로 고정해 받는다(환산 없음)', /currency=KRW/.test(call), call);
+    ok('수익이 붙었다고 공지한다', live.notices.some((n) => n.code === 'YT_REVENUE'), live.notices);
   }
 
   /* ───────── 8. 적재 페이로드 ───────── */
@@ -247,22 +281,24 @@ function fakeFetch(routes) {
     const path = require('path');
     const view = await import('file://' + path.join(__dirname, '..', '..', '..', 'js', 'analyticsView.js'));
     const rows = [
-      { source: 'youtube', channel: 'shorts', external_id: 'V1', collected_at: '2026-11-18T12:00:00+09:00', collected_date: '2026-11-18', views: 100, revenue_krw: 3, revenue_estimated: true, note: '' },
-      { source: 'youtube', channel: 'shorts', external_id: 'V1', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', views: 300, revenue_krw: 9, revenue_estimated: true, note: '' },
-      { source: 'youtube', channel: 'shorts', external_id: 'V3', collected_at: '2026-11-16T12:00:00+09:00', collected_date: '2026-11-16', views: 500, revenue_krw: 0, revenue_estimated: true, note: '' },
-      { source: 'youtube', channel: 'shorts', external_id: 'V3', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', views: 560, revenue_krw: 1, revenue_estimated: true, note: '' },
-      { source: 'youtube', channel: 'longform', external_id: 'V2', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', views: 50, revenue_krw: 125, revenue_estimated: true, note: 'UNMAPPED' },
+      { source: 'youtube', channel: 'shorts', external_id: 'V1', collected_at: '2026-11-18T12:00:00+09:00', collected_date: '2026-11-18', views: 100, revenue_krw: 0, revenue_source: '', note: '' },
+      { source: 'youtube', channel: 'shorts', external_id: 'V1', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', views: 300, revenue_krw: 0, revenue_source: '', note: '' },
+      { source: 'youtube', channel: 'shorts', external_id: 'V3', collected_at: '2026-11-16T12:00:00+09:00', collected_date: '2026-11-16', views: 500, revenue_krw: 0, revenue_source: '', note: '' },
+      { source: 'youtube', channel: 'shorts', external_id: 'V3', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', views: 560, revenue_krw: 0, revenue_source: '', note: '' },
+      { source: 'youtube', channel: 'longform', external_id: 'V2', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', views: 50, revenue_krw: 125, revenue_source: 'ypp', note: 'UNMAPPED' },
       { source: 'youtube', channel: 'channel', external_id: 'UC_A', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', subscribers: 321, note: 'CHANNEL_SUMMARY' },
-      { source: 'instagram', channel: 'reels', external_id: 'M1', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', reach: 900, saves: 10, revenue_krw: 0, note: '' }
+      { source: 'instagram', channel: 'reels', external_id: 'M1', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', reach: 900, saves: 10, revenue_krw: 0, revenue_source: '', note: '' },
+      { source: 'instagram', channel: 'feed', external_id: 'M2', collected_at: '2026-11-19T12:00:00+09:00', collected_date: '2026-11-19', reach: 400, revenue_krw: 90000, revenue_source: 'unknown', note: '' }
     ];
     const latest = view.latestRows(rows);
     eq('같은 영상은 최신 한 건만', latest.filter((r) => r.external_id === 'V1').length, 1);
     eq('최신 조회는 큰 쪽', latest.find((r) => r.external_id === 'V1').views, 300);
     const s = view.summarizeRows(rows, { since: '2026-11-17' });
     eq('이번 주 늘어난 유튜브 조회(V1 300 + V3 60 + V2 50)', s.youtubeWeekViews, 410);
-    eq('이번 주 인스타 도달', s.instagramWeekReach, 900);
-    eq('예상 수익 합', s.estRevenue, 135);
-    ok('추정 라벨 필요', s.revenueIsEstimate === true);
+    eq('이번 주 인스타 도달', s.instagramWeekReach, 1300);
+    eq('실제 수익 합(출처 있는 것만)', s.revenueKrw, 125);
+    ok('수익 출처는 ypp 하나', s.revenueSources.join(',') === 'ypp', s.revenueSources);
+    ok('추정 플래그는 없다', s.revenueIsEstimate === undefined, s.revenueIsEstimate);
     eq('미연결 건수', s.unmapped, 1);
     eq('구독자', s.subscribers, 321);
     const flatOnly = view.summarizeRows([
@@ -271,7 +307,7 @@ function fakeFetch(routes) {
       { source: 'youtube', channel: 'shorts', external_id: 'OLD', collected_at: '2026-11-19T00:00:00+09:00', collected_date: '2026-11-19', views: 5000, note: '' }
     ], { since: '2026-11-17' });
     eq('안 늘었으면 0 (누적 재합산 없음)', flatOnly.youtubeWeekViews, 0);
-    ok('표면 표는 쇼츠·롱폼·릴스', s.channels.map((c) => c.channel).join(',') === 'shorts,longform,reels', s.channels.map((c) => c.channel));
+    ok('표면 표는 쇼츠·롱폼·릴스·피드', s.channels.map((c) => c.channel).join(',') === 'shorts,longform,reels,feed', s.channels.map((c) => c.channel));
   }
 
   /* ───────── 11. 주소 → ID 정규화 ───────── */

@@ -8,11 +8,13 @@
  *
  * 데이터: GAS list_analytics (gas/Analytics.gs → Analytics_Daily 시트)
  *  · 서버가 아직 그 액션을 모르면(재배포 전) 화면은 그대로 그리고 '서버 준비 중'만 조용히 알린다.
- *  · 수익은 '추정'이면 반드시 라벨을 붙인다. 인스타는 조회 정산이 없어 예상 수익을 숨긴다.
+ *  · 수익은 실제 값만 보여 준다 — YouTube 가 보고한 수익(YPP)과 사람이 확정한 협찬·제휴액.
+ *    출처가 없는 금액은 세지 않고, 조회수로 다시 계산한 추정치는 만들지 않는다. 인스타는 정산 개념이 없다.
  */
 
 const CH_LABEL = { shorts: '쇼츠', longform: '롱폼', channel: '채널', reels: '릴스', feed: '피드' };
 const SOURCE_LABEL = { youtube: '유튜브', instagram: '인스타' };
+const REVENUE_LABEL = { ypp: 'YouTube 보고 수익', confirmed: '확정 협찬·제휴' };
 const WINDOW_DAYS = 7;
 const STALE_MS = 60 * 1000;
 
@@ -62,7 +64,6 @@ export async function loadAnalytics(api, brand, opts) {
 
 function normalizeRow(r) {
   const n = (v) => (v == null || v === '' || Number.isNaN(Number(v))) ? 0 : Number(v);
-  const flag = (v) => v === true || v === 'TRUE' || v === 'true';
   return {
     source: String(r.source || ''),
     channel: String(r.channel || ''),
@@ -79,8 +80,7 @@ function normalizeRow(r) {
     saves: n(r.saves),
     subscribers: n(r.subscribers),
     revenue_krw: n(r.revenue_krw),
-    revenue_estimated: flag(r.revenue_estimated),
-    rpm_assumed: n(r.rpm_assumed),
+    revenue_source: String(r.revenue_source || ''),
     score: n(r.score),
     note: String(r.note || '')
   };
@@ -133,7 +133,7 @@ export function weekGrowth(rows, since) {
 }
 
 /**
- * 요약 — 이번 주(최근 7일) 늘어난 조회·도달, 예상 수익, 표면별 표.
+ * 요약 — 이번 주(최근 7일) 늘어난 조회·도달, 실제 수익, 표면별 표.
  * @param {Array} rows list_analytics rows
  */
 export function summarizeRows(rows, opts) {
@@ -166,8 +166,11 @@ export function summarizeRows(rows, opts) {
     };
   }).filter((c) => c.count > 0);
 
-  const revenueRows = latest.filter((r) => r.revenue_krw > 0);
-  const estRevenue = sum(revenueRows, 'revenue_krw');
+  /* 수익은 출처가 있는 실제 값만 센다(출처 없는 금액은 화면에 올리지 않는다). */
+  const revenueRows = latest.filter((r) => r.revenue_krw > 0 && !!REVENUE_LABEL[r.revenue_source]);
+  const revenueKrw = sum(revenueRows, 'revenue_krw');
+  const revenueSources = [];
+  revenueRows.forEach((r) => { if (revenueSources.indexOf(r.revenue_source) < 0) revenueSources.push(r.revenue_source); });
   const ytGrowth = weekGrowth((rows || []).filter((r) => r.source === 'youtube'), since);
   const igGrowth = weekGrowth((rows || []).filter((r) => r.source === 'instagram'), since);
 
@@ -180,8 +183,8 @@ export function summarizeRows(rows, opts) {
     youtubeWeekViews: ytGrowth.views,
     instagramWeekReach: igGrowth.reach,
     weekItems: ytGrowth.items + igGrowth.items,
-    estRevenue: estRevenue,
-    revenueIsEstimate: revenueRows.some((r) => r.revenue_estimated),
+    revenueKrw: revenueKrw,
+    revenueSources: revenueSources,
     unmapped: latest.filter((r) => /UNMAPPED/.test(r.note || '')).length,
     hasAny: latest.length > 0
   };
@@ -253,12 +256,15 @@ export function renderAnalyticsPanel(main, ctx) {
     return panel;
   }
 
-  /* ② 큰 숫자 3개 — 수익은 '추정' 라벨 고정 */
+  /* ② 큰 숫자 3개 — 수익은 실제 데이터가 있을 때만 카드로 올린다 */
+  const revenueCard = s.revenueKrw > 0
+    ? kpi(h, '수익 (실데이터)', won(s.revenueKrw),
+      s.revenueSources.map((src) => REVENUE_LABEL[src]).join(' · ') + ' · 실제 정산·확정 금액')
+    : kpi(h, '구독자', nf(s.subscribers) + '명', '유튜브가 알려 준 실제 값');
   panel.appendChild(h('div', { class: 'kpi-grid' },
     kpi(h, '유튜브 이번 주 조회 ↑', nf(s.youtubeWeekViews), '회 · 지난주 마지막 수집 대비 늘어난 수'),
     kpi(h, '인스타 이번 주 도달 ↑', nf(s.instagramWeekReach), '명 · 지난주 마지막 수집 대비 늘어난 수'),
-    kpi(h, s.revenueIsEstimate ? '예상 수익 (추정)' : '누적 수익', won(s.estRevenue),
-      s.revenueIsEstimate ? '가정 RPM 기준 · 실제 정산 아님' : '확정 금액')));
+    revenueCard));
 
   /* ③ 표면별 최근 값 */
   const list = h('div', { class: 'an-list' });
@@ -268,7 +274,7 @@ export function renderAnalyticsPanel(main, ctx) {
     list.appendChild(h('div', { class: 'an-row' },
       h('span', { class: 'an-ch', text: c.label }),
       h('span', { class: 'an-main', text: bits || '수집된 지표 없음' }),
-      h('span', { class: 'an-profit', text: c.revenue ? won(c.revenue) + ' (추정)' : '—' })));
+      h('span', { class: 'an-profit', text: c.revenue ? won(c.revenue) : '—' })));
   });
   s.latest
     .filter((r) => !CH_LABEL[r.channel])
@@ -301,10 +307,10 @@ function guidePanel(h) {
     h('summary', null, '🔑 자동 수집 연결 방법 (처음 한 번만)'));
   const steps = [
     ['유튜브', 'Google Cloud Console → YouTube Data API v3 사용 설정 → API 키 발급 → GitHub 저장소 Secrets 에 YOUTUBE_API_KEY 로 저장.'],
-    ['유튜브 수익(선택)', '수익창출이 시작된 뒤에만 — OAuth 로 YouTube Analytics API(yt-analytics.readonly) 동의 후 YOUTUBE_OAUTH_TOKEN. 수익화 전이면 부르지 않습니다(403).'],
+    ['유튜브 수익', '수익창출이 시작된 뒤에만 — OAuth 로 YouTube Analytics API(yt-analytics.readonly) 동의 후 YOUTUBE_OAUTH_TOKEN. YouTube 가 보고한 값만 싣고, 조회수로 다시 계산하지 않습니다.'],
     ['인스타그램', 'Meta for Developers → 비즈니스 앱 → Instagram Graph API + instagram_manage_insights → 장기 토큰(60일) 발급 → Secrets 에 IG_ACCESS_TOKEN·IG_TOKEN_EXPIRES_AT.'],
     ['시트 적재', 'Apps Script 속성에 GAS_WEBAPP_URL·GAS_API_TOKEN 을 넣고, 저장소 Secrets 에 같은 이름으로 등록.'],
-    ['채널·계정 ID', 'tools/analytics/config.json 의 tracks 에 채널 ID·인스타 계정 ID, links 에 영상 ID ↔ 카드 ID 를 적습니다.']
+    ['채널·계정 ID', 'tools/analytics/config.json 의 tracks 에 채널 ID·인스타 계정 ID, links 에 영상 ID ↔ 카드 ID, revenue.confirmed 에 확정 협찬액을 적습니다.'],
   ];
   const ul = h('ul', { class: 'an-steps' });
   steps.forEach(([k, v]) => ul.appendChild(h('li', null, h('b', { text: k + ' · ' }), v)));

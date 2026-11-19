@@ -28,13 +28,16 @@ const ANALYTICS_COLUMNS_ = [
   'collected_at', 'collected_date',
   'views', 'impressions', 'reach', 'likes', 'comments', 'shares', 'saves',
   'watch_time_sec', 'avg_view_pct', 'subscribers',
-  'revenue_krw', 'revenue_estimated', 'rpm_assumed', 'score', 'note'
+  'revenue_krw', 'revenue_source', 'score', 'note'
 ];
 
 const ANALYTICS_NUMERIC_ = [
   'views', 'impressions', 'reach', 'likes', 'comments', 'shares', 'saves',
-  'watch_time_sec', 'avg_view_pct', 'subscribers', 'revenue_krw', 'rpm_assumed', 'score'
+  'watch_time_sec', 'avg_view_pct', 'subscribers', 'revenue_krw', 'score'
 ];
+
+/** 수익 출처 — 실제 값만 받는다. 빈값(수익 없음)·ypp(YouTube 보고)·confirmed(사람이 확정한 협찬·제휴). */
+const ANALYTICS_REVENUE_SOURCES_ = ['', 'ypp', 'confirmed'];
 
 /** 첫 적재 때 시트·헤더를 만든다(있으면 손대지 않는다). */
 function ensureAnalyticsSheet_(ss) {
@@ -98,7 +101,7 @@ function analyticsRowOf_(it, brandFallback) {
     checkpoint: analyticsStr_(it.checkpoint || 'LATEST', 8).toUpperCase(),
     collected_at: collectedAt,
     collected_date: String(collectedAt).slice(0, 10),
-    revenue_estimated: it.revenue_estimated === true || String(it.revenue_estimated).toLowerCase() === 'true',
+    revenue_source: analyticsRevenueSource_(it.revenue_source),
     note: analyticsStr_(it.note, 120)
   };
   ANALYTICS_NUMERIC_.forEach(function (k) { row[k] = analyticsNum_(it[k]); });
@@ -107,6 +110,12 @@ function analyticsRowOf_(it, brandFallback) {
 
 function analyticsKey_(r) {
   return [r.source, r.external_id, r.channel, r.checkpoint, r.collected_date].join('|');
+}
+
+/** 수익 출처 — 모르는 값은 빈값으로 낮춘다(출처 없는 금액은 화면이 세지 않는다). */
+function analyticsRevenueSource_(v) {
+  const s = analyticsStr_(v, 16).toLowerCase();
+  return ANALYTICS_REVENUE_SOURCES_.indexOf(s) >= 0 ? s : '';
 }
 
 /**
@@ -242,7 +251,7 @@ function handleListAnalytics_(ss, payload, ctx) {
       checkpoint: String(r.checkpoint || ''),
       collected_at: String(r.collected_at || ''),
       collected_date: String(r.collected_date || ''),
-      revenue_estimated: r.revenue_estimated === true || String(r.revenue_estimated).toLowerCase() === 'true',
+      revenue_source: analyticsRevenueSource_(r.revenue_source),
       note: String(r.note || '')
     };
     ANALYTICS_NUMERIC_.forEach(function (k) { out[k] = Number(r[k]) || 0; });

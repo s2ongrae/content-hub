@@ -42,7 +42,7 @@
 
 ### 유튜브 Analytics API (OAuth, 선택)
 
-- 얻는다: 시청 시간, 평균 시청 비율, (수익화 후) 예상 수익.
+- 얻는다: 시청 시간, 평균 시청 비율, 수익화 후 **YouTube 가 보고한 수익(원, `currency=KRW`)**.
 - **수익화 전 채널**: `estimatedRevenue` 계열을 부르면 403 이 온다. 배치를 멈추지 않고
   `MONETIZATION_NOT_ENABLED` 로 표시하고 건너뛴다 — 설정의 `tracks.*.youtube.monetized` 가 `false` 면
   아예 부르지 않는다.
@@ -70,33 +70,38 @@ GitHub Actions (06:10 KST, 무료)
        ├─ youtube.js   : channels → playlistItems → videos(50묶음)
        ├─ instagram.js : media(50) → media insights
        ├─ normalize.js : 소스·외부ID·표면·시점·수집일 행으로 정규화
-       ├─ estimate.js  : 예상 수익(추정 라벨) · 성과 점수
-       └─ sync.js      : 중복 제거 → 50건 묶음 → GAS ingest_analytics
+       ├─ score.js     : 성과 점수(실제 수집값만으로 계산)
+       ├─ sync.js      : 수익(YouTube 보고·확정 협찬만) · 중복 제거 → 50건 묶음 → GAS ingest_analytics
                           (토큰은 요청 본문에만, 멱등키 = AND-YYYYMMDD-NNN)
 GAS (gas/Analytics.gs)
   ├─ Analytics_Daily 에 적재 (중복 키 = 소스|외부ID|표면|시점|수집일)
   └─ 카드와 연결된 쇼츠·릴스·피드 행은 Metrics 에도 한 줄 → 기존 #/perf KPI·배지 그대로 동작
 화면 (js/analyticsView.js)
-  └─ #/perf 상단 '📡 자동 수집' : 소스별 동기화 상태 · 이번 주 조회/도달 · 예상 수익(추정) · 표면별 표
+  └─ #/perf 상단 '📡 자동 수집' : 소스별 동기화 상태 · 이번 주 회/도달 · 실제 수익(있을 때만) · 표면별 표
 ```
 
 키가 하나도 없으면 **네트워크 호출 0** 으로 dry-run 계획만 출력한다(설정 전에도 안전).
 
 ---
 
-## 4. 수익 표기 규칙 (오해 방지)
+## 4. 수익 표기 규칙 — 실제 데이터만
+
+추정치를 만들지 않는다. 조회수 × 가정 단가 같은 계산은 코드에서도 화면에서도 없다.
 
 | 상황 | 표시 | 저장 |
 |---|---|---|
-| 유튜브 수익화 전 | `예상 수익 (추정)` — 조회÷1,000 × 가정 RPM(기본 쇼츠 30원) | `revenue_estimated=true`, `note=MONETIZATION_NOT_ENABLED` |
-| 유튜브 수익화 후 | `추정` — 실제 정산도 구글 추정치다 | `revenue_estimated=true` |
-| 인스타그램 | 예상 수익 **숨김**(0) | 협찬·제휴 확정액만 `confirmedRevenue` 로 반영 |
+| 유튜브 수익화 전 | 수익 카드 대신 **구독자** 카드 | `revenue_krw=0`, `revenue_source=''` |
+| 유튜브 수익화 후 | `수익 (실데이터)` — YouTube 가 보고한 값 | `revenue_krw`, `revenue_source='ypp'` |
+| 사람이 확정한 협찬·제휴 | 같은 카드에 합산 | `revenue_krw`, `revenue_source='confirmed'` |
+| 인스타그램 | 정산 개념 없음 → 수익 0 (확정 협찬액만) | `revenue_source=''` 또는 `'confirmed'` |
 
-가정 RPM 기본값(원/1,000회): 쇼츠 30 · 롱폼 2,500 · 릴스/피드 0 (국내 쇼츠 실제 대역 15~60원).
-`tools/analytics/config.json` 의 `revenue.rpm_krw` 에서 바꾼다. **실제 정산액이 아니다.**
+- 확정 협찬·제휴액은 `tools/analytics/config.json` 의 `revenue.confirmed` 에 영상·미디어 ID 로 적는다
+  (`"ID": { "krw": 300000, "label": "브랜드 협찬" }` 또는 숫자만). 비밀값이 아니므로 공개 저장소에 두어도 된다.
+- YouTube 보고 수익은 `currency=KRW` 로 받아 **환율 환산을 하지 않는다**. 창은 최근 7일이며, 영상별 최신 행에만 붙는다.
+- 화면은 `revenue_source` 가 `ypp`·`confirmed` 인 금액만 센다 — 출처 없는 금액은 세지 않는다.
 
 성과 점수(0~100) = 같은 표면 중위수 대비 조회(최대 60) + 반응률(최대 30) + 저장·공유(최대 10).
-표면마다 기준 중위수가 다르므로 쇼츠와 롱폼을 같은 자로 재지 않는다.
+표면마다 기준 중위수가 다르므로 쇼츠와 롱폼을 같은 자로 재지 않는다. 점수는 실제 수집값만으로 계산하는 파생 지표다.
 
 ---
 
@@ -109,6 +114,7 @@ GAS (gas/Analytics.gs)
 | Instagram Graph 장기 토큰(60일) | Meta for Developers → 비즈니스 앱 → Instagram Graph API + `instagram_manage_insights` | GitHub Secrets `IG_ACCESS_TOKEN`, 만료일 `IG_TOKEN_EXPIRES_AT` |
 | GAS 웹앱 주소·토큰 | Apps Script 배포 URL / 속성의 `API_SECRET_TOKEN` | GitHub Secrets `GAS_WEBAPP_URL`, `GAS_API_TOKEN` |
 | 채널 ID·IG 계정 ID·카드 연결 | 유튜브 채널 ID(`UC…`), IG 비즈니스 계정 ID | `tools/analytics/config.json` (비밀 아님) |
+| 확정 협찬·제휴액 | 실제 계약 금액 | `tools/analytics/config.json` 의 `revenue.confirmed` (비밀 아님) |
 
 Apps Script 쪽에도 같은 `gas/Analytics.gs` 를 올리고 **재배포**해야 `list_analytics`·`ingest_analytics`
 가 살아난다. 재배포 전에는 화면이 '자동 수집 준비 중'으로 조용히 안내한다.
@@ -161,7 +167,7 @@ docs/ANALYTICS_PIPELINE_v1.md          (신규)
 |---|---|
 | 외부ID ↔ 카드 매핑이 공유 주소의 `?si=`·`?igsh=` 때문에 빗나감 | `lib/ids.js` 추가 — 유튜브는 주소에서 11자 ID 추출, 인스타는 permalink 키로 매칭. 설정에 주소를 그대로 붙여도 카드가 붙는다(시험 12건) |
 | 200건 일괄 쓰기가 GAS 락(1.8초)과 충돌 | 묶음 크기를 **50건**으로 낮춤(서버 상한은 500 유지) |
-| 쇼츠 RPM 150원은 과대 착시 | 기본값을 **30원**(국내 15~60원 대역)으로 낮추고 config 로 교체 가능 |
+| 쇼츠 RPM 150원은 과대 착시 | ~~기본값을 30원으로 낮춤~~ → **2026-11-19 추정 수익 로직 전면 제거**(실제 보고·확정 금액만), `estimate.js` → `score.js` |
 | '이번 주 조회'가 누적 재합산이라 부풀려짐 | **순증(델타)** 으로 정의 — `최신 누적 − 기간 시작 전 마지막 누적`, 기간 안에 처음 보인 소재만 누적 전체 |
 | 스냅샷을 수집일이 아니라 게시일로 | 이미 게시일(`published_at`) 경과일로 D1/7/14/30 판정 |
 

@@ -57,7 +57,7 @@ function baseRow(extra) {
     brand: '', content_id: '', source: '', external_id: '', channel: '', checkpoint: 'LATEST',
     collected_at: '', collected_date: '', views: 0, impressions: 0, reach: 0, likes: 0, comments: 0,
     shares: 0, saves: 0, watch_time_sec: 0, avg_view_pct: 0, subscribers: 0,
-    revenue_krw: 0, revenue_estimated: false, rpm_assumed: 0, score: 0, note: ''
+    revenue_krw: 0, revenue_source: '', score: 0, note: ''
   }, extra || {});
 }
 
