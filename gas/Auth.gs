@@ -38,6 +38,7 @@ const ACTION_WHITELIST = {
   list_blog_stats:      { mode: 'READ',  allowDegraded: true,  m1: true },
   blog_post_body:       { mode: 'READ',  allowDegraded: true,  m1: true },
   blog_rank_check:      { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  blog_stats_ingest:    { mode: 'WRITE', allowDegraded: false, m1: true },   // 피클이 읽어 온 로그인 통계(조회수·검색어·유입·독자)
   // 파이프라인 상태머신 (M2 — 라우터만 연결, ERR_NOT_IMPLEMENTED)
   get_ready_queue:      { mode: 'READ',  allowDegraded: true,  m1: false },
   claim_task:           { mode: 'WRITE', allowDegraded: false, m1: false },

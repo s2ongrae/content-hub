@@ -32,8 +32,14 @@ const BLOG_SHEETS_ = {
   ],
   // 글별 하루 1줄(같은 날 다시 모으면 덮어씀) — 댓글·공감이 언제 늘었는지 보려고 쌓는다.
   Blog_Post_Daily: ['day', 'blog_id', 'log_no', 'comment_cnt', 'sympathy_cnt', 'synced_at'],
-  Blog_Visitors: ['blog_id', 'day', 'visitors', 'synced_at']
+  Blog_Visitors: ['blog_id', 'day', 'visitors', 'synced_at', 'pageviews'],
+  // 아래 4개는 '로그인해야 보이는' 네이버 통계 — 피클이 매일 읽어 blog_stats_ingest 로 보낸다(docs/BLOG_STATS_INGEST.md)
+  Blog_Post_Views: ['day', 'blog_id', 'log_no', 'views', 'synced_at'],
+  Blog_Keywords: ['day', 'blog_id', 'keyword', 'count', 'synced_at'],
+  Blog_Inflow: ['day', 'blog_id', 'channel', 'count', 'synced_at'],
+  Blog_Audience: ['day', 'blog_id', 'kind', 'label', 'pct', 'synced_at']
 };
+const BLOG_INGEST_MAX_ROWS_ = 500;
 
 const BLOG_UA_ = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36';
 const BLOG_MAX_PAGES_ = 10;          // 30개 × 10쪽 = 최근 300개까지
@@ -429,7 +435,7 @@ function handleListBlogStats_(ss, payload, ctx) {
 
   const visitors = readSheetAsObjects_(ss, 'Blog_Visitors')
     .filter(function (r) { return String(r.blog_id) === blogId; })
-    .map(function (r) { return { day: dayKey_(r.day), visitors: Number(r.visitors) || 0 }; })
+    .map(function (r) { return { day: dayKey_(r.day), visitors: Number(r.visitors) || 0, pageviews: (r.pageviews === '' || r.pageviews == null) ? null : Number(r.pageviews) }; })
     .filter(function (r) { return r.day >= from && r.day <= today; })
     .sort(function (a, b) { return a.day < b.day ? -1 : 1; });
 
@@ -460,9 +466,15 @@ function handleListBlogStats_(ss, payload, ctx) {
     });
   });
 
+  const ins = aggregateIngested_(ss, blogId, weekAgo);
+
   const props = PropertiesService.getScriptProperties();
   return {
     blog_id: blogId,
+    stats_last_ingest_at: props.getProperty('BLOG_LAST_INGEST_' + blogId) || '',
+    keywords_7d: ins.keywords,
+    inflow_7d: ins.inflow,
+    audience: ins.audience,
     last_synced_at: props.getProperty('BLOG_LAST_SYNC_' + blogId) || '',
     search_api_ready: !!(props.getProperty('NAVER_CLIENT_ID') && props.getProperty('NAVER_CLIENT_SECRET')),
     posts: posts.map(function (r) {
@@ -474,6 +486,8 @@ function handleListBlogStats_(ss, payload, ctx) {
         published_at: r.published_at instanceof Date ? formatKstIso_(r.published_at) : String(r.published_at || ''),
         comment_cnt: c, sympathy_cnt: s, share_cnt: Number(r.share_cnt) || 0,
         photo_count: Number(r.photo_count) || 0, content_id: String(r.content_id || ''),
+        views_total: ins.views[k] ? ins.views[k].total : null,
+        views_7d: ins.views[k] ? ins.views[k].d7 : null,
         comment_7d: b ? c - b.comment_cnt : null, sympathy_7d: b ? s - b.sympathy_cnt : null,
         since_day: b ? b.day : null
       };
@@ -566,4 +580,149 @@ function handleBlogRankCheck_(ss, payload, ctx) {
   });
 
   return { blog_id: blogId, checked_at: stamp, depth: BLOG_RANK_DEPTH_, results: results };
+}
+
+/* ------------------------------------------------------------------ *
+ * ⑤ blog_stats_ingest — 로그인해야 보이는 통계(조회수·검색어·유입·독자)를 받는다
+ *    보내는 쪽: 피클(로그인된 브라우저로 네이버 블로그 통계를 읽는 쪽). 비밀번호·쿠키는 받지도 저장하지도 않는다.
+ *    payload = { brand, day:'YYYY-MM-DD',
+ *      daily:{visitors, pageviews},
+ *      post_views:[{log_no, views}], keywords:[{keyword, count}],
+ *      inflow:[{channel, count}], audience:[{kind:'gender'|'age', label, pct}] }
+ *    같은 날 다시 보내면 덮어쓴다(멱등). 보낸 항목만 바꾼다.
+ * ------------------------------------------------------------------ */
+
+function cleanInt_(v) { const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : null; }
+
+function cleanText_(v, max) { return String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max); }
+
+/** 순수 검증 — 잘못된 줄은 버리고 몇 개 버렸는지 알려 준다. */
+function normalizeBlogIngest_(payload) {
+  const day = String(payload.day || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw createAppError_('ERR_VALIDATION_FAILED', 'day(YYYY-MM-DD)가 필요합니다.');
+  const today = kstDay_(new Date());
+  const oldest = kstDay_(new Date(Date.now() - 400 * 86400000));
+  if (day > today || day < oldest) throw createAppError_('ERR_VALIDATION_FAILED', 'day 가 범위(오늘 ~ 400일 전)를 벗어났습니다: ' + day);
+
+  const out = { day: day, daily: null, post_views: [], keywords: [], inflow: [], audience: [], dropped: 0 };
+  const take = function (arr, name) {
+    const list = Array.isArray(arr) ? arr : [];
+    if (list.length > BLOG_INGEST_MAX_ROWS_) {
+      throw createAppError_('ERR_VALIDATION_FAILED', name + ' 이 너무 많습니다(최대 ' + BLOG_INGEST_MAX_ROWS_ + '줄).');
+    }
+    return list;
+  };
+  if (payload.daily && typeof payload.daily === 'object') {
+    const v = cleanInt_(payload.daily.visitors), pv = cleanInt_(payload.daily.pageviews);
+    if (v != null || pv != null) out.daily = { visitors: v, pageviews: pv };
+  }
+  take(payload.post_views, 'post_views').forEach(function (r) {
+    const logNo = String((r && r.log_no) || '').trim(), views = cleanInt_(r && r.views);
+    if (/^\d{6,20}$/.test(logNo) && views != null) out.post_views.push({ log_no: logNo, views: views }); else out.dropped++;
+  });
+  const seenKw = {};
+  take(payload.keywords, 'keywords').forEach(function (r) {
+    const kw = cleanText_(r && r.keyword, 60), n = cleanInt_(r && r.count);
+    if (kw && n != null && !seenKw[kw]) { seenKw[kw] = 1; out.keywords.push({ keyword: kw, count: n }); } else out.dropped++;
+  });
+  const seenCh = {};
+  take(payload.inflow, 'inflow').forEach(function (r) {
+    const ch = cleanText_(r && r.channel, 40), n = cleanInt_(r && r.count);
+    if (ch && n != null && !seenCh[ch]) { seenCh[ch] = 1; out.inflow.push({ channel: ch, count: n }); } else out.dropped++;
+  });
+  take(payload.audience, 'audience').forEach(function (r) {
+    const kind = String((r && r.kind) || ''), label = cleanText_(r && r.label, 20), pct = Number(r && r.pct);
+    if ((kind === 'gender' || kind === 'age') && label && Number.isFinite(pct) && pct >= 0 && pct <= 100) {
+      out.audience.push({ kind: kind, label: label, pct: Math.round(pct * 10) / 10 });
+    } else out.dropped++;
+  });
+  if (!out.daily && !out.post_views.length && !out.keywords.length && !out.inflow.length && !out.audience.length) {
+    throw createAppError_('ERR_VALIDATION_FAILED', '보낼 통계가 비어 있습니다(daily·post_views·keywords·inflow·audience 중 하나는 필요).');
+  }
+  return out;
+}
+
+function handleBlogStatsIngest_(ss, payload, ctx) {
+  const brand = payload.brand || ctx.brand || 'daejeon_youth';
+  const blogId = blogIdFor_(brand);
+  const n = normalizeBlogIngest_(payload);
+  const stamp = formatKstIso_(new Date());
+  const day = n.day;
+  const key3 = function (f) { return function (r) { return dayKey_(r.day) + '|' + String(r.blog_id) + '|' + f(r); }; };
+
+  if (n.daily) {
+    const row = { blog_id: blogId, day: day, synced_at: stamp };
+    if (n.daily.visitors != null) row.visitors = n.daily.visitors;
+    if (n.daily.pageviews != null) row.pageviews = n.daily.pageviews;
+    upsertRows_(blogSheet_(ss, 'Blog_Visitors'), [row], function (r) { return String(r.blog_id) + '|' + dayKey_(r.day); });
+  }
+  if (n.post_views.length) {
+    upsertRows_(blogSheet_(ss, 'Blog_Post_Views'), n.post_views.map(function (r) {
+      return { day: day, blog_id: blogId, log_no: r.log_no, views: r.views, synced_at: stamp };
+    }), key3(function (r) { return String(r.log_no); }));
+  }
+  if (n.keywords.length) {
+    upsertRows_(blogSheet_(ss, 'Blog_Keywords'), n.keywords.map(function (r) {
+      return { day: day, blog_id: blogId, keyword: r.keyword, count: r.count, synced_at: stamp };
+    }), key3(function (r) { return String(r.keyword); }));
+  }
+  if (n.inflow.length) {
+    upsertRows_(blogSheet_(ss, 'Blog_Inflow'), n.inflow.map(function (r) {
+      return { day: day, blog_id: blogId, channel: r.channel, count: r.count, synced_at: stamp };
+    }), key3(function (r) { return String(r.channel); }));
+  }
+  if (n.audience.length) {
+    upsertRows_(blogSheet_(ss, 'Blog_Audience'), n.audience.map(function (r) {
+      return { day: day, blog_id: blogId, kind: r.kind, label: r.label, pct: r.pct, synced_at: stamp };
+    }), key3(function (r) { return String(r.kind) + '|' + String(r.label); }));
+  }
+  PropertiesService.getScriptProperties().setProperty('BLOG_LAST_INGEST_' + blogId, stamp);
+  return {
+    blog_id: blogId, day: day, saved_at: stamp, dropped: n.dropped,
+    counts: { daily: n.daily ? 1 : 0, post_views: n.post_views.length, keywords: n.keywords.length,
+              inflow: n.inflow.length, audience: n.audience.length }
+  };
+}
+
+/** 시트에 쌓인 통계 → 화면용 묶음 (글별 조회수 · 최근 7일 검색어/유입 · 가장 최근 독자 분포) */
+function aggregateIngested_(ss, blogId, from7) {
+  const mine = function (name) {
+    return readSheetAsObjects_(ss, name).filter(function (r) { return String(r.blog_id) === blogId; });
+  };
+  const views = {};
+  mine('Blog_Post_Views').forEach(function (r) {
+    const k = String(r.log_no), d = dayKey_(r.day), v = Number(r.views) || 0;
+    const o = views[k] = views[k] || { total: 0, d7: 0 };
+    o.total += v;
+    if (d >= from7) o.d7 += v;
+  });
+  const sumBy = function (rows, labelKey) {
+    const m = {};
+    rows.forEach(function (r) {
+      if (dayKey_(r.day) < from7) return;
+      const k = String(r[labelKey]);
+      m[k] = (m[k] || 0) + (Number(r.count) || 0);
+    });
+    return m;
+  };
+  const top = function (m, labelKey, limit) {
+    const total = Object.keys(m).reduce(function (s, k) { return s + m[k]; }, 0);
+    return Object.keys(m).map(function (k) {
+      const o = { count: m[k], pct: total ? Math.round(m[k] / total * 1000) / 10 : 0 };
+      o[labelKey] = k; return o;
+    }).sort(function (a, b) { return b.count - a.count; }).slice(0, limit);
+  };
+  const aud = mine('Blog_Audience');
+  let latest = '';
+  aud.forEach(function (r) { const d = dayKey_(r.day); if (d > latest) latest = d; });
+  return {
+    views: views,
+    keywords: top(sumBy(mine('Blog_Keywords'), 'keyword'), 'keyword', 15),
+    inflow: top(sumBy(mine('Blog_Inflow'), 'channel'), 'channel', 8),
+    audience: latest ? {
+      day: latest,
+      items: aud.filter(function (r) { return dayKey_(r.day) === latest; })
+        .map(function (r) { return { kind: String(r.kind), label: String(r.label), pct: Number(r.pct) || 0 }; })
+    } : null
+  };
 }

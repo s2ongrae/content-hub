@@ -235,7 +235,8 @@ const M1_HANDLERS = {
   blog_sync: handleBlogSync_,
   list_blog_stats: handleListBlogStats_,
   blog_post_body: handleBlogPostBody_,
-  blog_rank_check: handleBlogRankCheck_
+  blog_rank_check: handleBlogRankCheck_,
+  blog_stats_ingest: handleBlogStatsIngest_
 };
 
 function handleHealth_(ss, payload) {

@@ -429,5 +429,55 @@ netReply['openapi.naver.com'] = { code: 401, body: '' };
 o = callHandler(B.ctx, 'handleBlogRankCheck_', ss, { keywords: ['x'] }, { brand: 'daejeon_youth' });
 ok('키가 틀리면 ERR_NO_NAVER_KEY · 비밀 안 샘', o.code === 'ERR_NO_NAVER_KEY' && !/test-secret/.test(o.message), o);
 
+console.log('\n[B6] 피클 통계 받기 (blog_stats_ingest)');
+ok('blog_stats_ingest 등록', WL.blog_stats_ingest && WL.blog_stats_ingest.m1 && WL.blog_stats_ingest.mode === 'WRITE' && typeof HM.blog_stats_ingest === 'function');
+const KST_TODAY = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+const KST_YDAY = new Date(Date.now() + 9 * 3600000 - 86400000).toISOString().slice(0, 10);
+const goodPayload = () => ({
+  day: KST_YDAY,
+  daily: { visitors: 37, pageviews: 90 },
+  post_views: [{ log_no: '224480755004', views: 41 }, { log_no: '224462465538', views: 7 }, { log_no: 'bad', views: 3 }, { log_no: '224459297302', views: -5 }],
+  keywords: [{ keyword: '봉명동 냉삼', count: 12 }, { keyword: '봉명동 냉삼', count: 99 }, { keyword: '대전 삼겹살', count: 5 }, { keyword: '', count: 1 }],
+  inflow: [{ channel: '네이버 검색', count: 30 }, { channel: '인스타그램', count: 4 }],
+  audience: [{ kind: 'gender', label: '여성', pct: 61.5 }, { kind: 'gender', label: '남성', pct: 38.5 }, { kind: 'age', label: '30대', pct: 44 }, { kind: 'age', label: '20대', pct: 140 }, { kind: 'etc', label: 'x', pct: 1 }]
+});
+const IS = new FakeSS();
+const ing = callHandler(B.ctx, 'handleBlogStatsIngest_', IS, goodPayload(), { brand: 'daejeon_youth' });
+ok('받기 성공 · 잘못된 줄만 버림', ing.ok && ing.data.dropped === 6 && ing.data.counts.post_views === 2 && ing.data.counts.keywords === 2 && ing.data.counts.audience === 3, ing);
+eq('같은 키워드 중복은 첫 값만', IS.getSheetByName('Blog_Keywords').rows[1][3], 12);
+callHandler(B.ctx, 'handleBlogStatsIngest_', IS, goodPayload(), { brand: 'daejeon_youth' });
+eq('같은 날 다시 보내면 덮어씀(조회수 2줄 + 헤더)', IS.getSheetByName('Blog_Post_Views').getLastRow(), 3);
+eq('방문자·페이지뷰 저장', IS.getSheetByName('Blog_Visitors').rows[1].slice(2, 3)[0] === 37 && IS.getSheetByName('Blog_Visitors').rows[1][4] === 90, true);
+o = callHandler(B.ctx, 'handleBlogStatsIngest_', IS, { day: '2999-01-01', keywords: [{ keyword: 'a', count: 1 }] }, { brand: 'daejeon_youth' });
+eq('미래 날짜는 거부', o.code, 'ERR_VALIDATION_FAILED');
+o = callHandler(B.ctx, 'handleBlogStatsIngest_', IS, { day: KST_YDAY }, { brand: 'daejeon_youth' });
+eq('빈 통계는 거부', o.code, 'ERR_VALIDATION_FAILED');
+o = callHandler(B.ctx, 'handleBlogStatsIngest_', IS, { day: KST_YDAY, keywords: Array.from({ length: 501 }, (_, i) => ({ keyword: 'k' + i, count: 1 })) }, { brand: 'daejeon_youth' });
+eq('501줄은 거부', o.code, 'ERR_VALIDATION_FAILED');
+o = callHandler(B.ctx, 'handleBlogStatsIngest_', IS, goodPayload(), { brand: 'ppiyak_kimmary' });
+eq('김메리는 블로그 없음', o.code, 'ERR_BLOG_SKIPPED');
+
+// 화면용 묶음: 이전 날 하루치를 더 넣어 7일 합산·글별 누계 확인
+const p2 = goodPayload(); p2.day = new Date(Date.now() + 9 * 3600000 - 3 * 86400000).toISOString().slice(0, 10);
+p2.post_views = [{ log_no: '224480755004', views: 10 }]; p2.keywords = [{ keyword: '봉명동 냉삼', count: 8 }];
+callHandler(B.ctx, 'handleBlogStatsIngest_', IS, p2, { brand: 'daejeon_youth' });
+const old = goodPayload(); old.day = new Date(Date.now() + 9 * 3600000 - 30 * 86400000).toISOString().slice(0, 10);
+old.post_views = [{ log_no: '224480755004', views: 100 }]; old.keywords = [{ keyword: '옛날 검색어', count: 50 }];
+callHandler(B.ctx, 'handleBlogStatsIngest_', IS, old, { brand: 'daejeon_youth' });
+const posts2 = IS.insertSheet('Blog_Posts');
+posts2.rows = [['blog_id', 'log_no', 'title', 'url', 'category', 'published_at', 'comment_cnt', 'sympathy_cnt', 'share_cnt', 'photo_count', 'content_id', 'first_seen_at', 'synced_at'],
+  ['youth-daejeon', '224480755004', '글', 'u', 'c', '2026-11-17T00:00:00+09:00', 1, 1, 0, 3, '', '', '']];
+IS.insertSheet('Contents').rows = [['content_id', 'brand', 'blog_url', 'target_keywords']];
+IS.insertSheet('Rank_Log').rows = [['rank_log_id', 'brand', 'surface', 'keyword']];
+const st2 = callHandler(B.ctx, 'handleListBlogStats_', IS, { days: 365 }, { brand: 'daejeon_youth' });
+ok('글별 조회수 누계 41+10+100=151 · 7일 51', st2.ok && st2.data.posts[0].views_total === 151 && st2.data.posts[0].views_7d === 51, st2.data && st2.data.posts[0]);
+ok('7일 검색어 합산(옛날 건 제외)', st2.ok && st2.data.keywords_7d.length === 2 && st2.data.keywords_7d[0].keyword === '봉명동 냉삼' && st2.data.keywords_7d[0].count === 20, st2.data && st2.data.keywords_7d);
+ok('유입 경로 비율', st2.ok && st2.data.inflow_7d[0].channel === '네이버 검색' && st2.data.inflow_7d[0].pct > 85, st2.data && st2.data.inflow_7d);
+ok('독자 분포는 가장 최근 날 기준', st2.ok && st2.data.audience && st2.data.audience.day === KST_YDAY && st2.data.audience.items.length === 3, st2.data && st2.data.audience);
+ok('마지막 수집 시각', st2.ok && /^\d{4}-/.test(st2.data.stats_last_ingest_at), st2.data && st2.data.stats_last_ingest_at);
+ok('수집 전 글은 조회수 null(0으로 속이지 않음)', (() => { const e = new FakeSS(); e.insertSheet('Blog_Posts').rows = posts2.rows; e.insertSheet('Contents').rows = [['content_id']]; e.insertSheet('Rank_Log').rows = [['rank_log_id']];
+  const r = callHandler(B.ctx, 'handleListBlogStats_', e, {}, { brand: 'daejeon_youth' }); return r.ok && r.data.posts[0].views_total === null && r.data.audience === null; })());
+ok('쿠키·비밀번호 같은 키는 라우터가 막는다', typeof B.ctx.assertNoSensitiveFields_ === 'function' && (() => { try { B.ctx.assertNoSensitiveFields_({ cookie: 'x' }, 'payload'); return false; } catch (e) { return e.code === 'ERR_SENSITIVE_FIELD'; } })());
+
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));
 process.exit(failed ? 1 : 0);
