@@ -1353,9 +1353,9 @@ function sourceSection(contentId, d, m, payload, dlg) {
         text: '블로그 원고 본문 · ' + Array.from(blogBody.trim()).length + '자' }),
       blogDoc.title ? h('div', { style: 'margin-top:8px;font-size:13px;font-weight:700', text: blogDoc.title }) : null,
       h('pre', {
-        style: 'margin-top:8px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;'
-          + 'background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:12px;'
-          + 'font:inherit;font-size:13px;line-height:1.75;color:#27272a',
+        style: 'margin-top:8px;max-height:440px;overflow:auto;white-space:pre-wrap;word-break:break-word;'
+          + 'background:var(--bg-soft);border:1px solid var(--line);border-radius:12px;padding:12px 14px;'
+          + 'font:inherit;font-size:13.5px;line-height:1.8;color:var(--tx)',
         text: blogBody
       })));
   }
