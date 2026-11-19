@@ -126,7 +126,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Blog.gs', 'Analytics.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Blog.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -571,6 +571,280 @@ ok('마지막 수집 시각', st2.ok && /^\d{4}-/.test(st2.data.stats_last_inges
 ok('수집 전 글은 조회수 null(0으로 속이지 않음)', (() => { const e = new FakeSS(); e.insertSheet('Blog_Posts').rows = posts2.rows; e.insertSheet('Contents').rows = [['content_id']]; e.insertSheet('Rank_Log').rows = [['rank_log_id']];
   const r = callHandler(B.ctx, 'handleListBlogStats_', e, {}, { brand: 'daejeon_youth' }); return r.ok && r.data.posts[0].views_total === null && r.data.audience === null; })());
 ok('쿠키·비밀번호 같은 키는 라우터가 막는다', typeof B.ctx.assertNoSensitiveFields_ === 'function' && (() => { try { B.ctx.assertNoSensitiveFields_({ cookie: 'x' }, 'payload'); return false; } catch (e) { return e.code === 'ERR_SENSITIVE_FIELD'; } })());
+
+
+/* ───────── 채널 드릴다운 (gas/PostDetail.gs, 2026-11-19) ───────── */
+console.log('\n[P1] 등록 · 트랙 채널 계약');
+const PD = loadGas();
+const PWL = ev(PD.ctx, 'ACTION_WHITELIST'), PHM = ev(PD.ctx, 'M1_HANDLERS');
+eq('get_post_detail 은 읽기', PWL.get_post_detail.mode, 'READ');
+eq('list_media_meta 는 읽기', PWL.list_media_meta.mode, 'READ');
+eq('upsert_media_meta 는 쓰기(라우터가 락)', PWL.upsert_media_meta.mode, 'WRITE');
+ok('upsert_media_meta 는 longRunning 이 아니다(락 안에서 돈다)', !PWL.upsert_media_meta.longRunning);
+ok('핸들러 3개 연결', typeof PHM.get_post_detail === 'function' && typeof PHM.upsert_media_meta === 'function' && typeof PHM.list_media_meta === 'function');
+{
+  const assertx = require('assert');
+  const seed = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'seeds', 'track_channels.json'), 'utf8'));
+  let same = true;
+  try { assertx.deepStrictEqual(JSON.parse(JSON.stringify(ev(PD.ctx, 'TRACK_CHANNELS'))), seed); } catch (e) { same = false; }
+  ok('GAS TRACK_CHANNELS = seeds/track_channels.json', same, ev(PD.ctx, 'TRACK_CHANNELS'));
+  eq('트랙 B 는 3채널', ev(PD.ctx, 'TRACK_CHANNELS').ppiyak_kimmary.join(','), 'shorts,reels,clip');
+}
+
+console.log('\n[P2] ID 정규화 — tools/analytics/lib/ids.js 와 같은 입력 표로 대조');
+{
+  const ids = require('../../tools/analytics/lib/ids.js');
+  const YT = [
+    'dQw4w9WgXcQ', 'https://youtu.be/dQw4w9WgXcQ', 'https://youtu.be/dQw4w9WgXcQ?si=abc', 'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+    'https://youtube.com/shorts/dQw4w9WgXcQ?feature=share', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'https://www.youtube.com/watch?feature=x&v=dQw4w9WgXcQ&t=3',
+    'https://m.youtube.com/watch?v=dQw4w9WgXcQ', 'https://www.youtube.com/embed/dQw4w9WgXcQ', 'https://www.youtube.com/live/dQw4w9WgXcQ',
+    'https://music.youtube.com/watch?v=dQw4w9WgXcQ', 'https://www.youtube.com/watch?v=tooshort', 'https://www.youtube.com/shorts/waytoolongidhere1',
+    'https://example.com/shorts/dQw4w9WgXcQ', 'https://youtu.be/', 'not a url', '', '   ', 'https://www.youtube.com/@channel', 'https://www.youtube.com/watch/dQw4w9WgXcQ',
+    'ftp://youtu.be/dQw4w9WgXcQ', 'dQw4w9WgXc', 'dQw4w9WgXcQQ'
+  ];
+  let ytBad = [];
+  YT.forEach((t) => { if (PD.ctx.youtubeIdOf_(t) !== ids.youtubeIdOf(t)) ytBad.push({ t, gas: PD.ctx.youtubeIdOf_(t), js: ids.youtubeIdOf(t) }); });
+  ok('유튜브 ' + YT.length + '개 입력이 ids.js 와 같다', ytBad.length === 0, ytBad);
+  eq('유튜브 11자', PD.ctx.youtubeIdOf_('https://youtu.be/dQw4w9WgXcQ?si=x'), 'dQw4w9WgXcQ');
+
+  const IG = [
+    'https://www.instagram.com/reel/C9xYz12AbCd/', 'https://www.instagram.com/reels/C9xYz12AbCd/?igsh=abc', 'https://instagram.com/p/POST1/',
+    'https://www.instagram.com/tv/TVCODE/', 'https://www.instagram.com/p/POST1', 'https://l.instagram.com/p/POST1/', 'https://www.instagram.com/explore/',
+    'https://www.instagram.com/someone/', 'https://example.com/p/POST1/', 'instagram.com/p/POST1/', '', 'junk', 'https://www.instagram.com/reel/'
+  ];
+  let igBad = [];
+  IG.forEach((t) => { if (PD.ctx.instagramKeyOf_(t) !== ids.instagramKeyOf(t)) igBad.push({ t, gas: PD.ctx.instagramKeyOf_(t), js: ids.instagramKeyOf(t) }); });
+  ok('인스타 ' + IG.length + '개 입력이 ids.js 와 같다', igBad.length === 0, igBad);
+  eq('인스타 reels → reel 로 통일', PD.ctx.instagramKeyOf_('https://www.instagram.com/reels/C9xYz12AbCd/?igsh=abc'), 'instagram.com/reel/C9xYz12AbCd');
+  eq('shortcode 만', PD.ctx.instagramShortcodeOf_('https://www.instagram.com/p/POST1/'), 'POST1');
+  eq('shortcode 없으면 빈값', PD.ctx.instagramShortcodeOf_('https://www.instagram.com/someone/'), '');
+
+  eq('블로그 글 번호(경로)', PD.ctx.blogLogNoOf_('https://blog.naver.com/youth-daejeon/224480755004'), '224480755004');
+  eq('블로그 글 번호(모바일)', PD.ctx.blogLogNoOf_('https://m.blog.naver.com/youth-daejeon/224480755004?referrerCode=1'), '224480755004');
+  eq('블로그 글 번호(logNo=)', PD.ctx.blogLogNoOf_('https://blog.naver.com/PostView.naver?blogId=youth-daejeon&logNo=224480755004'), '224480755004');
+  eq('8자리 이하는 글 번호가 아니다', PD.ctx.blogLogNoOf_('https://blog.naver.com/youth-daejeon/12345678'), '');
+  eq('빈 값', PD.ctx.blogLogNoOf_(''), '');
+}
+
+console.log('\n[P3] Media_Meta — 시트 자동 생성 · 7일 갱신 규칙');
+const MSS = new FakeSS();
+const NOWISO = new Date().toISOString();
+const metaItem = (id, extra) => Object.assign({ source: 'youtube', external_id: id, channel: 'shorts', title: '제목 ' + id, thumbnail_url: 'https://i.ytimg.test/' + id + '.jpg', published_at: '2026-11-10T00:00:00Z', duration_sec: 21 }, extra || {});
+{
+  ok('처음엔 시트가 없다', MSS.getSheetByName('Media_Meta') === null);
+  let r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAA1'), metaItem('vidAAAAAAA2'), { source: 'instagram', external_id: '17900000000000001', channel: 'reels', title: '릴스', thumbnail_url: 'http://insecure.test/x.jpg', duration_sec: 0 }] }, { brand: 'ALL' });
+  ok('올리기 성공', r.ok && r.data.inserted === 3 && r.data.updated === 0 && r.data.skipped === 0, r);
+  const sh = MSS.getSheetByName('Media_Meta');
+  ok('시트가 스스로 생겼다', !!sh);
+  eq('9열', sh.rows[0].length, 9);
+  eq('머리글 순서', sh.rows[0].join(','), 'meta_key,source,external_id,channel,title,thumbnail_url,published_at,duration_sec,updated_at');
+  eq('meta_key = source:external_id', sh.rows[1][0], 'youtube:vidAAAAAAA1');
+  eq('https 가 아닌 썸네일은 비운다', sh.rows[3][5], '');
+  ok('updated_at 이 채워진다', /^\d{4}-\d{2}-\d{2}T/.test(String(sh.rows[1][8])), sh.rows[1][8]);
+
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAA1', { title: '바뀐 제목' })] }, { brand: 'ALL' });
+  ok('7일 안에는 건너뛴다', r.ok && r.data.skipped === 1 && r.data.updated === 0 && r.data.inserted === 0, r);
+  eq('제목이 안 바뀐다', sh.rows[1][4], '제목 vidAAAAAAA1');
+
+  sh.rows[1][8] = new Date(Date.now() - 8 * 86400000).toISOString();
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAA1', { title: '바뀐 제목' })] }, { brand: 'ALL' });
+  ok('7일이 지나면 갱신한다', r.ok && r.data.updated === 1 && r.data.skipped === 0, r);
+  eq('제목이 바뀐다', sh.rows[1][4], '바뀐 제목');
+  ok('updated_at 도 새로 쓴다', Date.now() - Date.parse(sh.rows[1][8]) < 60000, sh.rows[1][8]);
+  eq('행은 늘지 않는다', sh.getLastRow(), 4);
+
+  sh.rows[2][8] = new Date(Date.now() - 20 * 86400000);
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAA2', { title: '날짜 객체' })] }, { brand: 'ALL' });
+  ok('시트가 날짜(Date)로 돌려줘도 7일 판정', r.ok && r.data.updated === 1, r);
+
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAA9'), metaItem('vidAAAAAAA9')] }, { brand: 'ALL' });
+  ok('같은 묶음의 중복은 한 번만', r.ok && r.data.inserted === 1 && r.data.skipped === 1, r);
+
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [{ source: 'tiktok', external_id: 'x', channel: 'shorts' }, { source: 'youtube', external_id: '', channel: 'shorts' }, { source: 'youtube', external_id: 'vidZZZZZZZ1', channel: 'blog' }] }, { brand: 'ALL' });
+  eq('못 쓰는 행만 있으면 거부', r.code, 'ERR_VALIDATION_FAILED');
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAB1'), { source: 'tiktok', external_id: 'x', channel: 'shorts' }] }, { brand: 'ALL' });
+  ok('못 쓰는 행은 세어서 버린다', r.ok && r.data.inserted === 1 && r.data.dropped === 1, r);
+  eq('빈 items 는 거부', callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [] }, {}).code, 'ERR_VALIDATION_FAILED');
+  eq('501건은 거부', callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: Array.from({ length: 501 }, (_, i) => metaItem('v' + String(i).padStart(10, '0'))) }, {}).code, 'ERR_VALIDATION_FAILED');
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAC1', { title: '  긴   공백\n제목 '.padEnd(400, '가') })] }, { brand: 'ALL' });
+  ok('제목은 한 줄·200자 이내', r.ok && MSS.getSheetByName('Media_Meta').rows.slice(-1)[0][4].length <= 200 && !/\n/.test(MSS.getSheetByName('Media_Meta').rows.slice(-1)[0][4]));
+}
+
+console.log('\n[P4] list_media_meta — 일괄 조회');
+{
+  let r = callHandler(PD.ctx, 'handleListMediaMeta_', MSS, { source: 'youtube', ids: ['vidAAAAAAA1', 'vidAAAAAAA2', 'nope'] }, {});
+  ok('요청한 것만', r.ok && r.data.count === 2 && r.data.items.map((x) => x.external_id).sort().join(',') === 'vidAAAAAAA1,vidAAAAAAA2', r);
+  ok('필드 9개를 문자열·숫자로', r.ok && r.data.items[0].title && typeof r.data.items[0].duration_sec === 'number' && r.data.items[0].thumbnail_url, r.data && r.data.items[0]);
+  r = callHandler(PD.ctx, 'handleListMediaMeta_', MSS, { source: 'instagram', ids: [] }, {});
+  ok('ids 가 비면 그 소스 전부', r.ok && r.data.count === 1, r);
+  eq('잘못된 소스', callHandler(PD.ctx, 'handleListMediaMeta_', MSS, { source: 'tiktok' }, {}).code, 'ERR_VALIDATION_FAILED');
+  eq('201개는 거부', callHandler(PD.ctx, 'handleListMediaMeta_', MSS, { ids: Array.from({ length: 201 }, (_, i) => 'x' + i) }, {}).code, 'ERR_VALIDATION_FAILED');
+  r = callHandler(PD.ctx, 'handleListMediaMeta_', new FakeSS(), { source: 'youtube', ids: ['a'] }, {});
+  ok('시트가 없어도 빈 목록(읽기는 시트를 만들지 않는다)', r.ok && r.data.count === 0, r);
+}
+
+console.log('\n[P5] get_post_detail — 시계열 · 트랙 채널 비교');
+const AN_COLS = ['analytics_id', 'brand', 'content_id', 'source', 'external_id', 'channel', 'checkpoint', 'collected_at', 'collected_date',
+  'views', 'impressions', 'reach', 'likes', 'comments', 'shares', 'saves', 'watch_time_sec', 'avg_view_pct', 'subscribers', 'revenue_krw', 'revenue_source', 'score', 'note'];
+const CT_COLS = ['content_id', 'brand', 'status', 'blog_title', 'place_name', 'blog_status', 'blog_url', 'shorts_status', 'shorts_url',
+  'reels_status', 'reels_url', 'clip_status', 'clip_url', 'ig_feed_status', 'ig_feed_url', 'daangn_status', 'daangn_url'];
+const sheetOf = (ss, name, cols, objs) => {
+  const sh = ss.insertSheet(name);
+  sh.rows = [cols.slice()].concat(objs.map((o) => cols.map((c) => (o[c] === undefined ? '' : o[c]))));
+  return sh;
+};
+const an = (o) => Object.assign({ analytics_id: 'AND-x', collected_at: o.collected_date + 'T06:10:00+09:00', views: 0, likes: 0, comments: 0 }, o);
+const A_BRAND = 'daejeon_youth', B_BRAND = 'ppiyak_kimmary';
+const DSS = new FakeSS();
+sheetOf(DSS, 'Analytics_Daily', AN_COLS, [
+  an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: 'D1', collected_date: '2026-11-12', views: 10 }),
+  an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: 'LATEST', collected_date: '2026-11-13', views: 30 }),
+  an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: 'LATEST', collected_date: '2026-11-17', views: 50, likes: 5, avg_view_pct: 61 }),
+  an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: 'LATEST', collected_date: '2026-11-18', views: 80, likes: 9, comments: 2, avg_view_pct: 64 }),
+  an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: 'D7', collected_date: '2026-11-19', views: 90, likes: 10 }),
+  an({ brand: A_BRAND, content_id: '', source: 'youtube', external_id: 'vidLONG0001', channel: 'longform', checkpoint: 'LATEST', collected_date: '2026-11-18', views: 7 }),
+  an({ brand: A_BRAND, content_id: '', source: 'youtube', external_id: 'vidCCCCCCC1', channel: 'shorts', checkpoint: 'LATEST', collected_date: '2026-11-18', views: 12 }),
+  an({ brand: A_BRAND, content_id: '', source: 'youtube', external_id: 'UCchannelxx', channel: 'channel', checkpoint: 'LATEST', collected_date: '2026-11-18', views: 999, subscribers: 5 }),
+  an({ brand: A_BRAND, content_id: 'DY-1', source: 'instagram', external_id: '17900000000000001', channel: 'reels', checkpoint: 'LATEST', collected_date: '2026-11-18', views: 300, reach: 250, likes: 20, saves: 4 }),
+  an({ brand: A_BRAND, content_id: 'DY-1', source: 'instagram', external_id: '17900000000000002', channel: 'feed', checkpoint: 'LATEST', collected_date: '2026-11-18', reach: 120, likes: 8, saves: 3 }),
+  an({ brand: B_BRAND, content_id: 'KM-1', source: 'youtube', external_id: 'vidBBBBBBB1', channel: 'shorts', checkpoint: 'LATEST', collected_date: '2026-11-18', views: 40, likes: 4 }),
+  an({ brand: B_BRAND, content_id: 'KM-1', source: 'instagram', external_id: '17900000000000011', channel: 'reels', checkpoint: 'LATEST', collected_date: '2026-11-18', views: 70, reach: 60, likes: 6 }),
+  an({ brand: B_BRAND, content_id: 'KM-1', source: 'instagram', external_id: '17900000000000012', channel: 'feed', checkpoint: 'LATEST', collected_date: '2026-11-18', reach: 99, likes: 9 })
+]);
+sheetOf(DSS, 'Contents', CT_COLS, [
+  { content_id: 'DY-1', brand: A_BRAND, status: 'PUBLISHED', place_name: '미미삼겹', blog_status: 'PUBLISHED', blog_url: 'https://blog.naver.com/youth-daejeon/224480755004',
+    shorts_status: 'UPLOADED', shorts_url: 'https://youtu.be/vidAAAAAAA1?si=x', reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/RCODE1/',
+    clip_status: 'UPLOADED', clip_url: 'https://clip.naver.com/x', ig_feed_status: 'PUBLISHING', ig_feed_url: 'https://www.instagram.com/p/FCODE1/', daangn_status: 'SKIPPED' },
+  { content_id: 'KM-1', brand: B_BRAND, status: 'PUBLISHED', place_name: '메리', blog_status: 'SKIPPED', blog_url: '',
+    shorts_status: 'UPLOADED', shorts_url: 'https://www.youtube.com/shorts/vidBBBBBBB1', reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reels/KCODE1/',
+    clip_status: 'PUBLISHING', clip_url: '', ig_feed_status: 'UPLOADED', ig_feed_url: 'https://www.instagram.com/p/KFEED1/', daangn_status: 'SKIPPED' }
+]);
+sheetOf(DSS, 'Blog_Posts', ['blog_id', 'log_no', 'title', 'url', 'category', 'published_at', 'comment_cnt', 'sympathy_cnt', 'share_cnt', 'photo_count', 'content_id', 'first_seen_at', 'synced_at'], [
+  { blog_id: 'youth-daejeon', log_no: '224480755004', title: '[대전 봉명동 맛집] 시험', url: 'https://blog.naver.com/youth-daejeon/224480755004', published_at: '2026-11-10T09:00:00+09:00', comment_cnt: 4, sympathy_cnt: 11 }
+]);
+const kd = (back) => new Date(Date.now() + 9 * 3600000 - back * 86400000).toISOString().slice(0, 10);
+sheetOf(DSS, 'Blog_Post_Views', ['day', 'blog_id', 'log_no', 'views', 'synced_at'], [
+  { day: kd(20), blog_id: 'youth-daejeon', log_no: '224480755004', views: 100 },
+  { day: kd(3), blog_id: 'youth-daejeon', log_no: '224480755004', views: 30 },
+  { day: kd(1), blog_id: 'youth-daejeon', log_no: '224480755004', views: 12 },
+  { day: kd(1), blog_id: 'youth-daejeon', log_no: '224462465538', views: 999 }
+]);
+sheetOf(DSS, 'Blog_Keywords', ['day', 'blog_id', 'keyword', 'count', 'synced_at'], [
+  { day: kd(1), blog_id: 'youth-daejeon', keyword: '봉명동 냉삼', count: 12 }, { day: kd(30), blog_id: 'youth-daejeon', keyword: '옛날', count: 50 }]);
+sheetOf(DSS, 'Blog_Inflow', ['day', 'blog_id', 'channel', 'count', 'synced_at'], [
+  { day: kd(1), blog_id: 'youth-daejeon', channel: '네이버 검색', count: 30 }]);
+{
+  callHandler(PD.ctx, 'handleUpsertMediaMeta_', DSS, { items: [metaItem('vidAAAAAAA1', { title: '미미삼겹 쇼츠' }), { source: 'instagram', external_id: '17900000000000001', channel: 'reels', title: '미미삼겹 릴스' }] }, {});
+}
+{
+  const channelsOf = (d) => d.compare.map((c) => c.channel).join(',');
+  let r = callHandler(PD.ctx, 'handleGetPostDetail_', DSS, { source: 'youtube', external_id: 'vidAAAAAAA1' }, { brand: 'ALL' });
+  ok('유튜브 상세', r.ok, r);
+  const d = r.data;
+  eq('행의 content_id 로 카드가 자동 연결', d.content_id, 'DY-1');
+  ok('linked', d.linked === true && d.content_missing === false);
+  eq('표면', d.channel, 'shorts');
+  ok('수집됨', d.collected === true);
+  eq('메타 제목', d.meta && d.meta.title, '미미삼겹 쇼츠');
+  eq('체크포인트 키', Object.keys(d.checkpoints).sort().join(','), 'D1,D7,LATEST');
+  eq('LATEST 체크포인트는 마지막 LATEST(80)', d.checkpoints.LATEST.views, 80);
+  eq('D7 체크포인트', d.checkpoints.D7.views, 90);
+  eq('추이: 날짜마다 한 줄(5일)', d.daily.length, 5);
+  eq('추이 날짜 순서', d.daily.map((p) => p.collected_date).join(','), '2026-11-12,2026-11-13,2026-11-17,2026-11-18,2026-11-19');
+  eq('latest 는 마지막 날', d.latest.collected_date, '2026-11-19');
+  eq('트랙 A 채널셋 6칸', d.track_channels.join(','), 'blog,shorts,reels,feed,clip,daangn');
+  eq('비교: SKIPPED(당근) 는 빠진다', channelsOf(d), 'blog,shorts,reels,feed,clip');
+  const by = {}; d.compare.forEach((c) => { by[c.channel] = c; });
+  eq('비교 쇼츠 현재값은 LATEST 한 줄(80, 합산 아님)', by.shorts.metrics.views, 80);
+  eq('비교 쇼츠 ID', by.shorts.external_id, 'vidAAAAAAA1');
+  eq('비교 릴스는 content_id 로 조인', by.reels.metrics.views, 300);
+  eq('비교 피드는 도달', by.feed.metrics.reach, 120);
+  eq('피드 상태는 그대로(PUBLISHING)', by.feed.status, 'PUBLISHING');
+  ok('클립은 지표 API 없음', by.clip.has_metrics_api === false && by.clip.metrics === null && by.clip.collected === false, by.clip);
+  eq('클립 상태', by.clip.status, 'UPLOADED');
+  eq('비교 블로그: 글 번호', by.blog.external_id, '224480755004');
+  ok('비교 블로그: 조회 누계 142 · 7일 42', by.blog.metrics && by.blog.metrics.views === 142 && by.blog.metrics.views_7d === 42, by.blog.metrics);
+  eq('비교 블로그: 공감', by.blog.metrics.sympathy, 11);
+  ok('내부 열(payload·토큰 등)이 새지 않는다', !JSON.stringify(d).match(/payload_file_id|lease_token/));
+}
+{
+  let r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'vidBBBBBBB1', '', '');
+  ok('트랙 B 유튜브 상세', r.ok, r);
+  eq('트랙 B 채널셋 3칸', r.data.track_channels.join(','), 'shorts,reels,clip');
+  eq('트랙 B 비교는 쇼츠·릴스·클립만(블로그·피드·당근 없음)', r.data.compare.map((c) => c.channel).join(','), 'shorts,reels,clip');
+  const clip = r.data.compare.find((c) => c.channel === 'clip');
+  eq('클립 지연은 PUBLISHING 으로 드러난다', clip.status, 'PUBLISHING');
+  eq('릴스 값', r.data.compare.find((c) => c.channel === 'reels').metrics.views, 70);
+  ok('피드 행 값이 비교에 섞이지 않는다', !JSON.stringify(r.data).includes('17900000000000012') && !JSON.stringify(r.data.compare).includes('"reach":99'));
+
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'instagram', '17900000000000012', '', '');
+  eq('트랙 B 의 피드 게시물 상세는 거부', r.code, 'ERR_NOT_FOUND');
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'instagram', '17900000000000011', '', '');
+  ok('트랙 B 릴스 상세는 열린다', r.ok && r.data.channel === 'reels' && r.data.compare.length === 3, r);
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'vidLONG0001', '', '');
+  eq('롱폼은 트랙 채널이 아니라 거부', r.code, 'ERR_NOT_FOUND');
+}
+{
+  let r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'vidCCCCCCC1', '', '');
+  ok('미연결(content_id 없음)', r.ok && r.data.linked === false && r.data.content_id === '' && r.data.compare.length === 0 && r.data.collected === true, r);
+  eq('미연결이어도 브랜드로 채널셋은 준다', r.data.track_channels.length, 6);
+
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'vidDDDDDDD1', 'DY-1', '');
+  ok('수집 전(행 없음): collected=false · 카드는 연결 · 비교는 나온다', r.ok && r.data.collected === false && r.data.linked === true && r.data.daily.length === 0 && r.data.latest === null && r.data.compare.length === 5, r);
+  eq('수집 전 체크포인트는 비어 있다', Object.keys(r.data.checkpoints).length, 0);
+
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'vidDDDDDDD1', 'DY-404', '');
+  ok('없는 카드 ID 는 content_missing', r.ok && r.data.content_missing === true && r.data.linked === false, r);
+
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'instagram', 'RCODE1', 'DY-1', '');
+  ok('인스타 주소(shortcode)로도 카드에 묶인 릴스를 찾는다', r.ok && r.data.external_id === '17900000000000001' && r.data.channel === 'reels', r);
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'instagram', 'FCODE1', 'DY-1', '');
+  ok('피드 shortcode 는 피드 미디어로', r.ok && r.data.external_id === '17900000000000002' && r.data.channel === 'feed', r);
+  eq('인스타 메타 제목', callHandler(PD.ctx, 'getPostDetail_', DSS, 'instagram', '17900000000000001', '', '').data.meta.title, '미미삼겹 릴스');
+}
+{
+  let r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'blog', '224480755004', '', 'daejeon_youth');
+  ok('블로그 상세', r.ok && r.data.collected === true && r.data.channel === 'blog', r);
+  ok('조회 누계 142 · 7일 42', r.data.blog.views_total === 142 && r.data.blog.views_7d === 42, r.data.blog);
+  eq('일별 추이 3일(오래된 날도 포함)', r.data.blog.daily.length, 3);
+  eq('추이는 날짜순', r.data.blog.daily.map((x) => x.views).join(','), '100,30,12');
+  ok('다른 글의 조회수는 섞이지 않는다', !JSON.stringify(r.data.blog.daily).includes('999'));
+  ok('검색어는 7일 안만', r.data.blog.keywords_7d.length === 1 && r.data.blog.keywords_7d[0].keyword === '봉명동 냉삼', r.data.blog.keywords_7d);
+  ok('유입 경로', r.data.blog.inflow_7d[0].channel === '네이버 검색');
+  ok('범위 안내 문구(글별이 아님)', /블로그 전체/.test(r.data.blog.scope_note));
+  eq('글 번호로 카드 자동 연결', r.data.content_id, 'DY-1');
+  eq('제목', r.data.meta.title, '[대전 봉명동 맛집] 시험');
+  eq('댓글·공감', r.data.blog.comment_cnt + '/' + r.data.blog.sympathy_cnt, '4/11');
+
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'blog', '224400000000', '', 'daejeon_youth');
+  ok('수집 전 글은 0 이 아니라 null', r.ok && r.data.collected === false && r.data.blog.views_total === null && r.data.blog.daily.length === 0, r);
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'blog', '224480755004', 'KM-1', '');
+  eq('김메리 카드로는 블로그 상세를 못 연다', r.code, 'ERR_BLOG_SKIPPED');
+  r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'blog', '224480755004', '', 'ppiyak_kimmary');
+  ok('카드가 없고 글 번호가 연결돼 있으면 카드 브랜드(A)를 따른다', r.ok && r.data.brand === 'daejeon_youth', r);
+}
+
+console.log('\n[P6] 입력 검증 · 권한');
+{
+  eq('source 가 이상하면 거부', callHandler(PD.ctx, 'getPostDetail_', DSS, 'tiktok', 'vidAAAAAAA1', '', '').code, 'ERR_VALIDATION_FAILED');
+  eq('유튜브 ID 11자가 아니면 거부', callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'short', '', '').code, 'ERR_VALIDATION_FAILED');
+  eq('블로그 글 번호가 숫자가 아니면 거부', callHandler(PD.ctx, 'getPostDetail_', DSS, 'blog', 'abc', '', '').code, 'ERR_VALIDATION_FAILED');
+  eq('빈 ID 거부', callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', '', '', '').code, 'ERR_VALIDATION_FAILED');
+  eq('수식 같은 ID 거부', callHandler(PD.ctx, 'getPostDetail_', DSS, 'instagram', '=IMPORTXML("x")', '', '').code, 'ERR_VALIDATION_FAILED');
+  eq('이상한 content_id 거부', callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'vidAAAAAAA1', "DY-1'; DROP", '').code, 'ERR_VALIDATION_FAILED');
+  const none = callHandler(PD.ctx, 'handleGetPostDetail_', new FakeSS(), { source: 'youtube', external_id: 'vidAAAAAAA1' }, {});
+  ok('시트가 하나도 없어도 빈 상세(읽기는 시트를 만들지 않는다)', none.ok && none.data.collected === false && none.data.compare.length === 0, none);
+
+  PD.env.props.set('API_SECRET_TOKEN', 'test-secret-token-0123456789abcdef');
+  const authOf = (action, token) => callHandler(PD.ctx, 'authenticateRequest_', null, { action, auth_token: token, client_id: 'pd-test', brand: 'ALL' }, { allowAllBrand: true });
+  ['get_post_detail', 'list_media_meta', 'upsert_media_meta'].forEach((a) => {
+    eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
+    eq(a + ': 틀린 토큰이면 거부', authOf(a, 'wrong-token').code, 'ERR_UNAUTHORIZED');
+    ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
+  });
+  eq('화이트리스트 밖 액션은 거부', authOf('delete_everything', 'test-secret-token-0123456789abcdef').code, 'ERR_UNKNOWN_ACTION');
+  eq('GET 쿼리 토큰은 거부', callHandler(PD.ctx, 'authenticateRequest_', { parameter: { auth_token: 'x' } }, { action: 'get_post_detail', auth_token: 'test-secret-token-0123456789abcdef' }, {}).code, 'ERR_GET_TOKEN_FORBIDDEN');
+}
 
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));
 process.exit(failed ? 1 : 0);

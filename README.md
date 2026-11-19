@@ -9,11 +9,11 @@
 | 트랙 | 채널 | 발행 규칙 |
 |---|---|---|
 | `daejeon_youth` 🍺 대전 청년 | 네이버 블로그 · 유튜브 쇼츠 · 인스타 릴스 + 인스타 피드(카드뉴스) · 네이버 클립 · **당근 스토리** | 숏폼 3종 → 블로그(숏폼 임베드) → 숏폼 고정댓글에 블로그 URL 역삽입 → `LINKED`. 카드뉴스 피드는 블로그 발행 뒤 D+1~D+2 시차. 당근은 쇼츠·릴스·클립 직후에 3가지만 손봐서 같이 올린다(역삽입 댓글은 당근만 생략) |
-| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠 · 인스타 릴스 · 네이버 클립 (+ 피드 선택) | 쇼츠 · 릴스 · 클립 업로드 즉시 `LINKED` (블로그·당근만 `SKIPPED`) |
+| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠 · 인스타 릴스 · 네이버 클립 **(3채널)** | 쇼츠 · 릴스 · 클립 업로드 즉시 `LINKED` — 블로그·인스타 피드 사진·당근은 운영하지 않는다(쇼츠·릴스·클립 3개가 올라가면 그 소재는 끝). 기준: `seeds/track_channels.json` · [`docs/CHANNEL_DRILLDOWN_v1.md`](docs/CHANNEL_DRILLDOWN_v1.md) |
 
 ## 지금 되는 것 (M1)
 
-1. **브랜드 스위처** — 상단에서 🍺 대전 청년(4채널) ↔ 🐱 삐약 김메리(3채널) 전환. 목록 · 검수 · 승인 · 취재가 모두 그 브랜드 기준으로 바뀝니다.
+1. **브랜드 스위처** — 상단에서 🍺 대전 청년(6채널) ↔ 🐱 삐약 김메리(3채널: 쇼츠·릴스·클립) 전환. 목록 · 검수 · 승인 · 취재가 모두 그 브랜드 기준으로 바뀝니다.
 2. **보드** — `DRAFT · GENERATING → REVIEW → READY → PUBLISHING/PUBLISHED → LINKED` 칸반 + `NEEDS_HUMAN/PARTIAL_FAIL` 격리 열. 발행 전(초안·작성 중·확인·수정) 카드에는 **본문 첫 두 줄**이 붙고, 카드를 누르면 상세가 **`작성본` 탭**으로 열려 본문·대본을 글로 읽고 [본문 복사]·[붙여넣어 저장]한다. 본문이 없는 카드는 그 사실을 크게 알려 준다 — [`docs/DRAFT_CONTENT_v1.md`](docs/DRAFT_CONTENT_v1.md).
 3. **10초 승인** — 폰에서 카드 1장(브랜드 · 상호 · 품질점수 · 핵심 3줄 · 단점 1줄)을 읽고 `[반려] [스킵] [✅ 승인]`. 승인 1탭 = `record_checklist(human_reviewed=true)` → `update_content(READY)`.
 4. **검수** — F2 발행 전 체크리스트 10항목(100점). **80점 이상 + 사람 확인**이어야 READY 승격(서버가 `ERR_TOS_REVIEW_REQUIRED`로 재검증).
@@ -43,7 +43,10 @@ js/api.js               # 30s AbortController, 429/5xx만 3회 재시도, 멱등
 js/quickApprove.js      # 폰 10초 승인 카드 스택
 js/app.js               # 해시 라우터 · 브랜드 스위처 · 화면 8종 (렌더링 textContent 전용)
 js/draftView.js         # 카드 상세 '작성본' 탭 — 채널별 본문 읽기·복사·붙여넣어 저장
-js/perfView.js          # 성과분석(#/perf) — 큰 숫자·오늘 입력함·승자/리프레시 배지
+js/perfView.js          # 성과분석(#/perf) — 큰 숫자·오늘 입력함·승자/리프레시 배지 · 서브탭 [전체|유튜브|인스타]
+js/trackChannels.js     # 트랙별 운영 채널(seeds/track_channels.json 사본)·완료 판정
+js/channelView.js       # #/perf 유튜브·인스타 채널 목록·카드 → 상세로 드릴다운
+js/postView.js          # #/post 콘텐츠 상세 — 지표 3개·SVG 추이·트랙 채널 비교 (docs/CHANNEL_DRILLDOWN_v1.md)
 js/lintView.js          # 발행 전 린터(#/lint) — 8항목 채점 화면
 js/blogLint.js          # 린터 규칙 엔진(웹앱·CLI 공용)·window.BlogLint
 js/daangnView.js        # 당근 수익화 트래커·발행 전 점검 3개
@@ -54,6 +57,7 @@ seeds/daangn_story_v1.json        # 당근 자격·보상·규격·점검 3개
 tools/blog_lint_cli.py  # 초안 md 8항목 검사 CLI(통과 0 · 고칠 것 1)
 tools/yt/               # 노트북·클로드 코드용 파이썬 도구 4개 + 스킬 설치 스크립트
 .claude/skills/yt-*     # 클로드가 바로 부르는 숏폼·유튜브 스킬 12개
+gas/PostDetail.gs       # 채널 드릴다운 — get_post_detail · upsert_media_meta · list_media_meta(Media_Meta 시트)
 gas/Setup.gs            # 23시트 · Drive 폴더 · 토큰(비노출) · 시딩 · 트리거
 gas/Auth.gs             # 상수시간 토큰 · 화이트리스트 · tryLock(1800) · 멱등 · 민감필드 차단 · 쿼터 서킷
 gas/Backup.gs           # 일/주/월 스냅샷 · 80개 배치+이어하기 · manifest · 보존 · 복구 · 무결성 6종

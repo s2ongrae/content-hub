@@ -33,6 +33,8 @@
 | `js/app.js` | 해시 라우터 · 브랜드 스위처 · 화면 6종(보드·승인·검수·취재·노하우·운영). 렌더링은 `textContent`/`createElement` 전용 |
 | `js/api.js` | GAS 호출(30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 미설정 시 `ERR_NO_CONFIG`) |
 | `js/quickApprove.js` | 폰 10초 승인 카드 스택 |
+| `js/trackChannels.js` · `js/channelView.js` · `js/postView.js` | 채널 드릴다운 — 트랙별 운영 채널 상수(`seeds/track_channels.json` 사본, 시험이 3곳 대조) · `#/perf` 유튜브·인스타 서브탭 · `#/post` 상세. `docs/CHANNEL_DRILLDOWN_v1.md` |
+| `gas/PostDetail.gs` | `get_post_detail` · `upsert_media_meta` · `list_media_meta` + `Media_Meta` 시트(첫 올리기 때 자동 생성). 배포는 새 파일 추가 후 새 버전 |
 | `js/seriesView.js` | `#/series` — 시리즈(대본 복사·보드에 DRAFT 생성)·키워드팩·훅 A/B 체크리스트(편별 `localStorage`) |
 | `manifest.webmanifest` · `icons/` | 홈 화면 앱(PWA). Service Worker 없음 |
 | `tools/make_icons.py` | 아이콘 생성기(192/512). 디자인을 바꾸면 이 스크립트로 다시 만든다 |
@@ -54,12 +56,12 @@
 | 트랙 | 채널 | 발행 규칙 |
 |---|---|---|
 | `daejeon_youth` 🍺 대전 청년 | 네이버 블로그(`youth-daejeon`) · 유튜브 쇼츠(`@daejeon_daily`) · 인스타 릴스(`@daejeon_daily`) · 네이버 클립 | **2단계 순환**: 숏폼 3종 업로드 → 블로그 발행(숏폼 임베드) → 숏폼 고정댓글에 블로그 URL 역삽입 → `LINKED` |
-| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠(`@s2ongrae`) · 인스타 릴스(`@m2ow.mari`) · 네이버 클립 | **1단계 완결**: 쇼츠·릴스·클립 업로드 즉시 `LINKED`, 블로그만 `SKIPPED` (2026-11-16 사용자 확정) |
+| `ppiyak_kimmary` 🐱 삐약 김메리 | 유튜브 쇼츠(`@s2ongrae`) · 인스타 릴스(`@m2ow.mari`) · 네이버 클립 | **1단계 완결**: 쇼츠·릴스·클립 3개가 올라가면 즉시 `LINKED`. 블로그·인스타 피드 사진·당근은 운영하지 않는다(2026-11-16 확정, 2026-11-19 피드까지 제외) |
 
 - **두 트랙의 콘텐츠·계정·해시태그·톤을 섞지 않는다.** 메리 소재는 메리 트랙에만, 대전 맛집·일상은 대전 청년 트랙에만.
 - 인스타는 대전 청년 계정의 **맛집 전용** 규칙을 지킨다(개인 일상은 별도).
 - **인스타는 표면이 둘이다** — 릴스(`reels_*`, 비팔로워 추천·완주·공유)와 피드 카드뉴스(`ig_feed_*`, 팔로워 관계·저장·슬라이드). 한 칸으로 합치지 않는다.
-  트랙 A 피드는 블로그 핵심 요약 5~8장 캐러셀로 **블로그 발행 뒤 D+1~D+2 시차** 발행(동시 게시는 초기 노출을 나눠 먹는다). 트랙 B 피드는 선택 발행.
+  트랙 A 피드는 블로그 핵심 요약 5~8장 캐러셀로 **블로그 발행 뒤 D+1~D+2 시차** 발행(동시 게시는 초기 노출을 나눠 먹는다). 트랙 B 는 피드 사진을 운영하지 않는다(릴스만) — `seeds/track_channels.json`.
   컬럼: `ig_feed_status` · `ig_feed_url` · `ig_carousel_count` (2026-11-16 시트에 추가, GAS 재배포 전까지는 **읽기·표시 전용**).
 
 - 코드에서 트랙 분기는 `brand`(`daejeon_youth` / `ppiyak_kimmary`) 하나로만 한다. 새 화면을 만들 때도 `BRANDS` 정의를 쓰고 문자열을 흩뿌리지 않는다.

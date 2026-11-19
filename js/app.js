@@ -9,7 +9,9 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics } from './perfView.js?v=20261119';
+import { renderPerfView, loadMetrics } from './perfView.js?v=20261119o';
+import { renderPostView } from './postView.js?v=20261119o';
+import { trackChannelsOf } from './trackChannels.js?v=20261119o';
 import { renderLintView } from './lintView.js?v=20261118';
 import { renderDaangnSection, loadDaangnSeed } from './daangnView.js?v=20261118';
 import { renderCreateView } from './create-view.js?v=20261118x';
@@ -20,7 +22,7 @@ import { draftSection, draftPreview } from './draftView.js?v=20261119m';
 
 const BRANDS = {
   daejeon_youth: { name: '대전 청년', emoji: '🍺', channels: '블로그 · 쇼츠 · 인스타(릴스·피드) · 클립 · 당근' },
-  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 인스타(릴스·피드) · 클립' }
+  ppiyak_kimmary: { name: '삐약 김메리', emoji: '🐱', channels: '쇼츠 · 릴스 · 클립' }
 };
 
 /* 화면에 보이는 말은 쉬운 한국어로. 시트·GAS 코드값(DRAFT·PUBLISHED·LINKED …)은 그대로 둔다. */
@@ -165,10 +167,12 @@ const channelState = (v) => {
   return 'none';
 };
 
-/* 트랙별 대상 채널 — 김메리는 블로그·당근을 쓰지 않는다. 대전 청년은 6칸(당근 포함). */
-const brandChannels = (brand) => (brand === 'ppiyak_kimmary'
-  ? CHANNELS.filter((c) => c.key !== 'blog' && c.key !== 'daangn')
-  : CHANNELS);
+/* 트랙별 대상 채널 — 김메리는 블로그·인스타 피드 사진·당근을 쓰지 않는다(쇼츠·릴스·클립 3개가 올라가면 그 소재는 끝).
+   대전 청년은 6칸(당근 포함). 기준은 js/trackChannels.js(= seeds/track_channels.json 사본). */
+const brandChannels = (brand) => {
+  const set = trackChannelsOf(brand);
+  return CHANNELS.filter((c) => set.indexOf(c.key) >= 0);
+};
 
 /* 그 카드가 실제로 올리는 채널 — 일부러 건너뛴 채널은 분모에서 뺀다(1/5가 아니라 1/1로 보이게) */
 const liveChannels = (item) => {
@@ -429,8 +433,10 @@ function friendlyError(err) {
 
 function renderRoute() {
   const route = state.route || 'board';
+  /* 상세(#/post)는 따로 탭이 없다 — 들어온 곳(성과분석·내 블로그) 탭을 켜 둔다 */
+  const tabRoute = route === 'post' ? (/[?&]source=blog(&|$)/.test(location.hash) ? 'blog' : 'perf') : route;
   document.querySelectorAll('[data-route]').forEach((tab) => {
-    if (tab.dataset.route === route) tab.setAttribute('aria-current', 'page');
+    if (tab.dataset.route === tabRoute) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   });
   const main = $('#main');
@@ -443,6 +449,7 @@ function renderRoute() {
     capture: renderCapture,
     review: renderReview,
     perf: (main) => renderPerfView(main, ctx),
+    post: (main) => renderPostView(main, ctx),
     blog: (main) => renderBlogView(main, ctx),
     lint: (main) => renderLintView(main, ctx) || null,
     series: (main) => renderSeriesView(main, { h, state, toast, friendlyError }),

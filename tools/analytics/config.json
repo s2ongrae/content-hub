@@ -19,7 +19,8 @@
       },
       "instagram": {
         "ig_user_id": "17841477232390951",
-        "token_env": "IG_ACCESS_TOKEN_MERRY"
+        "token_env": "IG_ACCESS_TOKEN_MERRY",
+        "allowedSurfaces": ["reels"]
       }
     }
   },

@@ -8,6 +8,9 @@
  * 표면 구분 : media_product_type === 'REELS' → reels, 그 밖(IMAGE·CAROUSEL_ALBUM) → feed
  *             (같은 소재라도 릴스와 피드의 노출 엔진·주요 지표가 다르므로 행을 섞지 않는다)
  *
+ * 트랙 필터 : 트랙 설정 allowedSurfaces 에 없는 표면(예: 김메리의 피드 사진)은 적재 목록에서 뺀다.
+ *             빠진 건수는 수집 로그에 [IGNORED_SURFACE] 한 줄로만 남긴다(인사이트 호출도 아낀다).
+ *
  * 토큰      : 장기 토큰 60일. 만료되면 수집이 조용히 멈추므로 만료 7일 전부터 경고를 남기고,
  *             refresh_access_token 으로 갱신한 새 토큰을 받아 오는 경로를 둔다(자동 저장은 사람이).
  */
@@ -50,9 +53,23 @@ function parseMedia(json) {
     caption: String(m.caption || ''),
     permalink: String(m.permalink || ''),
     published_at: String(m.timestamp || ''),
+    thumbnail_url: String(m.thumbnail_url || ''),
     likes: num(m.like_count),
     comments: num(m.comments_count)
   })).filter((m) => m.external_id);
+}
+
+/**
+ * 허용 표면만 남긴다. allowed 가 비어 있거나 없으면 거르지 않는다(기존 동작).
+ * @returns {{kept:Array, ignored:Array}}
+ */
+function filterSurfaces(media, allowed) {
+  const list = Array.isArray(allowed) ? allowed.filter(Boolean) : [];
+  if (!list.length) return { kept: media.slice(), ignored: [] };
+  const kept = [];
+  const ignored = [];
+  media.forEach((m) => { (list.indexOf(m.surface) >= 0 ? kept : ignored).push(m); });
+  return { kept, ignored };
 }
 
 function parseInsights(json) {
@@ -86,13 +103,23 @@ async function collectInstagram(opts) {
 
   let calls = 0;
   const collected = [];
+  const ignoredSurfaces = {};
+  let ignoredCount = 0;
   let after = '';
   let pages = 0;
 
   while (collected.length < maxMedia && pages < 3) {
     const res = await fetchJson(mediaUrl(o.igUserId, o.token, after), { fetchImpl: o.fetchImpl, secrets });
     calls += res.calls;
-    const items = parseMedia(res.body);
+    const parsed = parseMedia(res.body);
+    const split = filterSurfaces(parsed, o.allowedSurfaces);
+    split.ignored.forEach((m) => {
+      if (!withinWindow(m.published_at, now, windowDays)) return;
+      ignoredCount += 1;
+      const key = m.media_type || m.media_product_type || 'UNKNOWN';
+      ignoredSurfaces[key] = (ignoredSurfaces[key] || 0) + 1;
+    });
+    const items = split.kept;
     items.forEach((m) => {
       if (collected.length >= maxMedia) return;
       if (!withinWindow(m.published_at, now, windowDays)) return;
@@ -100,7 +127,7 @@ async function collectInstagram(opts) {
     });
     after = String((res.body && res.body.paging && res.body.paging.cursors && res.body.paging.cursors.after) || '');
     pages += 1;
-    if (!after || !items.length) break;
+    if (!after || !parsed.length) break;
   }
 
   const insightsErrors = [];
@@ -119,7 +146,7 @@ async function collectInstagram(opts) {
     }
   }
 
-  return { media: collected, insightsErrors, calls };
+  return { media: collected, insightsErrors, calls, ignored: { count: ignoredCount, by_type: ignoredSurfaces } };
 }
 
 /**
@@ -158,6 +185,7 @@ module.exports = {
   tokenNotice,
   parseMedia,
   parseInsights,
+  filterSurfaces,
   surfaceOf,
   mediaUrl,
   insightsUrl,

@@ -77,6 +77,7 @@ function parseVideos(json) {
       title: String(sn.title || ''),
       published_at: String(sn.publishedAt || ''),
       duration_sec: dur,
+      thumbnail_url: String((sn.thumbnails && ((sn.thumbnails.medium && sn.thumbnails.medium.url) || (sn.thumbnails.default && sn.thumbnails.default.url))) || ''),
       views: toNum(st.viewCount),
       likes: toNum(st.likeCount),
       comments: toNum(st.commentCount),

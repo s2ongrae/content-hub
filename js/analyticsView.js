@@ -12,6 +12,8 @@
  *    출처가 없는 금액은 세지 않고, 조회수로 다시 계산한 추정치는 만들지 않는다. 인스타는 정산 개념이 없다.
  */
 
+import { isTrackRow } from './trackChannels.js?v=20261119o';
+
 const CH_LABEL = { shorts: '쇼츠', longform: '롱폼', channel: '채널', reels: '릴스', feed: '피드' };
 const SOURCE_LABEL = { youtube: '유튜브', instagram: '인스타' };
 const REVENUE_LABEL = { ypp: 'YouTube 보고 수익', confirmed: '확정 협찬·제휴' };
@@ -48,7 +50,8 @@ export async function loadAnalytics(api, brand, opts) {
     });
     const data = (res && res.data) || {};
     cache.brand = brand;
-    cache.rows = (data.rows || []).map(normalizeRow);
+    /* 이미 쌓인 행이라도 그 트랙이 운영하지 않는 표면(트랙 B 의 인스타 피드 등)은 화면에서 뺀다 */
+    cache.rows = (data.rows || []).map(normalizeRow).filter((r) => isTrackRow(r, brand));
     cache.summary = data.summary || null;
     cache.error = null;
   } catch (err) {
@@ -62,9 +65,17 @@ export async function loadAnalytics(api, brand, opts) {
   return cache;
 }
 
+/** 캐시가 신선하면(기본 60초) 그대로, 아니면 다시 읽는다 — 채널 목록·상세 화면이 같이 쓴다. */
+export async function getAnalytics(api, brand, maxAgeMs) {
+  const limit = maxAgeMs == null ? STALE_MS : maxAgeMs;
+  if (cache.brand === brand && cache.at && Date.now() - cache.at < limit) return cache;
+  return loadAnalytics(api, brand);
+}
+
 function normalizeRow(r) {
   const n = (v) => (v == null || v === '' || Number.isNaN(Number(v))) ? 0 : Number(v);
   return {
+    brand: String(r.brand || ''),
     source: String(r.source || ''),
     channel: String(r.channel || ''),
     external_id: String(r.external_id || ''),

@@ -24,8 +24,20 @@ const {
 } = require('./normalize');
 const { performanceScore, mediansByChannel } = require('./score');
 const { createLinker } = require('./ids');
+const { TRACK_CHANNELS, instagramSurfacesOf } = require('./channels');
 
 const GAS_MAX_ITEMS = 50;   // GAS 쓰기 락(1.8초)과 부딪히지 않게 작게 보낸다(제미니 구현 리뷰 반영)
+
+/**
+ * 트랙이 인스타에서 받을 표면. 설정(allowedSurfaces)이 있으면 그대로, 없으면 트랙 채널셋(seeds/track_channels.json 사본)에서 낸다.
+ * 알 수 없는 브랜드는 제한하지 않는다(릴스·피드 모두).
+ * t 는 설정의 트랙 객체({brand, instagram:{allowedSurfaces}}) 또는 flattenTracks 결과.
+ */
+function allowedSurfacesOf(t) {
+  const ig = (t && t.instagram) || {};
+  if (Array.isArray(ig.allowedSurfaces) && ig.allowedSurfaces.length) return ig.allowedSurfaces.map(String);
+  return instagramSurfacesOf(t && t.brand);
+}
 
 function flattenTracks(config) {
   const tracks = (config && config.tracks) || {};
@@ -38,7 +50,8 @@ function flattenTracks(config) {
       youtube_channel_id: (t.youtube && t.youtube.channel_id) || '',
       monetized: !!(t.youtube && t.youtube.monetized),
       ig_user_id: (t.instagram && t.instagram.ig_user_id) || '',
-      ig_token_env: (t.instagram && t.instagram.token_env) || ''
+      ig_token_env: (t.instagram && t.instagram.token_env) || '',
+      ig_allowed_surfaces: allowedSurfacesOf(t)
     });
   });
   return out;
@@ -125,6 +138,7 @@ async function runSync(opts) {
   const notices = [];
   const errors = [];
   const rows = [];
+  const metaRows = [];     // Media_Meta 에 올릴 제목·썸네일·길이(트랙 채널셋 안의 표면만)
   const yppRevenue = {};   // 영상 ID → YouTube 가 보고한 수익(원). 보고가 없으면 비어 있다.
   let mode = 'live';
 
@@ -160,6 +174,8 @@ async function runSync(opts) {
         yt.videos.forEach((v) => {
           const link = linker(v.video_id, { fallbackBrand: v.brand });
           rows.push(normalizeYoutubeVideo(v, { link, now }));
+          const metaRow = youtubeMetaRow(v, link.brand || v.brand);
+          if (metaRow) metaRows.push(metaRow);
         });
         notices.push({ level: 'info', code: 'YT_OK', message: '유튜브 영상 ' + yt.videos.length + '건 · 호출 ' + yt.quota.calls + '회(약 ' + yt.quota.units + ' unit)' });
       } catch (err) {
@@ -214,12 +230,19 @@ async function runSync(opts) {
             token,
             fetchImpl: o.fetchImpl,
             now,
-            windowDays: plan.window_days
+            windowDays: plan.window_days,
+            allowedSurfaces: t.ig_allowed_surfaces
           });
           ig.media.forEach((m) => {
             const link = linker(m.external_id, { permalink: m.permalink, fallbackBrand: t.brand });
             rows.push(normalizeInstagramMedia(m, { link, now }));
+            const metaRow = instagramMetaRow(m);
+            if (metaRow) metaRows.push(metaRow);
           });
+          if (ig.ignored && ig.ignored.count) {
+            const kinds = Object.keys(ig.ignored.by_type).map((k) => k + ' ' + ig.ignored.by_type[k]).join(', ');
+            notices.push({ level: 'info', code: 'IGNORED_SURFACE', message: '[IGNORED_SURFACE] ' + t.track + ' 허용 표면(' + t.ig_allowed_surfaces.join('·') + ') 밖 ' + ig.ignored.count + '건 제외 (' + kinds + ')' });
+          }
           notices.push({ level: 'info', code: 'IG_OK', message: '인스타 ' + t.track + ' ' + ig.media.length + '건' + (ig.insightsErrors.length ? ' (인사이트 실패 ' + ig.insightsErrors.length + '건)' : '') });
           ig.insightsErrors.forEach((e) => errors.push({ source: 'instagram', code: e.code, message: '미디어 인사이트 실패: ' + e.external_id, reason: e.reason }));
         } catch (err) {
@@ -238,6 +261,7 @@ async function runSync(opts) {
     collected_date: kstDate(now),
     plan,
     rows: enriched,
+    media_meta: dedupeMeta(metaRows),
     stats: {
       rows: enriched.length,
       unmapped: enriched.filter((r) => /UNMAPPED/.test(r.note || '')).length,
@@ -247,6 +271,48 @@ async function runSync(opts) {
     notices,
     errors
   };
+}
+
+/* ───────── Media_Meta (제목·썸네일·길이) — 화면 상세(#/post)가 읽는다 ───────── */
+
+const META_MAX_TITLE = 200;
+
+function oneLine(text, max) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+function youtubeMetaRow(video, brand) {
+  const channel = video.surface === 'shorts' ? 'shorts' : 'longform';
+  const set = TRACK_CHANNELS[brand];
+  if (set ? set.indexOf(channel) < 0 : channel !== 'shorts') return null;   // 롱폼 등 트랙 채널셋 밖은 올리지 않는다
+  return {
+    source: 'youtube', external_id: String(video.video_id || ''), channel: channel,
+    title: oneLine(video.title, META_MAX_TITLE),
+    thumbnail_url: String(video.thumbnail_url || ''),
+    published_at: String(video.published_at || ''),
+    duration_sec: Number(video.duration_sec) || 0
+  };
+}
+
+function instagramMetaRow(media) {
+  if (!media || !media.external_id) return null;
+  return {
+    source: 'instagram', external_id: String(media.external_id), channel: media.surface === 'reels' ? 'reels' : 'feed',
+    title: oneLine(String(media.caption || '').split('\n')[0], 80),
+    thumbnail_url: String(media.thumbnail_url || ''),
+    published_at: String(media.published_at || ''),
+    duration_sec: 0
+  };
+}
+
+function dedupeMeta(rows) {
+  const seen = new Map();
+  (rows || []).forEach((r) => {
+    const k = r && r.external_id ? r.source + ':' + r.external_id : '';
+    if (k && !seen.has(k)) seen.set(k, r);
+  });
+  return Array.from(seen.values());
 }
 
 function dedupe(rows) {
@@ -361,8 +427,52 @@ async function pushToGas(payloads, opts) {
   return out;
 }
 
+/**
+ * 수집 종료 시 Media_Meta 로 제목·썸네일·길이를 올린다(GAS upsert_media_meta, 7일 안 갱신은 서버가 건너뜀).
+ * 실패해도 던지지 않는다 — 수집 본체는 이미 성공했으므로 경고 한 줄만 돌려준다.
+ * @returns {Promise<{ok:boolean, sent:number, failed:number, warning:string}>}
+ */
+async function pushMediaMeta(rows, opts) {
+  const o = opts || {};
+  const list = rows || [];
+  if (!list.length) return { ok: true, sent: 0, failed: 0, warning: '' };
+  if (!o.url || !o.token) return { ok: false, sent: 0, failed: 0, warning: '[MEDIA_META] GAS 주소·토큰이 없어 제목·썸네일 올리기를 건너뜁니다.' };
+  const dateStr = o.date || kstDate(o.now);
+  let sent = 0;
+  let failed = 0;
+  let lastCode = '';
+  for (let i = 0; i < list.length; i += GAS_MAX_ITEMS) {
+    const items = list.slice(i, i + GAS_MAX_ITEMS);
+    try {
+      const res = await fetchJson(o.url, {
+        method: 'POST',
+        fetchImpl: o.fetchImpl,
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'upsert_media_meta',
+          auth_token: o.token,
+          client_id: o.clientId || 'analytics-cron',
+          brand: 'ALL',
+          idempotency_key: 'AMM-' + String(dateStr).replace(/-/g, '') + '-' + String(Math.floor(i / GAS_MAX_ITEMS) + 1).padStart(3, '0') + '-' + payloadFingerprint_(items),
+          payload: { items: items }
+        }),
+        secrets: [o.token]
+      });
+      if (res.body && res.body.ok) sent += items.length;
+      else { failed += items.length; lastCode = (res.body && res.body.error && res.body.error.code) || 'ERR_UPSERT'; }
+    } catch (err) {
+      failed += items.length;
+      lastCode = (err && err.code) || 'ERR_UPSERT';
+    }
+  }
+  return {
+    ok: failed === 0, sent: sent, failed: failed,
+    warning: failed ? '[MEDIA_META] 제목·썸네일 ' + failed + '건을 올리지 못했습니다(' + lastCode + ') — 수집은 정상입니다.' : ''
+  };
+}
+
 function shiftDate(now, days) {
   return kstDate(new Date(new Date(now).getTime() + days * 86400000));
 }
 
-module.exports = { flattenTracks, linkOf, buildPlan, runSync, dedupe, confirmedRevenueOf, applyRevenueAndScore, toGasPayload, pushToGas, GAS_MAX_ITEMS };
+module.exports = { allowedSurfacesOf, youtubeMetaRow, instagramMetaRow, pushMediaMeta, flattenTracks, linkOf, buildPlan, runSync, dedupe, confirmedRevenueOf, applyRevenueAndScore, toGasPayload, pushToGas, GAS_MAX_ITEMS };
