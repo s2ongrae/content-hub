@@ -80,6 +80,8 @@ const state = {
   metricsAt: null,
   analytics: [],
   analyticsError: null,
+  blogPosts: null,
+  blogAt: 0,
   daangnSeed: null
 };
 
@@ -342,6 +344,17 @@ async function refresh() {
       state.analyticsError = (e && e.code) || 'ERR_UNKNOWN';
     });
     updateApproveBadge();
+
+    // 블로그 글별 조회·공감·댓글도 읽어 둔다 — 블로그만 올린 카드도 '종합 성과'가 비지 않게.
+    // (메리 트랙은 블로그를 안 쓰므로 부르지 않는다. 5분 캐시 / 보드를 붙잡지 않는다)
+    if (state.brand === 'daejeon_youth' && api.configured && (!state.blogPosts || Date.now() - state.blogAt > 5 * 60 * 1000)) {
+      api.listBlogStats({ brand: state.brand, days: 365 }).then((res) => {
+        state.blogPosts = ((res && res.data) || {}).posts || [];
+        state.blogAt = Date.now();
+        if (state.route === 'board') renderRoute();
+      }).catch(() => { /* 블로그 통계가 없으면 타일이 '입력' 안내를 한다 */ });
+    }
+
     renderBanners();
     updateConnDot();
   }
@@ -636,7 +649,7 @@ function perfBadge(item) {
   if (status !== 'PUBLISHED' && status !== 'LINKED') return null;
   let totals;
   try {
-    const rows = channelRows(item, state.metrics, state.analytics, item.brand || state.brand);
+    const rows = channelRows(item, state.metrics, state.analytics, item.brand || state.brand, { blogPosts: state.blogPosts });
     totals = cardTotals(rows, item, item.brand || state.brand, state.analytics);
   } catch (e) {
     return null;
@@ -1313,7 +1326,7 @@ function analysisSection(contentId, d, m, payload, dlg) {
   const wrap = h('div', { class: 'ana' });
   const info = analysisOf(m, payload);
   const brand = m.brand || state.brand;
-  const rows = channelRows(m, state.metrics, state.analytics, brand);
+  const rows = channelRows(m, state.metrics, state.analytics, brand, { blogPosts: state.blogPosts });
   const totals = cardTotals(rows, m, brand, state.analytics);
   const published = ['PUBLISHED', 'LINKED', 'PARTIAL_FAIL'].indexOf(String(m.status || '')) >= 0;
   const showPerf = published && totals.hasAny;
@@ -1836,6 +1849,14 @@ async function openDetail(contentId, opts = {}) {
         state.analyticsError = (cache && cache.error) || null;
         if (dlg.open && tab === 'ana') paintBody();
       }).catch(() => { /* 수집 실패는 타일이 스스로 안내한다 */ });
+    }
+    /* 블로그 글별 통계도 아직이면 한 번 읽어 와서 다시 그린다 */
+    if (state.brand === 'daejeon_youth' && state.blogPosts == null && api.configured) {
+      api.listBlogStats({ brand: state.brand, days: 365 }).then((res) => {
+        state.blogPosts = ((res && res.data) || {}).posts || [];
+        state.blogAt = Date.now();
+        if (dlg.open && tab === 'ana') paintBody();
+      }).catch(() => { state.blogPosts = []; });
     }
   } catch (err) {
     clear(body);

@@ -65,7 +65,9 @@ export function deltaOf(points) {
  * @param {String} brand 트랙
  * @returns {Array} [{channel, label, status, url, value, valueLabel, sub, trend, history, collected, source, external_id, noApi}]
  */
-export function channelRows(card, metrics, analytics, brand) {
+export function channelRows(card, metrics, analytics, brand, opts) {
+  const o = opts || {};
+  const blogPosts = o.blogPosts || [];
   const cid = String((card && card.content_id) || '');
   const b = brand || (card && card.brand) || '';
   const channels = trackChannelsOf(b);
@@ -120,14 +122,20 @@ export function channelRows(card, metrics, analytics, brand) {
           const pct = Number(best.last.avg_view_pct) || 0;
           const likes = Number(best.last.likes) || 0;
           const comments = Number(best.last.comments) || 0;
+          out.reactions = likes + comments;
+          out.comments = comments;
           out.sub = [likes + comments ? '반응 ' + NF(likes + comments) : '', pct ? '시청지속 ' + Math.round(pct) + '%' : '']
             .filter(Boolean).join(' · ');
         } else if (ch === 'reels') {
           const saves = Number(best.last.saves) || 0;
           const shares = Number(best.last.shares) || 0;
+          out.reactions = (Number(best.last.likes) || 0) + (Number(best.last.comments) || 0) + saves + shares;
+          out.comments = Number(best.last.comments) || 0;
           out.sub = (saves + shares) ? '저장·공유 ' + NF(saves + shares) : '';
         } else {
           const saves = Number(best.last.saves) || 0;
+          out.reactions = (Number(best.last.likes) || 0) + (Number(best.last.comments) || 0) + saves + (Number(best.last.shares) || 0);
+          out.comments = Number(best.last.comments) || 0;
           out.sub = saves ? '저장 ' + NF(saves) : '';
         }
         return out;
@@ -155,6 +163,7 @@ export function channelRows(card, metrics, analytics, brand) {
       } else if (ch === 'reels') {
         out.sub = Number(last.saves) ? '저장 ' + NF(last.saves) : '';
       } else if (ch === 'daangn') {
+        out.reactions = Number(last.likes_comments) || 0;
         out.sub = [
           Number(last.likes_comments) ? '좋아요 ' + NF(last.likes_comments) : '',
           Number(last.reward_krw) ? '보상 ' + NF(last.reward_krw) + '원' : ''
@@ -162,8 +171,32 @@ export function channelRows(card, metrics, analytics, brand) {
         out.reward = Number(last.reward_krw) || 0;
       }
     }
+
+    /* ②-2 블로그는 사람 입력이 없어도 네이버 통계(list_blog_stats)에서 바로 읽는다 */
+    if (ch === 'blog' && out.value == null && blogPosts.length) {
+      const logNo = blogLogNo(url);
+      const post = logNo ? blogPosts.filter((p) => String(p.log_no) === logNo)[0] : null;
+      if (post && post.views_total != null) {
+        out.collected = true;
+        out.source = 'blog_stats';
+        out.value = Number(post.views_total) || 0;
+        out.valueLabel = '조회';
+        const c = Number(post.comment_cnt) || 0;
+        const s = Number(post.sympathy_cnt) || 0;
+        out.reactions = c + s;
+        out.comments = c;
+        out.sub = c + s ? '댓글 ' + NF(c) + ' · 공감 ' + NF(s) : '';
+      }
+    }
     return out;
   });
+}
+
+/** 카드의 blog_url → 글 번호 */
+export function blogLogNo(url) {
+  const s = String(url || '');
+  const m = /[?&]logNo=(\d{6,20})/.exec(s) || /\/(\d{9,20})(?:\?|\/|$)/.exec(s);
+  return m ? m[1] : '';
 }
 
 /**
@@ -183,25 +216,11 @@ export function cardTotals(rows, card, brand, analytics) {
     measured += 1;
   });
 
-  /* 반응 = 자동 수집분(좋아요·댓글·저장·공유) + 당근 좋아요 */
-  const cid = String((card && card.content_id) || '');
+  /* 반응 = 채널 타일이 정한 값의 합(자동 수집 좋아요·댓글·저장·공유 + 블로그 공감·댓글 + 당근 좋아요) */
   let reactions = 0, comments = 0;
-  /* 채널별 최신 한 줄만 센다 — 누적값을 여러 날 더하면 부풀려진다 */
-  const latestByVideo = new Map();
-  (analytics || []).forEach((r) => {
-    if (!r || String(r.content_id) !== cid || !r.external_id) return;
-    const key = r.source + '|' + r.external_id + '|' + r.channel;
-    const prev = latestByVideo.get(key);
-    if (!prev || stampOf(r) >= stampOf(prev)) latestByVideo.set(key, r);
-  });
-  latestByVideo.forEach((r) => {
-    reactions += (Number(r.likes) || 0) + (Number(r.comments) || 0) + (Number(r.saves) || 0) + (Number(r.shares) || 0);
-    comments += Number(r.comments) || 0;
-  });
   list.forEach((r) => {
-    if (r.channel !== 'daangn' || !r.sub) return;
-    const m = /좋아요 ([\d,]+)/.exec(r.sub);
-    if (m) reactions += Number(m[1].replace(/,/g, '')) || 0;
+    reactions += Number(r.reactions) || 0;
+    comments += Number(r.comments) || 0;
   });
 
   const total = channels.length;
