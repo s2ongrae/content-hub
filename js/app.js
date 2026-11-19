@@ -1342,10 +1342,28 @@ function sourceSection(contentId, d, m, payload, dlg) {
     wrap.appendChild(dl);
   }
 
+  /* 블로그 원고는 JSON 덩어리보다 글로 먼저 읽혀야 한다.
+     GAS get_content_detail 이 payload 파일(payload.blog.body)을 그대로 돌려주므로,
+     body 가 있는 카드만 본문 전문을 그대로 펼쳐 보여 준다(없는 카드는 예전 화면 그대로). */
+  const blogDoc = (payload && typeof payload.blog === 'object' && payload.blog) ? payload.blog : null;
+  const blogBody = (blogDoc && typeof blogDoc.body === 'string') ? blogDoc.body : '';
+  if (blogBody.trim()) {
+    wrap.appendChild(h('details', { open: true, style: 'margin-top:14px' },
+      h('summary', { style: 'font-size:13px;font-weight:700;cursor:pointer',
+        text: '블로그 원고 본문 · ' + Array.from(blogBody.trim()).length + '자' }),
+      blogDoc.title ? h('div', { style: 'margin-top:8px;font-size:13px;font-weight:700', text: blogDoc.title }) : null,
+      h('pre', {
+        style: 'margin-top:8px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;'
+          + 'background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:12px;'
+          + 'font:inherit;font-size:13px;line-height:1.75;color:#27272a',
+        text: blogBody
+      })));
+  }
+
   if (payload) {
     const det = h('details', { style: 'margin-top:14px' },
-      h('summary', { style: 'font-size:13px;font-weight:700;cursor:pointer', text: '원고·대본 파일 원문 보기' }),
-      h('pre', { class: 'json', style: 'margin-top:8px', text: JSON.stringify(payload, null, 2).slice(0, 2400) }));
+      h('summary', { style: 'font-size:13px;font-weight:700;cursor:pointer', text: '원고·대본 파일 원문 보기 (JSON)' }),
+      h('pre', { class: 'json', style: 'margin-top:8px;max-height:320px;overflow:auto', text: JSON.stringify(payload, null, 2) }));
     wrap.appendChild(det);
   }
 
