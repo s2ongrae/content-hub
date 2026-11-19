@@ -301,10 +301,9 @@ export function draftSection(ctx) {
         row.appendChild(h('a', { class: 'btn sm', href: doc.draft_url, target: '_blank', rel: 'noopener noreferrer', text: '임시저장 열기' }));
       }
       row.appendChild(h('button', { class: 'btn sm', type: 'button', text: '고치기', onclick: () => openEditor(cur) }));
-    } else {
-      row.appendChild(h('button', { class: 'btn sm', type: 'button', text: '＋ 본문 넣기', onclick: () => openEditor(cur) }));
     }
-    acts.appendChild(row);
+    /* 본문이 없을 때는 빈 상태 상자가 이미 [붙여넣기] 버튼을 준다 — 아래 줄에 또 두지 않는다 */
+    if (row.childNodes.length) acts.appendChild(row);
 
     const flow = h('div', { class: 'da-row flow' });
     if (status === 'DRAFT' || status === 'DRAFTING' || status === 'GENERATING' || status === 'EDITING') {
