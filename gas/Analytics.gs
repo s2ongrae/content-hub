@@ -77,6 +77,22 @@ function analyticsStamp_(v) {
   return formatKstIso_(new Date());
 }
 
+/**
+ * 시트가 collected_date 를 날짜(Date)나 일련번호(숫자)로 돌려줘도 YYYY-MM-DD 로 맞춘다.
+ *  · setValues 로 넣은 'YYYY-MM-DD' 문자열을 시트가 날짜 서식으로 바꿔 두는 경우가 있다.
+ *    그대로 String() 하면 'Wed Nov 19 2026 ...' 가 되어 기간 필터가 모든 행을 걸러 낸다(2026-11-19 실제 결함).
+ */
+function analyticsDayOf_(v) {
+  if (v && typeof v === 'object' && typeof v.getTime === 'function') {
+    return Utilities.formatDate(new Date(v.getTime()), 'Asia/Seoul', 'yyyy-MM-dd');
+  }
+  if (typeof v === 'number' && isFinite(v)) {
+    const ms = Date.UTC(1899, 11, 30) + Math.round(v) * 86400000;
+    return Utilities.formatDate(new Date(ms), 'Asia/Seoul', 'yyyy-MM-dd');
+  }
+  return String(v == null ? '' : v).trim().slice(0, 10);
+}
+
 /** 행 하나 정규화 — 잘못된 소스·표면은 ERR_VALIDATION_FAILED 로 거절한다(조용히 버리지 않는다). */
 function analyticsRowOf_(it, brandFallback) {
   const source = analyticsStr_(it.source, 16);
@@ -144,7 +160,7 @@ function handleIngestAnalytics_(ss, payload, ctx) {
     if (srcCol >= 0 && extCol >= 0) {
       const values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
       values.forEach(function (v) {
-        existing[[v[srcCol], v[extCol], v[chCol], v[cpCol], v[dayCol]].join('|')] = true;
+        existing[[v[srcCol], v[extCol], v[chCol], v[cpCol], analyticsDayOf_(v[dayCol])].join('|')] = true;
       });
     }
   }
@@ -223,7 +239,7 @@ function handleListAnalytics_(ss, payload, ctx) {
     if (source && String(r.source) !== source) return false;
     if (channel && String(r.channel) !== channel) return false;
     if (contentId && String(r.content_id) !== contentId) return false;
-    const day = String(r.collected_date || '').slice(0, 10);
+    const day = analyticsDayOf_(r.collected_date);
     if (from && day && day < from) return false;
     if (to && day && day > to) return false;
     return true;
@@ -250,7 +266,7 @@ function handleListAnalytics_(ss, payload, ctx) {
       channel: String(r.channel || ''),
       checkpoint: String(r.checkpoint || ''),
       collected_at: String(r.collected_at || ''),
-      collected_date: String(r.collected_date || ''),
+      collected_date: analyticsDayOf_(r.collected_date),
       revenue_source: analyticsRevenueSource_(r.revenue_source),
       note: String(r.note || '')
     };
