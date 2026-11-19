@@ -260,8 +260,15 @@ function fakeFetch(routes) {
   eq('450건 → 9묶음(50건씩)', chunks.length, 9);
   eq('첫 묶음 50', chunks[0].items.length, 50);
   eq('끝 묶음 50', chunks[8].items.length, 50);
-  eq('멱등키는 날짜·순번', chunks[0].idempotency_key, 'AND-20261119-001');
-  eq('멱등키 재현성', sync.toGasPayload(rows, { date: '2026-11-19' })[0].idempotency_key, chunks[0].idempotency_key);
+  ok('멱등키는 날짜·순번·내용지문', /^AND-20261119-001-[0-9a-f]{8}$/.test(chunks[0].idempotency_key), chunks[0].idempotency_key);
+  eq('묶음마다 키가 다르다', new Set(chunks.map((c) => c.idempotency_key)).size, 9);
+  eq('같은 내용이면 키가 같다(재전송 멱등)', sync.toGasPayload(rows, { date: '2026-11-19' })[0].idempotency_key, chunks[0].idempotency_key);
+  {
+    const changed = rows.map((r, i) => (i === 0 ? Object.assign({}, r, { views: 999 }) : r));
+    ok('같은 날 내용이 바뀌면 키가 달라진다(두 번째 실행도 적재됨)', sync.toGasPayload(changed, { date: '2026-11-19' })[0].idempotency_key !== chunks[0].idempotency_key);
+    const added = sync.toGasPayload(rows.concat([{ source: 'instagram', external_id: 'NEW1', channel: 'reels', checkpoint: 'LATEST', collected_date: '2026-11-19', views: 1 }]), { date: '2026-11-19' });
+    ok('새 소재는 새 묶음 키로 간다', added.length === 10 && added[9].idempotency_key.indexOf('AND-20261119-010-') === 0, added[9] && added[9].idempotency_key);
+  }
 
   /* ───────── 9. GAS 전송 ───────── */
   console.log('[9] GAS 전송 — 본문 토큰 · text/plain');
