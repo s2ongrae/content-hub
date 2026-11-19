@@ -143,3 +143,8 @@
 - **끝**: 테스트 → 한 가지씩 커밋 → 즉시 `git push` → `agent-lock unlock <레포>` → `pcbeat done`.
 - **금지**: `push --force`·`reset --hard`·충돌 파일 통째 덮어쓰기·남의 `agent/…`·`auto/…` 브랜치 수정·`status/agent.json` 직접 수정(피클 전용). 키·주소·고객 정보는 어디에도 넣지 않는다.
 - 전체 규칙·한계·설치: `s2ongrae.github.io` 의 `docs/AGENT_COORDINATION.md`, 도구 `tools/agent-lock.ps1`.
+
+## ECC 스킬 (2026-11-19)
+
+- `affaan-m/ECC` v2.2.3에서 기존 `yt-*` 12종·`daejeon-content`와 겹치지 않는 4개만 골라 `.claude/skills/ecc-*/`에 넣었다 — `ecc-seo`(블로그 노출) · `ecc-article-writing`(장문 초안) · `ecc-brand-voice`(트랙별 목소리 프로필) · `ecc-short-video-distribution`(쇼츠·릴스·클립 배포).
+- 본문은 영어 원문 그대로, 앞머리에 이 레포 기준 한국어 메모. 고른 이유·갱신은 `.claude/skills/ECC.md`. **부딪히면 이 CLAUDE.md §2·§3이 우선한다.**
