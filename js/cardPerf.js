@@ -175,7 +175,12 @@ export function channelRows(card, metrics, analytics, brand, opts) {
     /* ②-2 블로그는 사람 입력이 없어도 네이버 통계(list_blog_stats)에서 바로 읽는다 */
     if (ch === 'blog' && out.value == null && blogPosts.length) {
       const logNo = blogLogNo(url);
-      const post = logNo ? blogPosts.filter((p) => String(p.log_no) === logNo)[0] : null;
+      let post = logNo ? blogPosts.filter((p) => String(p.log_no) === logNo)[0] : null;
+      /* 목록 응답에는 blog_url 이 없다(상세에만 있다) → 제목으로 한 번 더 찾는다(공백만 정리해 정확히 같을 때) */
+      if (!post && card && card.blog_title) {
+        const want = normTitle(card.blog_title);
+        post = want ? blogPosts.filter((p) => normTitle(p.title) === want)[0] : null;
+      }
       if (post && post.views_total != null) {
         out.collected = true;
         out.source = 'blog_stats';
@@ -190,6 +195,11 @@ export function channelRows(card, metrics, analytics, brand, opts) {
     }
     return out;
   });
+}
+
+/** 제목 비교용 — 앞뒤·중복 공백만 정리한다(글자·기호는 그대로) */
+export function normTitle(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim();
 }
 
 /** 카드의 blog_url → 글 번호 */

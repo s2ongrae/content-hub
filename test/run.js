@@ -220,6 +220,12 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       && cp.blogLogNo('https://m.blog.naver.com/PostView.naver?blogId=x&logNo=224480755004') === '224480755004'
       && cp.blogLogNo('https://blog.naver.com/x') === '');
     ok('블로그 타일이 통계에서 조회·공감·댓글을 집는다', bBlog.collected && bBlog.value === 1200 && /댓글 4/.test(bBlog.sub) && /공감 9/.test(bBlog.sub), bBlog);
+    /* 목록 응답에 blog_url 이 없는 카드는 제목으로 찾는다(공백만 정리해 정확히 같을 때) */
+    const blogCard2 = Object.assign({}, blogCard, { blog_url: '', blog_title: '  [대전 봉명동 맛집] 미미삼겹 냉삼   솔직후기 : "웨이팅 후 겨우 얻어먹은 냉삼, 반찬 클라스가 1티어" ' });
+    const bRows2 = cp.channelRows(blogCard2, [], [], 'daejeon_youth', { blogPosts: [{ log_no: '224480755004', title: '[대전 봉명동 맛집] 미미삼겹 냉삼 솔직후기 : "웨이팅 후 겨우 얻어먹은 냉삼, 반찬 클라스가 1티어"', views_total: 28, comment_cnt: 17, sympathy_cnt: 11 }] });
+    const bBlog2 = bRows2.filter((r) => r.channel === 'blog')[0];
+    ok('blog_url 없으면 제목으로 맞춘다', bBlog2.collected && bBlog2.value === 28 && /댓글 17/.test(bBlog2.sub), bBlog2);
+    ok('제목이 다르면 붙이지 않는다', cp.channelRows(Object.assign({}, blogCard2, { blog_title: '다른 글' }), [], [], 'daejeon_youth', { blogPosts: [{ log_no: '224480755004', title: 'X', views_total: 28 }] })[0].value === null);
     const bTotals = cp.cardTotals(bRows, blogCard, 'daejeon_youth', []);
     ok('블로그만 있는 카드도 총 반응 13(공감 9 + 댓글 4)', bTotals.reactions === 13 && bTotals.comments === 4 && bTotals.views === 1200, bTotals);
 
@@ -258,7 +264,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     newFiles.forEach((f) => { src[f] = fs.readFileSync(path.join(ROOT, f), 'utf8'); });
     ok('innerHTML/outerHTML/insertAdjacentHTML 0건', newFiles.filter((f) => /\.js$/.test(f)).every((f) => !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(src[f])));
     ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', newFiles.every((f) => !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(src[f])));
-    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261119s/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261119t/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
     ok('하단 탭이 늘지 않았다(10개)', (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/class="tab"/g) || []).length === 10);
   } catch (err) {
     ok('트랙 채널 계약 시험', false, (err && err.stack) || err);

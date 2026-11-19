@@ -9,13 +9,13 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261119q';
-import { renderPostView } from './postView.js?v=20261119q';
-import { trackChannelsOf } from './trackChannels.js?v=20261119q';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261119t';
+import { renderPostView } from './postView.js?v=20261119t';
+import { trackChannelsOf } from './trackChannels.js?v=20261119t';
 import { renderLintView } from './lintView.js?v=20261118';
-import { loadDaangnSeed } from './daangnView.js?v=20261119q';
-import { getAnalytics } from './analyticsView.js?v=20261119q';
-import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119q';
+import { loadDaangnSeed } from './daangnView.js?v=20261119t';
+import { getAnalytics } from './analyticsView.js?v=20261119t';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119t';
 import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
@@ -246,7 +246,6 @@ async function boot() {
     await refresh();
     renderRoute();
     loadHealth();
-    if (/[?&]debug=1/.test(location.search)) window.__hub = state;   // 임시 진단용
   } catch (err) {
     // 화면이 비어 버리면 원인을 알 수 없으니, 실패는 화면에 남긴다
     const main = $('#main');
@@ -274,7 +273,6 @@ function wireChrome() {
     await refresh();
     renderRoute();
     loadHealth();
-    if (/[?&]debug=1/.test(location.search)) window.__hub = state;   // 임시 진단용
     $('#btn-refresh').textContent = '⟳';
     toast('새로고침 완료');
   });
