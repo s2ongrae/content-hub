@@ -33,6 +33,11 @@ const ACTION_WHITELIST = {
   //   hub_order 는 바깥 큐를 최대 30초 기다린다 → 라우터 락을 잡지 않는다(longRunning).
   list_drive_media:     { mode: 'READ',  allowDegraded: true,  m1: true },
   hub_order:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  // 내 블로그 보기 (2026-11-19) — gas/Blog.gs. 네이버 공개 데이터를 모은다(외부 호출 → 라우터 락 없음, 시트 쓰기만 자체 락)
+  blog_sync:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  list_blog_stats:      { mode: 'READ',  allowDegraded: true,  m1: true },
+  blog_post_body:       { mode: 'READ',  allowDegraded: true,  m1: true },
+  blog_rank_check:      { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   // 파이프라인 상태머신 (M2 — 라우터만 연결, ERR_NOT_IMPLEMENTED)
   get_ready_queue:      { mode: 'READ',  allowDegraded: true,  m1: false },
   claim_task:           { mode: 'WRITE', allowDegraded: false, m1: false },
