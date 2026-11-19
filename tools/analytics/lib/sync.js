@@ -302,15 +302,31 @@ function applyRevenueAndScore(rows, config, ypp) {
 }
 
 /** GAS ingest_analytics 페이로드 — 50건씩, 멱등키는 (수집일·순번)으로 고정. */
+/**
+ * 짧은 지문(FNV-1a 32bit → 8hex) — 같은 내용이면 같은 값, 내용이 바뀌면 다른 값.
+ *  멱등키에 이 지문을 넣어 '같은 날 두 번째 실행에서 새 소재가 통째로 무시되던' 문제를 없앤다.
+ *  (날짜·순번만 쓰던 2026-11-19 이전 키는 하루에 한 번만 적재됐다 — 재실행·수동 실행이 조용히 no-op)
+ */
+function payloadFingerprint_(obj) {
+  const s = JSON.stringify(obj);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ('0000000' + h.toString(16)).slice(-8);
+}
+
 function toGasPayload(rows, opts) {
   const o = opts || {};
   const size = o.chunkSize || GAS_MAX_ITEMS;
   const dateStr = o.date || kstDate(o.now);
   const chunks = [];
   for (let i = 0; i < (rows || []).length; i += size) {
+    const items = rows.slice(i, i + size);
     chunks.push({
-      idempotency_key: 'AND-' + String(dateStr).replace(/-/g, '') + '-' + String(chunks.length + 1).padStart(3, '0'),
-      items: rows.slice(i, i + size)
+      idempotency_key: 'AND-' + String(dateStr).replace(/-/g, '') + '-' + String(chunks.length + 1).padStart(3, '0') + '-' + payloadFingerprint_(items),
+      items: items
     });
   }
   return chunks;
