@@ -246,6 +246,7 @@ async function boot() {
     await refresh();
     renderRoute();
     loadHealth();
+    if (/[?&]debug=1/.test(location.search)) window.__hub = state;   // 임시 진단용
   } catch (err) {
     // 화면이 비어 버리면 원인을 알 수 없으니, 실패는 화면에 남긴다
     const main = $('#main');
@@ -273,6 +274,7 @@ function wireChrome() {
     await refresh();
     renderRoute();
     loadHealth();
+    if (/[?&]debug=1/.test(location.search)) window.__hub = state;   // 임시 진단용
     $('#btn-refresh').textContent = '⟳';
     toast('새로고침 완료');
   });
