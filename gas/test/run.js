@@ -501,6 +501,24 @@ ok('키가 틀리면 ERR_NO_NAVER_KEY · 비밀 안 샘', o.code === 'ERR_NO_NAV
   list = callHandler(G.ctx, 'handleListAnalytics_', ss2, { brand: 'ALL', source: 'instagram' }, {});
   eq('소스 필터', list.ok && list.data.count, 1);
   ok('행은 화면이 쓰는 필드만 준다', list.ok && list.data.rows[0].views === 0 && list.data.rows[0].reach === 900, list.data && list.data.rows[0]);
+
+  /* 시트가 collected_date 를 날짜(Date)로 저장해 돌려줘도 그날 행을 놓치지 않는다 (2026-11-19 실제 결함). */
+  {
+    const sd = new FakeSS();
+    callHandler(G.ctx, 'handleIngestAnalytics_', sd, {
+      items: [{ source: 'youtube', channel: 'shorts', external_id: 'DATE1', brand: 'daejeon_youth', collected_at: '2026-11-19T10:00:00+09:00', views: 10 }]
+    }, { brand: 'daejeon_youth' });
+    const sh = sd.getSheetByName('Analytics_Daily');
+    const ci = sh.rows[0].indexOf('collected_date');
+    sh.rows[1][ci] = new Date(2026, 10, 19);
+    const l1 = callHandler(G.ctx, 'handleListAnalytics_', sd, { brand: 'daejeon_youth', from: '2026-11-01', to: '2026-11-30' }, {});
+    ok('날짜로 저장된 행도 기간 필터를 통과한다', l1.ok && l1.data.count === 1, l1.data && { count: l1.data.count, rows: l1.data.rows });
+    ok('응답의 collected_date 는 YYYY-MM-DD', l1.ok && l1.data.rows[0].collected_date === '2026-11-19', l1.data && l1.data.rows[0]);
+    const again = callHandler(G.ctx, 'handleIngestAnalytics_', sd, {
+      items: [{ source: 'youtube', channel: 'shorts', external_id: 'DATE1', brand: 'daejeon_youth', collected_at: '2026-11-19T10:00:00+09:00', views: 10 }]
+    }, { brand: 'daejeon_youth' });
+    ok('날짜로 저장된 행과도 중복을 거른다', again.ok && again.data.skipped === 1 && again.data.inserted === 0, again.data);
+  }
 })();
 
 
