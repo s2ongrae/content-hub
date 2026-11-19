@@ -4,6 +4,9 @@
  * 큰 숫자 3개(이번 주 유효조회 · 당월 누적 리워드 · 당근 달성률) + '오늘 입력할 숫자' 입력함
  * + D+7 승자(🏆)·D+14 리프레시(🔄) 배지 + 최근 기록.
  *
+ * 서브탭 [전체 | 유튜브 | 인스타]: 전체는 아래 기존 화면, 유튜브·인스타는 js/channelView.js(채널 목록·상세 드릴다운).
+ * 입력 채널(수동 입력함·오늘 입력할 숫자)은 그 카드 트랙의 채널셋만 보인다(js/trackChannels.js).
+ *
  * 데이터: GAS list_metrics / record_metrics (Metrics 시트). 서버가 아직 그 액션을 모르면
  * (= GAS 재배포 전) 화면은 그대로 그리고 숫자 입력만 조용히 막는다 — 빨간 오류로 겁주지 않는다.
  *
@@ -13,7 +16,9 @@
  *  · 리프레시: D+14 검색유입이 D+7의 70% 이하로 떨어짐.
  */
 
-import { renderAnalyticsPanel } from './analyticsView.js?v=20261119';
+import { renderAnalyticsPanel } from './analyticsView.js?v=20261119o';
+import { renderChannelView } from './channelView.js?v=20261119o';
+import { trackChannelsOf } from './trackChannels.js?v=20261119o';
 
 const PERF_CHANNELS = ['blog', 'shorts', 'reels', 'clip', 'daangn'];
 const CH_LABEL = { blog: '블로그', shorts: '쇼츠', reels: '릴스', clip: '클립', daangn: '당근' };
@@ -205,7 +210,9 @@ export function renderPerfView(main, ctx) {
   };
 
   main.appendChild(pageHead('📈 성과분석',
-    '이번 주 유효조회 · 당월 리워드 · 당근 달성률 — 숫자는 여기서 바로 넣습니다',
+    trackChannelsOf(state.brand).indexOf('daangn') >= 0
+      ? '이번 주 유효조회 · 당월 리워드 · 당근 달성률 — 숫자는 여기서 바로 넣습니다'
+      : '이번 주 유효조회 — 숫자는 여기서 바로 넣습니다',
     h('button', {
       class: 'btn sm', type: 'button', text: '↻ 새로고침',
       onclick: async (e) => {
@@ -222,7 +229,15 @@ export function renderPerfView(main, ctx) {
     return;
   }
 
-  const rows = state.metrics || [];
+  /* 서브탭 — 전체(아래 기존 화면) · 유튜브 · 인스타(채널 목록). 하단 탭 개수는 그대로 둔다. */
+  const tab = state.perfTab === 'youtube' || state.perfTab === 'instagram' ? state.perfTab : 'all';
+  main.appendChild(perfTabs(h, ctx, tab));
+  if (tab !== 'all') return renderChannelView(main, ctx, tab);
+
+  /* 이 트랙이 운영하지 않는 채널의 옛 행은 KPI·최근 기록 어디에도 남기지 않는다 */
+  const trackSet = trackChannelsOf(state.brand);
+  const rows = (state.metrics || []).filter((r) => trackSet.indexOf(r.channel) >= 0);
+  const hasDaangn = trackSet.indexOf('daangn') >= 0;
   const month = kstMonth();
   const week = mondayOfThisWeek();
   const monthRows = rows.filter((r) => r.measured_at.slice(0, 7) === month);
@@ -235,10 +250,11 @@ export function renderPerfView(main, ctx) {
   const viewGoal = 2000;
   const achievedPct = Math.round(Math.min(100, Math.min(dg.stories / storyGoal, dg.valid / viewGoal) * 100));
 
+  /* 당근 KPI 2개는 당근을 운영하는 트랙(A)에만 — 트랙 B 에는 '미운영' 칸을 남기지 않는다 */
   const kpis = h('div', { class: 'kpi-grid' },
     kpi(h, '이번 주 유효조회', nf(weekViews), '회 · ' + week + '부터'),
-    kpi(h, '당월 누적 리워드', nf(dg.reward), '원 · ' + month + ' 당근 확정분'),
-    kpi(h, '당근 달성률', String(achievedPct), '% · 스토리 ' + dg.stories + '/' + storyGoal + ' · ' + nf(dg.valid) + '/' + nf(viewGoal)));
+    hasDaangn ? kpi(h, '당월 누적 리워드', nf(dg.reward), '원 · ' + month + ' 당근 확정분') : null,
+    hasDaangn ? kpi(h, '당근 달성률', String(achievedPct), '% · 스토리 ' + dg.stories + '/' + storyGoal + ' · ' + nf(dg.valid) + '/' + nf(viewGoal)) : null);
   main.appendChild(kpis);
 
   const status = state.metricsError;
@@ -286,6 +302,24 @@ export function renderPerfView(main, ctx) {
   main.appendChild(manualForm(h, { state, api, toast, onSaved: () => ctx.renderRoute(), friendlyError }));
 }
 
+/** [전체 | 유튜브 | 인스타] + [블로그 통계 →] 칩(블로그를 운영하지 않는 트랙 B 에서는 숨김) */
+function perfTabs(h, ctx, active) {
+  const { state } = ctx;
+  const list = h('div', { class: 'subtabs', role: 'tablist', 'aria-label': '성과 보기' });
+  [['all', '전체'], ['youtube', '유튜브'], ['instagram', '인스타']].forEach(([key, label]) => {
+    list.appendChild(h('button', {
+      type: 'button', role: 'tab', class: 'subtab' + (key === active ? ' on' : ''),
+      'aria-selected': key === active ? 'true' : 'false', text: label,
+      onclick: () => { state.perfTab = key; ctx.renderRoute(); }
+    }));
+  });
+  const row = h('div', { class: 'subtabs-row' }, list);
+  if (trackChannelsOf(state.brand).indexOf('blog') >= 0) {
+    row.appendChild(h('a', { class: 'chip-link', href: '#/blog', text: '블로그 통계 →' }));
+  }
+  return row;
+}
+
 function kpi(h, label, value, sub) {
   return h('div', { class: 'kpi' },
     h('div', { class: 'kpi-k', text: label }),
@@ -308,10 +342,10 @@ function FIELD_LABELS(r) {
   return parts.join(' · ');
 }
 
-/** 그 카드가 실제로 올리는 채널 (당근은 대전 청년만) */
-function channelsOf(item) {
-  const isKimmary = !!(item && item.brand === 'ppiyak_kimmary');
-  return PERF_CHANNELS.filter((c) => !(isKimmary && c === 'daangn'));
+/** 그 카드가 실제로 올리는 채널 — 트랙 채널셋 ∩ 숫자를 넣을 수 있는 채널(트랙 A 5칸, 트랙 B 쇼츠·릴스·클립 3칸) */
+export function channelsOf(item, fallbackBrand) {
+  const set = trackChannelsOf((item && item.brand) || fallbackBrand);
+  return PERF_CHANNELS.filter((c) => set.indexOf(c) >= 0);
 }
 
 function hasRow(rows, contentId, channel, snapshot) {
@@ -328,7 +362,7 @@ function dueSection(h, opts) {
     const d = daysSince(c.updated_at);
     if (d == null || DUE_DAYS.indexOf(d) < 0) return;
     const snap = 'D' + d;
-    const channels = channelsOf(c).filter((ch) => !hasRow(rows, c.content_id, ch, snap));
+    const channels = channelsOf(c, state.brand).filter((ch) => !hasRow(rows, c.content_id, ch, snap));
     if (channels.length) due.push({ item: c, snapshot: snap, channels, days: d });
   });
 
@@ -422,7 +456,15 @@ function manualForm(h, ctx) {
   items.forEach((c) => sel.appendChild(h('option', { value: c.content_id, text: (c.place_name || c.content_id) + ' · ' + c.content_id })));
 
   const ch = h('select', { class: 'field-select' });
-  PERF_CHANNELS.forEach((k) => ch.appendChild(h('option', { value: k, text: CH_LABEL[k] })));
+  /* 카드를 바꾸면 그 카드 트랙의 채널만 남긴다(선택값이 아직 유효하면 유지) */
+  function fillChannels() {
+    const item = items.filter((x) => x.content_id === sel.value)[0];
+    const keep = ch.value;
+    while (ch.firstChild) ch.removeChild(ch.firstChild);
+    const list = channelsOf(item, state.brand);
+    list.forEach((k) => ch.appendChild(h('option', { value: k, text: CH_LABEL[k] })));
+    if (list.indexOf(keep) >= 0) ch.value = keep;
+  }
 
   const snap = h('select', { class: 'field-select' });
   CHECKPOINTS.forEach((k) => snap.appendChild(h('option', { value: k, text: k })));
@@ -437,15 +479,14 @@ function manualForm(h, ctx) {
 
   function paint() {
     while (host.firstChild) host.removeChild(host.firstChild);
-    const item = items.filter((x) => x.content_id === sel.value)[0];
-    const channel = ch.value === 'daangn' && item && item.brand === 'ppiyak_kimmary' ? 'clip' : ch.value;
     host.appendChild(metricRow(h, {
-      contentId: sel.value, channel, snapshot: snap.value,
+      contentId: sel.value, channel: ch.value, snapshot: snap.value,
       toast, friendlyError, onSaved, api: ctx.api
     }));
   }
-  sel.addEventListener('change', paint);
+  sel.addEventListener('change', () => { fillChannels(); paint(); });
   ch.addEventListener('change', paint);
+  fillChannels();
   paint();
   return panel;
 }

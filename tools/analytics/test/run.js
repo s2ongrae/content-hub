@@ -356,6 +356,107 @@ function fakeFetch(routes) {
     eq('설정에 공유 주소로 넣어도 카드가 붙는다', live.rows.find((r) => r.channel === 'shorts').content_id, 'C1');
   }
 
+  /* ───────── 8. 트랙 채널셋 · 인스타 표면 필터 · Media_Meta (2026-11-19) ───────── */
+  console.log('[8] 트랙 채널 계약 · 허용 표면 · 제목 메타');
+  {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const assertx = require('assert');
+    const ch = require('../lib/channels');
+    const seed = JSON.parse(fsx.readFileSync(pathx.join(__dirname, '..', '..', '..', 'seeds', 'track_channels.json'), 'utf8'));
+    let same = true;
+    try { assertx.deepStrictEqual(ch.TRACK_CHANNELS, seed); } catch (e) { same = false; }
+    ok('수집기 채널 사본 = seeds/track_channels.json', same, ch.TRACK_CHANNELS);
+
+    const realConfig = JSON.parse(fsx.readFileSync(pathx.join(__dirname, '..', 'config.json'), 'utf8'));
+    Object.keys(realConfig.tracks).forEach((k) => {
+      const t = realConfig.tracks[k];
+      const expected = seed[t.brand].filter((c) => c === 'reels' || c === 'feed');
+      let eqs = true;
+      try { assertx.deepStrictEqual(sync.allowedSurfacesOf(t), expected); } catch (e) { eqs = false; }
+      ok('config.json ' + k + ' 허용 표면 = 트랙 채널셋 ∩ 인스타 표면', eqs, { got: sync.allowedSurfacesOf(t), expected });
+    });
+    ok('트랙 B config 에 allowedSurfaces=[reels]', JSON.stringify(realConfig.tracks.track_b.instagram.allowedSurfaces) === '["reels"]');
+
+    const NOW = new Date('2026-11-19T03:00:00Z');
+    const mediaPage = {
+      data: [
+        { id: '9001', media_type: 'VIDEO', media_product_type: 'REELS', caption: '릴스 제목\n둘째 줄', permalink: 'https://www.instagram.com/reel/R1/', timestamp: '2026-11-18T00:00:00+0000', like_count: 3, comments_count: 1, thumbnail_url: 'https://cdn.example/r1.jpg' },
+        { id: '9002', media_type: 'IMAGE', media_product_type: 'FEED', caption: '사진', permalink: 'https://www.instagram.com/p/P1/', timestamp: '2026-11-18T00:00:00+0000', like_count: 1, comments_count: 0 },
+        { id: '9003', media_type: 'CAROUSEL_ALBUM', media_product_type: 'FEED', caption: '카드뉴스', permalink: 'https://www.instagram.com/p/P2/', timestamp: '2026-11-18T00:00:00+0000', like_count: 2, comments_count: 0 }
+      ]
+    };
+    const routes = () => [
+      { test: /\/media\?/, reply: { body: mediaPage } },
+      { test: /\/insights\?/, reply: { body: { data: [{ name: 'reach', values: [{ value: 50 }] }] } } }
+    ];
+
+    /* 수집기 단위: allowedSurfaces */
+    const f1 = fakeFetch(routes());
+    const only = await ig.collectInstagram({ igUserId: 'IG_B', token: 'TOK', fetchImpl: f1, now: NOW, allowedSurfaces: ['reels'] });
+    eq('허용 표면만 남는다(릴스 1건)', only.media.length, 1);
+    eq('빠진 건수', only.ignored.count, 2);
+    eq('빠진 건 인사이트를 부르지 않는다(media 1 + insights 1)', f1.calls.length, 2);
+    const f2 = fakeFetch(routes());
+    const all = await ig.collectInstagram({ igUserId: 'IG_A', token: 'TOK', fetchImpl: f2, now: NOW });
+    eq('allowedSurfaces 없으면 전부(3건)', all.media.length, 3);
+    eq('빠진 건 없음', all.ignored.count, 0);
+    eq('썸네일 주소를 읽는다', only.media[0].thumbnail_url, 'https://cdn.example/r1.jpg');
+
+    /* 동기화: 트랙 B 는 피드 행이 없고 로그는 한 줄 */
+    const cfg2 = {
+      tracks: {
+        track_a: { brand: 'daejeon_youth', instagram: { ig_user_id: 'IG_A' } },
+        track_b: { brand: 'ppiyak_kimmary', instagram: { ig_user_id: 'IG_B', token_env: 'IG_ACCESS_TOKEN_MERRY', allowedSurfaces: ['reels'] } }
+      },
+      collect: { window_days: 45 }
+    };
+    const f3 = fakeFetch(routes());
+    const live = await sync.runSync({ config: cfg2, env: { igAccessToken: 'TOK', igTokens: { IG_ACCESS_TOKEN_MERRY: 'TOK_B' } }, fetchImpl: f3, now: NOW, sources: ['instagram'] });
+    const feedA = live.rows.filter((r) => r.channel === 'feed');
+    eq('피드 행은 트랙 A 에서만(2건)', feedA.length, 2);
+    ok('트랙 B 에는 피드 행이 없다', live.rows.filter((r) => r.brand === 'ppiyak_kimmary' && r.channel === 'feed').length === 0);
+    const ignoredLines = live.notices.filter((n) => /\[IGNORED_SURFACE\]/.test(n.message));
+    eq('[IGNORED_SURFACE] 로그는 한 줄', ignoredLines.length, 1);
+    ok('로그에 건수가 들어간다', /2건/.test(ignoredLines[0].message), ignoredLines[0].message);
+
+    /* Media_Meta 행 */
+    const metaIds = live.media_meta.map((m) => m.source + ':' + m.external_id + ':' + m.channel);
+    ok('메타는 허용된 표면만(트랙 B 피드 없음)', metaIds.filter((x) => /:feed$/.test(x)).length === 2 && !!live.media_meta.find((m) => m.title === '릴스 제목'), metaIds);
+    eq('인스타 제목은 첫 줄', live.media_meta.find((m) => m.external_id === '9001').title, '릴스 제목');
+
+    const vid = 'vid00000002';
+    const lf = 'vid00000003';
+    const fy = fakeFetch([
+      { test: '/channels', reply: { body: { items: [{ id: 'UC_A', statistics: {}, contentDetails: { relatedPlaylists: { uploads: 'UU_A' } } }] } } },
+      { test: '/playlistItems', reply: { body: { items: [
+        { contentDetails: { videoId: vid, videoPublishedAt: '2026-11-18T00:00:00Z' } },
+        { contentDetails: { videoId: lf, videoPublishedAt: '2026-11-18T00:00:00Z' } }] } } },
+      { test: '/videos', reply: { body: { items: [
+        { id: vid, snippet: { title: '쇼츠 제목', publishedAt: '2026-11-18T00:00:00Z', thumbnails: { medium: { url: 'https://i.ytimg.test/m.jpg' } } }, statistics: { viewCount: '10' }, contentDetails: { duration: 'PT20S' } },
+        { id: lf, snippet: { title: '롱폼', publishedAt: '2026-11-18T00:00:00Z' }, statistics: { viewCount: '10' }, contentDetails: { duration: 'PT20M' } }] } } }
+    ]);
+    const liveY = await sync.runSync({ config: { tracks: { track_a: { brand: 'daejeon_youth', youtube: { channel_id: 'UC_A' } } }, collect: { window_days: 45 } }, env: { youtubeApiKey: 'KEY' }, fetchImpl: fy, now: NOW, sources: ['youtube'] });
+    eq('유튜브 메타: 쇼츠만(롱폼은 트랙 채널셋 밖)', liveY.media_meta.length, 1);
+    eq('유튜브 메타 제목·썸네일·길이', liveY.media_meta[0].title + '|' + liveY.media_meta[0].thumbnail_url + '|' + liveY.media_meta[0].duration_sec, '쇼츠 제목|https://i.ytimg.test/m.jpg|20');
+
+    /* 메타 올리기: 실패해도 던지지 않고 경고 한 줄 */
+    const okFetch = async () => ({ status: 200, body: { ok: true, data: {} } });
+    const sentOk = await sync.pushMediaMeta(liveY.media_meta, { url: 'https://script.google.com/macros/s/TEST/exec', token: 'T', fetchImpl: okFetch, now: NOW });
+    ok('메타 올리기 성공', sentOk.ok && sentOk.sent === 1 && sentOk.warning === '', sentOk);
+    const badFetch = async () => ({ status: 200, body: { ok: false, error: { code: 'ERR_UNKNOWN_ACTION' } } });
+    const sentBad = await sync.pushMediaMeta(liveY.media_meta, { url: 'https://script.google.com/macros/s/TEST/exec', token: 'T', fetchImpl: badFetch, now: NOW });
+    ok('GAS 가 거절해도 던지지 않고 경고만', !sentBad.ok && sentBad.failed === 1 && /\[MEDIA_META\]/.test(sentBad.warning) && !/\n/.test(sentBad.warning), sentBad);
+    const boomFetch = async () => { throw new Error('network down'); };
+    let threw = false;
+    let sentBoom = null;
+    try { sentBoom = await sync.pushMediaMeta(liveY.media_meta, { url: 'https://script.google.com/macros/s/TEST/exec', token: 'T', fetchImpl: boomFetch, now: NOW }); } catch (e) { threw = true; }
+    ok('네트워크가 죽어도 던지지 않는다', !threw && sentBoom && !sentBoom.ok, sentBoom);
+    const noCfg = await sync.pushMediaMeta(liveY.media_meta, {});
+    ok('주소·토큰이 없으면 건너뛰고 경고', !noCfg.ok && /건너뜁니다/.test(noCfg.warning), noCfg);
+    eq('올릴 게 없으면 조용히 성공', (await sync.pushMediaMeta([], {})).ok, true);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));
   process.exit(failed ? 1 : 0);
 })().catch((err) => {

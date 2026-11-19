@@ -58,7 +58,7 @@
 
 | 영역 | 구현 |
 |---|---|
-| 채널 | `CHANNELS`에 `daangn` 추가 — 대전 청년만 6칸(블로그·쇼츠·릴스·피드·클립·당근), 메리 트랙은 4칸 |
+| 채널 | `CHANNELS`에 `daangn` 추가 — 대전 청년만 6칸(블로그·쇼츠·릴스·피드·클립·당근), 메리 트랙은 3칸(쇼츠·릴스·클립 — 블로그·피드·당근 제외, `docs/CHANNEL_DRILLDOWN_v1.md`) |
 | 시트 | `Contents` 35칸 불변 → 끝에 `daangn_status` · `daangn_url` 2칸 추가(총 37칸) |
 | 카드 | 채널 칩·상세 채널별 현황에 당근 자동 포함, 상세에 **수익화 트래커 + 점검 3개** |
 | 성과 | `Metrics` 시트에 `valid_views` · `saves` · `reward_krw` 3칸 추가, 액션 `list_metrics` · `record_metrics` |

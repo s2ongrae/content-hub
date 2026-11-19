@@ -225,6 +225,10 @@ const M1_HANDLERS = {
   // 유튜브·인스타 자동 수집 (2026-11-19, gas/Analytics.gs)
   list_analytics: handleListAnalytics_,
   ingest_analytics: handleIngestAnalytics_,
+  // 채널 목록·콘텐츠 상세 드릴다운 (2026-11-19) — gas/PostDetail.gs
+  get_post_detail: handleGetPostDetail_,
+  upsert_media_meta: handleUpsertMediaMeta_,
+  list_media_meta: handleListMediaMeta_,
   get_system_health: handleGetSystemHealth_,
   backup_now: handleBackupNow_,
   integrity_check: handleIntegrityCheck_,

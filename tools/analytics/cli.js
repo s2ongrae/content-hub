@@ -20,7 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { runSync, toGasPayload, pushToGas } = require('./lib/sync');
+const { runSync, toGasPayload, pushToGas, pushMediaMeta } = require('./lib/sync');
 
 function parseArgs(argv) {
   const out = { live: false, push: false, source: '', config: '', out: '', quiet: false };
@@ -106,6 +106,12 @@ async function main() {
       const fail = pushed.filter((p) => !p.ok);
       fail.forEach((p) => report.errors.push({ source: 'gas', code: 'ERR_PUSH', message: '적재 실패: ' + p.key, reason: (p.error && p.error.code) || (p.body && p.body.error && p.body.error.code) || '' }));
     }
+  }
+
+  /* 제목·썸네일·길이 올리기 — 실패해도 경고 한 줄만 남기고 수집 결과는 그대로 성공 */
+  if (args.push && env.gasUrl && env.gasToken && report.media_meta && report.media_meta.length) {
+    const mm = await pushMediaMeta(report.media_meta, { url: env.gasUrl, token: env.gasToken });
+    if (!mm.ok && mm.warning) report.notices.push({ level: 'warn', code: 'MEDIA_META_FAILED', message: mm.warning });
   }
 
   const outFile = args.out || path.join('tools', 'analytics', 'out', 'report-' + report.collected_date + '.json');
