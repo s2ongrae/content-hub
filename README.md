@@ -14,7 +14,7 @@
 ## 지금 되는 것 (M1)
 
 1. **브랜드 스위처** — 상단에서 🍺 대전 청년(4채널) ↔ 🐱 삐약 김메리(3채널) 전환. 목록 · 검수 · 승인 · 취재가 모두 그 브랜드 기준으로 바뀝니다.
-2. **보드** — `DRAFT · GENERATING → REVIEW → READY → PUBLISHING/PUBLISHED → LINKED` 칸반 + `NEEDS_HUMAN/PARTIAL_FAIL` 격리 열. 카드를 누르면 상세(payload · 내부링크 후보 · 적용 규칙).
+2. **보드** — `DRAFT · GENERATING → REVIEW → READY → PUBLISHING/PUBLISHED → LINKED` 칸반 + `NEEDS_HUMAN/PARTIAL_FAIL` 격리 열. 발행 전(초안·작성 중·확인·수정) 카드에는 **본문 첫 두 줄**이 붙고, 카드를 누르면 상세가 **`작성본` 탭**으로 열려 본문·대본을 글로 읽고 [본문 복사]·[붙여넣어 저장]한다. 본문이 없는 카드는 그 사실을 크게 알려 준다 — [`docs/DRAFT_CONTENT_v1.md`](docs/DRAFT_CONTENT_v1.md).
 3. **10초 승인** — 폰에서 카드 1장(브랜드 · 상호 · 품질점수 · 핵심 3줄 · 단점 1줄)을 읽고 `[반려] [스킵] [✅ 승인]`. 승인 1탭 = `record_checklist(human_reviewed=true)` → `update_content(READY)`.
 4. **검수** — F2 발행 전 체크리스트 10항목(100점). **80점 이상 + 사람 확인**이어야 READY 승격(서버가 `ERR_TOS_REVIEW_REQUIRED`로 재검증).
 5. **취재 등록** — 상호 · 지역 · 키워드 · 플레이스 URL만으로 30초 안에 `DRAFT` 생성(`DY-YYYYMMDD-NNN` / `KM-…` 자동 채번).
@@ -42,6 +42,7 @@ css/style.css           # 브랜드 테마(네이비·오렌지 / 코랄·크림
 js/api.js               # 30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 미설정 시 ERR_NO_CONFIG
 js/quickApprove.js      # 폰 10초 승인 카드 스택
 js/app.js               # 해시 라우터 · 브랜드 스위처 · 화면 8종 (렌더링 textContent 전용)
+js/draftView.js         # 카드 상세 '작성본' 탭 — 채널별 본문 읽기·복사·붙여넣어 저장
 js/perfView.js          # 성과분석(#/perf) — 큰 숫자·오늘 입력함·승자/리프레시 배지
 js/lintView.js          # 발행 전 린터(#/lint) — 8항목 채점 화면
 js/blogLint.js          # 린터 규칙 엔진(웹앱·CLI 공용)·window.BlogLint
