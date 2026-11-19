@@ -9,13 +9,13 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261119t';
-import { renderPostView } from './postView.js?v=20261119t';
-import { trackChannelsOf } from './trackChannels.js?v=20261119t';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261119u';
+import { renderPostView } from './postView.js?v=20261119u';
+import { trackChannelsOf } from './trackChannels.js?v=20261119u';
 import { renderLintView } from './lintView.js?v=20261118';
-import { loadDaangnSeed } from './daangnView.js?v=20261119t';
-import { getAnalytics } from './analyticsView.js?v=20261119t';
-import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119t';
+import { loadDaangnSeed } from './daangnView.js?v=20261119u';
+import { getAnalytics } from './analyticsView.js?v=20261119u';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119u';
 import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
@@ -1539,7 +1539,7 @@ function numInputRow(ctx, r, fields) {
   fields.forEach((f) => {
     /* 이전에 넣은 값이 있으면 채워 둔다 — 빈칸으로 저장해 0이 덮어쓰는 일을 막는다 */
     const prev = (r.last && r.last[f.key] != null) ? r.last[f.key]
-      : (fields.length === 1 && r.value != null ? r.value : '');
+      : ((f.key === 'views' || fields.length === 1) && r.value != null ? r.value : '');
     const inp = h('input', { type: 'text', inputmode: 'numeric', placeholder: f.label, 'aria-label': r.label + ' ' + f.label,
       value: prev === '' || prev == null ? '' : String(prev) });
     inputs[f.key] = inp;
