@@ -20,7 +20,9 @@
       "instagram": {
         "ig_user_id": "17841477232390951",
         "token_env": "IG_ACCESS_TOKEN_MERRY",
-        "allowedSurfaces": ["reels"]
+        "allowedSurfaces": [
+          "reels"
+        ]
       }
     }
   },
@@ -33,6 +35,66 @@
     "confirmed": {}
   },
   "links": {
-    "_comment": "영상 ID → 허브 카드 연결. 비어 있으면 UNMAPPED 로 남는다."
+    "_comment": "영상·미디어 ID → 허브 카드 연결(2026-11-19 실측). 유튜브는 영상 ID, 인스타는 permalink 주소로 적는다 — 수집기가 주소를 키로 정리해 맞춘다. 카드가 없는 옛 게시물은 넣지 않는다(UNMAPPED 로 남겨 구분).",
+    "Gx9-FiEXIiI": {
+      "brand": "daejeon_youth",
+      "content_id": "DY-20261116-001"
+    },
+    "BbL2riEbXcI": {
+      "brand": "daejeon_youth",
+      "content_id": "DY-20261030-001"
+    },
+    "7yWeiuJHcro": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261112-001"
+    },
+    "ctTN2PnPZUw": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261104-001"
+    },
+    "97hpLaVNrD4": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261104-002"
+    },
+    "FxRzKbu00BY": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261030-001"
+    },
+    "Z-TtHCxWNKo": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261029-001"
+    },
+    "https://www.instagram.com/reel/Df0xLg-Jf_j/": {
+      "brand": "daejeon_youth",
+      "content_id": "DY-20261116-001"
+    },
+    "https://www.instagram.com/reel/DfwHfxrhP3o/": {
+      "brand": "daejeon_youth",
+      "content_id": "DY-20261030-001"
+    },
+    "https://www.instagram.com/p/DfOSxm7CR0q/": {
+      "brand": "daejeon_youth",
+      "content_id": "DY-20261030-001"
+    },
+    "https://www.instagram.com/reel/DfopT1OzWtU/": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261112-001"
+    },
+    "https://www.instagram.com/reel/DfTrPGTTnwa/": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261104-002"
+    },
+    "https://www.instagram.com/reel/DfSBnPOTHIV/": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261104-001"
+    },
+    "https://www.instagram.com/reel/DfHYSDNT20I/": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261030-001"
+    },
+    "https://www.instagram.com/reel/DfFRGa1TG-o/": {
+      "brand": "ppiyak_kimmary",
+      "content_id": "KM-20261029-001"
+    }
   }
 }
