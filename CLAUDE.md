@@ -43,7 +43,7 @@
 | `gas/Backup.gs` | 일/주/월 스냅샷·80개 배치·manifest·보존·복구·무결성 6종 |
 | `gas/Notify.gs` | 헬스 경보(슬랙/메일, 4시간 쿨다운) |
 | `gas/Onboarding.gs` | 콜드스타트 위저드(훅·포맷·플레이스·키워드 + 2주 캘린더 10건) |
-| `gas/Blog.gs` · `js/blogView.js` | `#/blog` 내 블로그 — 네이버 공개 데이터(글·댓글·공감·방문자) 수집·본문 린터·검색 순위(오픈API 키는 스크립트 속성에만). 쿠키·로그인 금지 |
+| `gas/Blog.gs` · `js/blogView.js` | `#/blog` 내 블로그 — 네이버 공개 데이터(글·댓글·공감·방문자) 수집·본문 린터·검색 순위(오픈API 키는 스크립트 속성에만). 쿠키·로그인 금지. 로그인 통계(조회수·검색어·독자)는 피클이 `blog_stats_ingest`로 보냄 → `docs/BLOG_STATS_INGEST.md` |
 | `seeds/series_pack_2026w47.json` | **시리즈 10편(2×5)·키워드팩·훅 A/B 시드.** 읽기 전용 정적 JSON(공개 페이지가 `fetch`로 읽음) |
 | `tools/render_series_pack.py` | 시드 JSON → 기획 문서 렌더러. **문서를 직접 고치지 않는다** |
 | `docs/M2_ROADMAP.md` | M2에서 서버(GAS)·시트가 받아야 할 것(스키마 3컬럼·액션·품질 게이트) |
