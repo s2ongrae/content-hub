@@ -9,13 +9,13 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261119u';
-import { renderPostView } from './postView.js?v=20261119u';
-import { trackChannelsOf } from './trackChannels.js?v=20261119u';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261119w';
+import { renderPostView } from './postView.js?v=20261119w';
+import { trackChannelsOf } from './trackChannels.js?v=20261119w';
 import { renderLintView } from './lintView.js?v=20261118';
-import { loadDaangnSeed } from './daangnView.js?v=20261119u';
-import { getAnalytics } from './analyticsView.js?v=20261119u';
-import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119u';
+import { loadDaangnSeed } from './daangnView.js?v=20261119w';
+import { getAnalytics } from './analyticsView.js?v=20261119w';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119w';
 import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
@@ -1346,8 +1346,10 @@ function analysisSection(contentId, d, m, payload, dlg) {
   rows.forEach((r) => grid.appendChild(channelTile(r, tileCtx)));
   tileBox.appendChild(grid);
   if (showPerf) {
-    tileBox.appendChild(h('p', { class: 'perf-note',
-      text: '※ 릴스는 조회, 피드는 도달, 당근은 유효시청 기준으로 합산했습니다. 쇼츠·릴스·피드는 매일 아침 자동으로 갱신됩니다.' }));
+    const isB = trackChannelsOf(brand).indexOf('daangn') < 0;
+    tileBox.appendChild(h('p', { class: 'perf-note', text: isB
+      ? '※ 쇼츠·릴스는 매일 아침 자동으로 갱신됩니다. 클립은 조회수를 직접 넣습니다.'
+      : '※ 릴스는 조회, 피드는 도달, 당근은 유효시청 기준으로 합산했습니다. 쇼츠·릴스·피드는 매일 아침 자동으로 갱신됩니다.' }));
   }
 
   /* ③ 다음 할 일 */
@@ -1425,7 +1427,8 @@ function analysisSection(contentId, d, m, payload, dlg) {
 }
 
 /** 종합 성과 요약 — 큰 숫자 4칸 + 채널 비중 막대 */
-function perfSummary(totals, m) {
+function perfSummary(totals, m, brand) {
+  const hasDaangn = trackChannelsOf(brand || (m && m.brand) || state.brand).indexOf('daangn') >= 0;
   const cell = (k, v, s) => h('div', { class: 'pf-k' },
     h('span', { class: 'pf-l', text: k }), h('b', { class: 'pf-v', text: v }),
     s ? h('span', { class: 'pf-s', text: s }) : null);
@@ -1435,7 +1438,9 @@ function perfSummary(totals, m) {
   sec.appendChild(h('div', { class: 'pf-grid' },
     cell('총 조회', compact(totals.views), '조회·도달·유효시청'),
     cell('총 반응', compact(totals.reactions), '좋아요·댓글·저장·공유'),
-    cell('확정 보상', totals.reward ? Number(totals.reward).toLocaleString('ko-KR') + '원' : '—', '당근 기본보상'),
+    hasDaangn
+      ? cell('확정 보상', totals.reward ? Number(totals.reward).toLocaleString('ko-KR') + '원' : '—', '당근 기본보상')
+      : cell('댓글', totals.comments ? compact(totals.comments) : '—', '자동 수집'),
     cell('게시 완료', totals.done + ' / ' + totals.total, '채널')));
 
   const bar = h('div', { class: 'pf-bar', role: 'img', 'aria-label': '채널 비중' });
