@@ -21,6 +21,9 @@ const ACTION_WHITELIST = {
   record_checklist:     { mode: 'WRITE', allowDegraded: false, m1: true },   // 모바일 10초 승인용
   list_metrics:         { mode: 'READ',  allowDegraded: true,  m1: true },   // 성과분석(#/perf) 읽기
   record_metrics:       { mode: 'WRITE', allowDegraded: false, m1: true },   // 성과 숫자 입력
+  // 유튜브·인스타 자동 수집 (2026-11-19, gas/Analytics.gs) — 블로그 API 작업과 파일 분리
+  list_analytics:       { mode: 'READ',  allowDegraded: true,  m1: true },   // 자동 수집분 읽기
+  ingest_analytics:     { mode: 'WRITE', allowDegraded: false, m1: true },   // 수집기 적재(50건 묶음)
   // 운영 · 백업 · 보안 (M1에서 실제 구현)
   get_system_health:    { mode: 'READ',  allowDegraded: true,  m1: true },
   // 장시간 액션은 라우터 락을 잡지 않는다(30초 예산·전역 블로킹 방지). 내부 단계가 자체 락을 쓴다.

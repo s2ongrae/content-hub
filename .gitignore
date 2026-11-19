@@ -9,3 +9,7 @@ config.local.js
 Thumbs.db
 node_modules/
 *.log
+
+# 자동 수집 실행 산출물(보고서·실제 설정)
+tools/analytics/out/
+tools/analytics/config.json

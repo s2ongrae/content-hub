@@ -222,6 +222,9 @@ const M1_HANDLERS = {
   record_checklist: handleRecordChecklist_,
   list_metrics: handleListMetrics_,
   record_metrics: handleRecordMetrics_,
+  // 유튜브·인스타 자동 수집 (2026-11-19, gas/Analytics.gs)
+  list_analytics: handleListAnalytics_,
+  ingest_analytics: handleIngestAnalytics_,
   get_system_health: handleGetSystemHealth_,
   backup_now: handleBackupNow_,
   integrity_check: handleIntegrityCheck_,

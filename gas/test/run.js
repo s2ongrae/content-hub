@@ -119,13 +119,14 @@ const ok = (name, cond, extra) => {
   if (cond) { passed++; console.log('  ✓ ' + name); }
   else { failed++; console.log('  ✗ ' + name + (extra !== undefined ? '  → ' + JSON.stringify(extra) : '')); }
 };
+
 const eq = (name, actual, expected) => ok(name, actual === expected, { actual, expected });
 
 function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Blog.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Blog.gs', 'Analytics.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -428,6 +429,80 @@ ok('키는 헤더로만(주소에 없음)', routes.filter(x => /openapi/.test(x.
 netReply['openapi.naver.com'] = { code: 401, body: '' };
 o = callHandler(B.ctx, 'handleBlogRankCheck_', ss, { keywords: ['x'] }, { brand: 'daejeon_youth' });
 ok('키가 틀리면 ERR_NO_NAVER_KEY · 비밀 안 샘', o.code === 'ERR_NO_NAVER_KEY' && !/test-secret/.test(o.message), o);
+/* ───────── 유튜브·인스타 자동 수집 (gas/Analytics.gs) ───────── */
+(function analyticsTests() {
+  console.log('\n[A1] 자동 수집 적재 — 중복 키 · Metrics 비춤');
+  const G = loadGas();
+  ok('list_analytics 는 읽기', ev(G.ctx, 'ACTION_WHITELIST').list_analytics.mode === 'READ');
+  ok('ingest_analytics 는 쓰기', ev(G.ctx, 'ACTION_WHITELIST').ingest_analytics.mode === 'WRITE');
+  ok('핸들러 2개가 라우터에 등록됨', typeof ev(G.ctx, 'M1_HANDLERS').list_analytics === 'function' && typeof ev(G.ctx, 'M1_HANDLERS').ingest_analytics === 'function');
+
+  const ss2 = new FakeSS();
+  const metrics = new FakeSheet('Metrics');
+  const metricCols = ev(G.ctx, 'SHEET_SCHEMAS').Metrics;
+  metrics.getRange(1, 1, 1, metricCols.length).setValues([metricCols]);
+  ss2.sheets.set('Metrics', metrics);
+
+  const a1 = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, {
+    items: [
+      { source: 'youtube', channel: 'shorts', external_id: 'VID1', content_id: 'DY-1', brand: 'daejeon_youth', checkpoint: 'D7', collected_at: '2026-11-19T12:00:00+09:00', views: 1200, likes: 30, comments: 4, revenue_krw: 36, revenue_estimated: true, score: 72 },
+      { source: 'instagram', channel: 'feed', external_id: 'IG1', brand: 'daejeon_youth', checkpoint: 'LATEST', collected_at: '2026-11-19T12:00:00+09:00', reach: 900, likes: 40, saves: 12 }
+    ]
+  }, { brand: 'daejeon_youth' });
+  ok('적재 성공', a1.ok, a1);
+  eq('2건 삽입', a1.ok && a1.data.inserted, 2);
+  eq('1건만 Metrics 로 비춤', a1.ok && a1.data.mirrored, 1);
+  const sheet2 = ss2.getSheetByName('Analytics_Daily');
+  ok('Analytics_Daily 시트를 스스로 만든다', !!sheet2);
+  eq('24컬럼 헤더', sheet2 && sheet2.getLastColumn(), 24);
+  const rows2 = sheet2.getRange(2, 1, sheet2.getLastRow() - 1, sheet2.getLastColumn()).getValues();
+  eq('행 2개', rows2.length, 2);
+  const header2 = sheet2.getRange(1, 1, 1, 24).getValues()[0];
+  ok('추정 수익 컬럼은 TRUE 로 적힌다', String(rows2[0][header2.indexOf('revenue_estimated')]) === 'true', rows2[0]);
+  eq('Metrics 에 한 줄', metrics.getLastRow() - 1, 1);
+
+  const a2 = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, {
+    items: [
+      { source: 'youtube', channel: 'shorts', external_id: 'VID1', content_id: 'DY-1', brand: 'daejeon_youth', checkpoint: 'D7', collected_at: '2026-11-19T12:00:00+09:00', views: 9999 },
+      { source: 'instagram', channel: 'feed', external_id: 'IG1', brand: 'daejeon_youth', checkpoint: 'LATEST', collected_at: '2026-11-19T12:00:00+09:00', reach: 1 }
+    ]
+  }, { brand: 'daejeon_youth' });
+  eq('같은 키는 skip', a2.ok && a2.data.skipped, 2);
+  eq('새 행 0', a2.ok && a2.data.inserted, 0);
+  eq('Metrics 도 늘지 않는다', metrics.getLastRow() - 1, 1);
+
+  let bad = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, { items: [{ source: 'naver', channel: 'shorts', external_id: 'X' }] }, { brand: 'daejeon_youth' });
+  eq('모르는 소스는 거절', bad.code, 'ERR_VALIDATION_FAILED');
+  bad = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, { items: [{ source: 'youtube', channel: 'blog', external_id: 'X' }] }, { brand: 'daejeon_youth' });
+  eq('모르는 표면은 거절', bad.code, 'ERR_VALIDATION_FAILED');
+  bad = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, { items: [] }, { brand: 'daejeon_youth' });
+  eq('빈 items 거절', bad.code, 'ERR_VALIDATION_FAILED');
+  const many = [];
+  for (let i = 0; i < 501; i++) many.push({ source: 'youtube', channel: 'shorts', external_id: 'B' + i });
+  bad = callHandler(G.ctx, 'handleIngestAnalytics_', ss2, { items: many }, { brand: 'daejeon_youth' });
+  eq('500건 넘으면 거절', bad.code, 'ERR_VALIDATION_FAILED');
+
+  console.log('\n[A2] 자동 수집 조회 (list_analytics)');
+  callHandler(G.ctx, 'handleIngestAnalytics_', ss2, {
+    items: [
+      { source: 'youtube', channel: 'longform', external_id: 'VID2', content_id: 'DY-2', brand: 'ppiyak_kimmary', collected_at: '2026-11-20T09:00:00+09:00', views: 50, note: 'UNMAPPED' },
+      { source: 'youtube', channel: 'channel', external_id: 'UC_A', brand: 'ppiyak_kimmary', collected_at: '2026-11-20T09:00:00+09:00', subscribers: 321 }
+    ]
+  }, { brand: 'ppiyak_kimmary' });
+  let list = callHandler(G.ctx, 'handleListAnalytics_', ss2, { brand: 'ALL' }, { brand: 'daejeon_youth' });
+  ok('전체 조회', list.ok && list.data.count === 4, list.data && list.data.count);
+  eq('소스별 건수', list.ok && list.data.summary.by_source.youtube, 3);
+  eq('표면별 건수(쇼츠)', list.ok && list.data.summary.by_channel.shorts, 1);
+  ok('마지막 수집 시각은 가장 큰 값', list.ok && list.data.summary.last_collected_at === '2026-11-20T09:00:00+09:00', list.data && list.data.summary);
+  list = callHandler(G.ctx, 'handleListAnalytics_', ss2, { brand: 'ppiyak_kimmary' }, {});
+  eq('브랜드 필터', list.ok && list.data.count, 2);
+  list = callHandler(G.ctx, 'handleListAnalytics_', ss2, { brand: 'ALL', from: '2026-11-20', to: '2026-11-20' }, {});
+  eq('기간 필터', list.ok && list.data.count, 2);
+  list = callHandler(G.ctx, 'handleListAnalytics_', ss2, { brand: 'ALL', source: 'instagram' }, {});
+  eq('소스 필터', list.ok && list.data.count, 1);
+  ok('행은 화면이 쓰는 필드만 준다', list.ok && list.data.rows[0].views === 0 && list.data.rows[0].reach === 900, list.data && list.data.rows[0]);
+})();
+
 
 console.log('\n[B6] 피클 통계 받기 (blog_stats_ingest)');
 ok('blog_stats_ingest 등록', WL.blog_stats_ingest && WL.blog_stats_ingest.m1 && WL.blog_stats_ingest.mode === 'WRITE' && typeof HM.blog_stats_ingest === 'function');

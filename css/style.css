@@ -1044,3 +1044,29 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 @media (min-width: 900px) { .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
 .ingest-note.stale { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
 .ingest-note h3 { margin-bottom: 6px; }
+
+/* ── 유튜브·인스타 자동 수집 (#/perf 상단) ───────────────────────────── */
+.an-panel { margin-bottom: 12px; }
+.an-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.an-chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  border: 1px solid var(--line-soft); border-radius: 999px; padding: 5px 10px;
+  font-size: 11.5px; color: var(--tx-3);
+}
+.an-chip.on { border-color: var(--line); color: var(--tx); }
+.an-chip b { font-size: 12px; color: var(--tx); }
+.an-chip em { font-style: normal; }
+.an-chip-n { font-size: 10.5px; color: var(--tx-3); }
+.an-list { display: grid; gap: 4px; margin-top: 8px; }
+.an-row {
+  display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 8px;
+  align-items: baseline; padding: 6px 2px; border-bottom: 1px solid var(--line-soft);
+}
+.an-row:last-child { border-bottom: 0; }
+.an-ch { font-size: 11.5px; font-weight: 800; color: var(--tx); }
+.an-main { font-size: 12px; color: var(--tx-2); overflow-wrap: anywhere; }
+.an-profit { font-size: 11.5px; color: var(--tx-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.an-guide { margin-top: 10px; border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.an-guide summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--tx-2); }
+.an-steps { margin: 8px 0 4px 16px; display: grid; gap: 5px; font-size: 11.5px; color: var(--tx-2); line-height: 1.5; }
+.an-steps b { color: var(--tx); }

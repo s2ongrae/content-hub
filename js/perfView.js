@@ -13,6 +13,8 @@
  *  · 리프레시: D+14 검색유입이 D+7의 70% 이하로 떨어짐.
  */
 
+import { renderAnalyticsPanel } from './analyticsView.js?v=20261119';
+
 const PERF_CHANNELS = ['blog', 'shorts', 'reels', 'clip', 'daangn'];
 const CH_LABEL = { blog: '블로그', shorts: '쇼츠', reels: '릴스', clip: '클립', daangn: '당근' };
 const CHECKPOINTS = ['D1', 'D7', 'D14', 'D30'];
@@ -247,6 +249,9 @@ export function renderPerfView(main, ctx) {
     const b = banner ? banner('info', 'ⓘ', '성과 기록 준비 중', msg) : h('div', { class: 'panel' }, h('p', { class: 'hint', text: msg }));
     main.appendChild(b);
   }
+
+  /* ①-2 유튜브·인스타 자동 수집 (js/analyticsView.js) — 블로그·클립 영역은 건드리지 않는다 */
+  renderAnalyticsPanel(main, ctx);
 
   /* ② 오늘 입력할 숫자 */
   main.appendChild(dueSection(h, { state, api, rows, name, onSaved: () => ctx.renderRoute(), toast, friendlyError }));

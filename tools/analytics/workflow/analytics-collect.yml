@@ -1,0 +1,80 @@
+# ⚠️ 이 파일은 GitHub App 권한(workflows) 때문에 .github/workflows/ 에 직접 푸시할 수 없어 여기 둔다.
+#    사용법: GitHub 웹에서 파일 이름을 .github/workflows/analytics-collect.yml 로 바꿔 옮기면 그때부터 크론이 돈다.
+#    (내용은 그대로 — 아래 주석은 안내용)
+
+name: analytics-collect
+
+# 유튜브·인스타 지표 자동 수집 (무료 크론)
+#  · 키가 하나도 없으면 수집기가 dry-run 으로 끝난다(실패 아님) — 설정 전에도 안전하게 돈다.
+#  · 수집분은 GAS ingest_analytics → Analytics_Daily 시트로 들어가고, 카드와 연결된 행은 Metrics 에도 비친다.
+#  · 블로그 관리 API 작업과 파일이 겹치지 않는다(tools/analytics · 이 워크플로만 쓴다).
+
+on:
+  schedule:
+    - cron: '10 21 * * *'      # 06:10 KST
+  workflow_dispatch:
+    inputs:
+      live:
+        description: '실제로 API를 부를지 (끄면 계획만)'
+        type: boolean
+        default: true
+      push:
+        description: 'GAS 로 적재할지'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analytics-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 설정 파일 준비 (없으면 예시 복사)
+        run: |
+          if [ ! -f tools/analytics/config.json ]; then
+            cp tools/analytics/config.example.json tools/analytics/config.json
+          fi
+
+      - name: 단위 시험
+        run: node tools/analytics/test/run.js
+
+      - name: 지표 수집
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_OAUTH_TOKEN: ${{ secrets.YOUTUBE_OAUTH_TOKEN }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_TOKEN_EXPIRES_AT: ${{ secrets.IG_TOKEN_EXPIRES_AT }}
+          GAS_WEBAPP_URL: ${{ secrets.GAS_WEBAPP_URL }}
+          GAS_API_TOKEN: ${{ secrets.GAS_API_TOKEN }}
+        run: |
+          ARGS="--config tools/analytics/config.json"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.live }}" != "true" ]; then
+            node tools/analytics/cli.js $ARGS
+          else
+            ARGS="$ARGS --live"
+            if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ inputs.push }}" = "true" ]; then
+              ARGS="$ARGS --push"
+            fi
+            node tools/analytics/cli.js $ARGS
+          fi
+
+      - name: 보고서 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-report
+          path: tools/analytics/out/*.json
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,27 @@
+{
+  "_comment": "도구 설정 — 비밀값은 절대 넣지 않는다. 채널 ID·계정 ID는 Actions Secrets 또는 이 파일(공개 무방)에, API 키·토큰은 Secrets 에만.",
+  "tracks": {
+    "track_a": {
+      "brand": "daejeon_youth",
+      "youtube": { "channel_id": "REPLACE_WITH_TRACK_A_YT_CHANNEL_ID", "monetized": false },
+      "instagram": { "ig_user_id": "REPLACE_WITH_TRACK_A_IG_USER_ID" }
+    },
+    "track_b": {
+      "brand": "ppiyak_kimmary",
+      "youtube": { "channel_id": "REPLACE_WITH_TRACK_B_YT_CHANNEL_ID", "monetized": false },
+      "instagram": { "ig_user_id": "REPLACE_WITH_TRACK_B_IG_USER_ID" }
+    }
+  },
+  "collect": {
+    "window_days": 45,
+    "shorts_max_sec": 180
+  },
+  "revenue": {
+    "currency": "KRW",
+    "rpm_krw": { "shorts": 30, "longform": 2500, "reels": 0, "feed": 0 }
+  },
+  "links": {
+    "_comment": "영상·미디어 ID → 허브 카드 연결. 비어 있으면 수집은 하되 UNMAPPED 로 남는다.",
+    "EXAMPLE_VIDEO_ID": { "brand": "daejeon_youth", "content_id": "DY-20261116-001" }
+  }
+}
