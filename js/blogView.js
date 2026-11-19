@@ -190,6 +190,11 @@ export function renderBlogView(main, ctx) {
   /* ② 방문자 막대 */
   main.appendChild(visitorChart(h, blog.visitors));
 
+  /* ②-2 로그인해야 보이는 통계(피클이 매일 보냄) */
+  main.appendChild(ingestStatus(h, blog));
+  const insights = insightPanels(h, blog);
+  if (insights) main.appendChild(insights);
+
   /* ③ 글 목록 */
   main.appendChild(postList(h, ctx, blog));
 
@@ -250,6 +255,7 @@ function visitorChart(h, visitors) {
 
 const SORTS = [
   { k: 'new', label: '최신순', fn: (a, b) => String(b.published_at).localeCompare(String(a.published_at)) },
+  { k: 'views', label: '조회수 순', fn: (a, b) => (b.views_total || 0) - (a.views_total || 0) },
   { k: 'react', label: '반응 많은 순', fn: (a, b) => (b.comment_cnt + b.sympathy_cnt) - (a.comment_cnt + a.sympathy_cnt) },
   { k: 'week', label: '이번 주 뜨는 글', fn: (a, b) => ((b.comment_7d || 0) + (b.sympathy_7d || 0)) - ((a.comment_7d || 0) + (a.sympathy_7d || 0)) }
 ];
@@ -313,6 +319,7 @@ function postRow(h, ctx, p) {
       h('div', { class: 'l-sub', text: sub }),
       result),
     h('div', { class: 'l-side blog-side' },
+      p.views_total != null ? h('span', { class: 'blog-num', title: '조회수' + (p.views_7d != null ? ' · 최근 7일 ' + nf(p.views_7d) : '') }, '👁 ' + nf(p.views_total), p.views_7d ? h('em', { class: 'delta up', text: '+' + nf(p.views_7d) }) : null) : null,
       h('span', { class: 'blog-num', title: '댓글' + (p.comment_7d != null ? ' · 7일 ' + signed(p.comment_7d) : '') }, '💬 ' + nf(p.comment_cnt), delta(p.comment_7d)),
       h('span', { class: 'blog-num', title: '공감' + (p.sympathy_7d != null ? ' · 7일 ' + signed(p.sympathy_7d) : '') }, '♥ ' + nf(p.sympathy_cnt), delta(p.sympathy_7d)),
       p.content_id ? h('button', { class: 'btn xs ghost', type: 'button', text: '카드', title: p.content_id + ' 카드 열기',
@@ -432,9 +439,69 @@ function setupPanel(h, blog) {
     blog && blog.search_api_ready
       ? '검색 순위: 연결됨 ✓'
       : '검색 순위: developers.naver.com → 애플리케이션 등록(사용 API: 검색) → Client ID·Secret을 Apps Script [프로젝트 설정 → 스크립트 속성]에 NAVER_CLIENT_ID · NAVER_CLIENT_SECRET 으로 저장.',
+    '조회수·검색어·독자: 피클이 매일 네이버 블로그 통계를 읽어 서버로 보냅니다 — 지시서는 docs/BLOG_STATS_INGEST.md. 네이버 로그인은 피클 쪽 브라우저에만 남고, 이 앱에는 비밀번호·쿠키가 들어오지 않습니다.',
     '키는 이 화면이나 저장소에 넣지 않습니다. 서버(스크립트 속성)에만 둡니다.'
   ];
   return h('details', { class: 'panel blog-setup' },
     h('summary', { text: '설정 · 자동 수집과 검색 순위 켜기' }),
     h('ol', null, steps.map((t) => h('li', { text: t }))));
+}
+
+
+/* ───────────── 로그인 통계(피클) ───────────── */
+
+function ingestStatus(h, blog) {
+  const at = blog.stats_last_ingest_at;
+  if (!at) {
+    return h('div', { class: 'panel ingest-note' },
+      h('h3', null, '조회수·검색어·독자 통계가 아직 안 들어왔어요'),
+      h('p', { class: 'hint', text: '이건 네이버에 로그인해야 보이는 숫자라 피클이 하루 한 번 읽어서 보내 줘야 해요. 아래 [설정]의 순서대로 피클에게 루틴을 시키면 이 화면에 조회수·유입 검색어·독자(성별·연령)가 채워집니다.' }));
+  }
+  const days = daysBetween(String(at).slice(0, 10), kstDay(0));
+  if (days != null && days >= 2) {
+    return h('div', { class: 'panel ingest-note stale' },
+      h('h3', null, '통계가 ' + days + '일째 안 들어왔어요'),
+      h('p', { class: 'hint', text: '마지막으로 받은 때: ' + String(at).slice(0, 16).replace('T', ' ') + '. 피클의 네이버 로그인이 풀렸거나 루틴이 멈췄을 수 있어요. 피클에게 확인을 시켜 주세요.' }));
+  }
+  return h('span');
+}
+
+function insightPanels(h, blog) {
+  const kws = blog.keywords_7d || [];
+  const inflow = blog.inflow_7d || [];
+  const aud = blog.audience;
+  if (!kws.length && !inflow.length && !aud) return null;
+
+  const bars = (rows, labelKey, unit) => {
+    const max = Math.max(1, ...rows.map((r) => r.count));
+    return h('div', { class: 'cat-list' }, rows.map((r) => h('div', { class: 'cat-row' },
+      h('div', { class: 'cat-name', title: r[labelKey], text: r[labelKey] }),
+      h('div', { class: 'cat-bar' }, h('i', { style: 'width:' + Math.round((r.count / max) * 100) + '%' })),
+      h('div', { class: 'cat-num', text: nf(r.count) + unit + ' · ' + r.pct + '%' }))));
+  };
+
+  const wrap = h('div', { class: 'insight-grid' });
+  if (kws.length) {
+    wrap.appendChild(h('div', { class: 'panel' },
+      h('h3', null, '유입 검색어 · 최근 7일', h('span', { class: 'tag', text: String(kws.length) })),
+      bars(kws.slice(0, 10), 'keyword', '회'),
+      h('p', { class: 'hint', style: 'margin-top:8px', text: '독자가 어떤 말을 검색해서 들어왔는지예요. 많이 들어오는 말은 제목·태그에 더 넣고, 검색 순위 키워드로도 등록해 보세요.' })));
+  }
+  if (inflow.length) {
+    wrap.appendChild(h('div', { class: 'panel' },
+      h('h3', null, '유입 경로 · 최근 7일'),
+      bars(inflow, 'channel', '회')));
+  }
+  if (aud && aud.items && aud.items.length) {
+    const g = aud.items.filter((x) => x.kind === 'gender');
+    const a = aud.items.filter((x) => x.kind === 'age').sort((x, y) => y.pct - x.pct);
+    const row = (x) => h('div', { class: 'cat-row' },
+      h('div', { class: 'cat-name', text: x.label }),
+      h('div', { class: 'cat-bar' }, h('i', { style: 'width:' + Math.min(100, Math.round(x.pct)) + '%' })),
+      h('div', { class: 'cat-num', text: x.pct + '%' }));
+    wrap.appendChild(h('div', { class: 'panel' },
+      h('h3', null, '독자 · 성별·연령', h('span', { class: 'tag', text: String(aud.day).slice(5).replace('-', '/') + ' 기준' })),
+      h('div', { class: 'cat-list' }, g.map(row), a.map(row))));
+  }
+  return wrap;
 }

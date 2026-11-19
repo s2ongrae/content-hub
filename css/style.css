@@ -1038,3 +1038,9 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 /* 긴 제목이 grid 칸을 밀어 폰에서 가로 스크롤이 생기지 않게 */
 .list.blog-list, .list.rank-list { grid-template-columns: minmax(0, 1fr); }
 .list.rank-list .lrow { min-width: 0; }
+
+/* 로그인 통계(피클) 패널 */
+.insight-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 12px; }
+@media (min-width: 900px) { .insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+.ingest-note.stale { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.ingest-note h3 { margin-bottom: 6px; }

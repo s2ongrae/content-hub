@@ -13,7 +13,7 @@ import { renderPerfView, loadMetrics } from './perfView.js?v=20261118';
 import { renderLintView } from './lintView.js?v=20261118';
 import { renderDaangnSection, loadDaangnSeed } from './daangnView.js?v=20261118';
 import { renderCreateView } from './create-view.js?v=20261118x';
-import { renderBlogView } from './blogView.js?v=20261119a';
+import { renderBlogView } from './blogView.js?v=20261119b';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
