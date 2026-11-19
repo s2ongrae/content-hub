@@ -147,6 +147,7 @@ export function channelRows(card, metrics, analytics, brand) {
       out.trend = deltaOf(points);
       out.trendKind = 'diff';
       out.source = 'metrics';
+      out.last = last;
       if (ch === 'blog') {
         out.sub = Number(last.search_inflow_pct) ? '검색유입 ' + Math.round(last.search_inflow_pct) + '%' : '';
       } else if (ch === 'shorts') {

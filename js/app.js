@@ -1480,7 +1480,10 @@ function channelTile(r, ctx) {
     tile.appendChild(h('a', { class: 'cht-link', href: r.url, target: '_blank', rel: 'noopener noreferrer', text: '바로가기 ↗' }));
   }
 
-  /* 수동 입력이 필요한 채널 — 클립(조회) · 당근(유효시청·좋아요·보상 + 링크) */
+  /* 수동 입력이 필요한 채널 — 블로그(조회·검색유입) · 클립(조회) · 당근(유효시청·좋아요·보상 + 링크) */
+  if (r.channel === 'blog' && done) {
+    tile.appendChild(numInputRow(ctx, r, [{ key: 'views', label: '조회' }, { key: 'search_inflow_pct', label: '검색유입 %' }]));
+  }
   if (r.channel === 'clip' && done) {
     tile.appendChild(numInputRow(ctx, r, [{ key: 'views', label: '조회' }]));
   }
@@ -1517,8 +1520,11 @@ function numInputRow(ctx, r, fields) {
   const row = h('div', { class: 'cht-in' });
   const inputs = {};
   fields.forEach((f) => {
+    /* 이전에 넣은 값이 있으면 채워 둔다 — 빈칸으로 저장해 0이 덮어쓰는 일을 막는다 */
+    const prev = (r.last && r.last[f.key] != null) ? r.last[f.key]
+      : (fields.length === 1 && r.value != null ? r.value : '');
     const inp = h('input', { type: 'text', inputmode: 'numeric', placeholder: f.label, 'aria-label': r.label + ' ' + f.label,
-      value: r.channel === 'daangn' && f.key === 'valid_views' && r.value ? String(r.value) : '' });
+      value: prev === '' || prev == null ? '' : String(prev) });
     inputs[f.key] = inp;
     row.appendChild(h('label', { class: 'cht-if' }, h('span', { text: f.label }), inp));
   });
