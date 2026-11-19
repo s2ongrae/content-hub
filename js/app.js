@@ -14,6 +14,7 @@ import { renderLintView } from './lintView.js?v=20261118';
 import { renderDaangnSection, loadDaangnSeed } from './daangnView.js?v=20261118';
 import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderBlogView } from './blogView.js?v=20261119b';
+import { draftSection, draftPreview } from './draftView.js?v=20261119a';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -24,7 +25,8 @@ const BRANDS = {
 
 /* 화면에 보이는 말은 쉬운 한국어로. 시트·GAS 코드값(DRAFT·PUBLISHED·LINKED …)은 그대로 둔다. */
 const STATUS_LABEL = {
-  DRAFT: '초안', GENERATING: '작성 중', REVIEW: '확인 중', READY: '올릴 준비',
+  DRAFT: '초안', DRAFTING: '작성 중', GENERATING: '작성 중', EDITING: '수정 중',
+  REVIEW: '확인 중', READY: '올릴 준비',
   PUBLISHING: '올리는 중', PUBLISHED: '일부 올라감', LINKED: '발행 끝',
   NEEDS_HUMAN: '확인 필요', PARTIAL_FAIL: '일부 실패',
   PENDING: '대기', UPLOADED: '올림', DONE: '완료', SKIPPED: '건너뜀', FAILED: '실패'
@@ -32,8 +34,8 @@ const STATUS_LABEL = {
 const statusLabel = (s) => STATUS_LABEL[s] || s || '-';
 
 const COLUMNS = [
-  { key: 'draft', title: '글감 · 초안', statuses: ['DRAFT', 'GENERATING'], hint: '메모만 적어 둔 단계' },
-  { key: 'review', title: '내용 확인', statuses: ['REVIEW'], hint: '글·대본 읽어 보는 단계' },
+  { key: 'draft', title: '글감 · 초안', statuses: ['DRAFT', 'DRAFTING', 'GENERATING'], hint: '글감만 있거나 본문을 쓰는 중' },
+  { key: 'review', title: '내용 확인', statuses: ['REVIEW', 'EDITING'], hint: '글·대본 읽고 고치는 단계' },
   { key: 'ready', title: '올릴 준비', statuses: ['READY'], hint: '확인 끝, 곧 올라갈 차례' },
   { key: 'publishing', title: '일부만 올라감', statuses: ['PUBLISHING', 'PUBLISHED'], hint: '블로그↔숏폼 서로 연결 대기' },
   { key: 'linked', title: '발행 끝', statuses: ['LINKED'], hint: '업로드·연결 모두 완료' },
@@ -496,6 +498,8 @@ function renderBoard(main) {
   const boardHost = h('div', { class: 'board', id: 'board' });
   main.appendChild(boardHost);
   paintBoard();
+  /* 초안류 카드의 본문 첫 줄은 상세(payload)에만 있다 — 읽어 오면 그 카드만 다시 그린다 */
+  loadDrafts(state.contents).then((n) => { if (n) paintBoard(); });
 
   function paintBoard() {
     const q = state.search.trim().toLowerCase();
@@ -548,6 +552,42 @@ function renderBoard(main) {
   }
 }
 
+/* ── 작성본 미리보기 캐시 ────────────────────────────────────────
+   list_contents 는 제목·상태만 준다. 초안·확인 중 카드의 '무슨 내용인지'는
+   get_content_detail 의 payload 에만 있어서, 그 카드들만 따로 읽어 카드에 첫 줄을 붙인다.
+   (초안 칸이 3~4장이라 호출도 3~4번 — 목록 전체를 읽지는 않는다.) */
+const DRAFTISH = ['DRAFT', 'DRAFTING', 'GENERATING', 'REVIEW', 'EDITING'];
+const draftCache = new Map();   // content_id → {text, empty, chars} | 'loading'
+
+function draftLine(item) {
+  if (DRAFTISH.indexOf(item.status) < 0) return null;
+  const c = draftCache.get(item.content_id);
+  if (c === 'loading' || c == null) return h('p', { class: 'cc-excerpt waiting', text: '작성본 확인 중…' });
+  if (c.empty) return h('p', { class: 'cc-excerpt none', text: c.titleOnly ? '제목만 있고 본문은 비어 있어요 — 눌러서 붙여넣기' : '본문 아직 없어요 — 눌러서 붙여넣기' });
+  return h('p', { class: 'cc-excerpt', text: c.text });
+}
+
+/** 초안류 카드의 본문을 읽어 캐시에 넣는다. 새로 읽은 장수를 돌려준다. */
+async function loadDrafts(items) {
+  const targets = items
+    .filter((it) => DRAFTISH.indexOf(it.status) >= 0 && !draftCache.has(it.content_id))
+    .slice(0, 8);
+  if (!targets.length) return 0;
+  targets.forEach((it) => draftCache.set(it.content_id, 'loading'));
+  let got = 0;
+  await Promise.all(targets.map(async (it) => {
+    try {
+      const res = await api.getContentDetail(it.content_id);
+      const d = res.data || {};
+      draftCache.set(it.content_id, draftPreview(d.payload));
+      got++;
+    } catch (e) {
+      draftCache.delete(it.content_id);   // 실패한 카드는 다음 새로고침에 다시 시도
+    }
+  }));
+  return got;
+}
+
 function contentCard(item) {
   return h('button', { class: 'ccard', type: 'button', onclick: () => openDetail(item.content_id) },
     h('div', { class: 'cc-top' },
@@ -557,6 +597,7 @@ function contentCard(item) {
       item.growth_tag && item.growth_tag !== 'NONE' ? h('span', { class: 'badge DRAFT', text: item.growth_tag }) : null,
       item.quality_score ? h('span', { class: 'cc-score', text: item.quality_score + '점' }) : null),
     h('div', { class: 'cc-title', text: item.blog_title || item.place_name || '(제목 없음)' }),
+    draftLine(item),
     renderChannelRow(item),
     h('div', { class: 'cc-meta3' },
       item.region_dong ? h('span', { text: item.region_dong }) : null,
@@ -1510,12 +1551,14 @@ async function openDetail(contentId, opts = {}) {
     const d = res.data || {};
     const m = d.meta || {};
     const payload = d.payload || null;
-    let tab = opts === 'src' ? 'src' : 'ana';
+    /* 발행 전 카드는 '작성본'이 먼저 보여야 한다 — 이 카드가 무슨 내용인지가 첫 질문이니까 */
+    const wantDraft = DRAFTISH.indexOf(String(d.status || m.status || '')) >= 0;
+    let tab = opts === 'src' ? 'src' : opts === 'ana' ? 'ana' : (wantDraft ? 'draft' : 'ana');
 
     const paintTabs = () => {
       if (!tabBar) return;
       clear(tabBar);
-      [['ana', '분석'], ['src', '원문·메타']].forEach((pair) => {
+      [['draft', '작성본'], ['ana', '분석'], ['src', '원문·메타']].forEach((pair) => {
         tabBar.appendChild(h('button', {
           class: 'sheet-tab', type: 'button', role: 'tab', 'data-tab': pair[0],
           'aria-selected': pair[0] === tab ? 'true' : 'false',
@@ -1528,9 +1571,23 @@ async function openDetail(contentId, opts = {}) {
       clear(body);
       body.appendChild(h('div', { class: 'row', style: 'margin-bottom:10px' },
         badge(d.status), h('span', { class: 'cc-id', text: 'v' + d.version })));
-      body.appendChild(tab === 'ana'
-        ? analysisSection(contentId, d, m, payload, dlg)
-        : sourceSection(contentId, d, m, payload, dlg));
+      if (tab === 'draft') {
+        body.appendChild(draftSection({
+          h,
+          detail: d,
+          meta: m,
+          toast,
+          allowed: brandChannels(m.brand || state.brand).map((c) => (c.key === 'feed' ? 'ig_feed' : c.key)),
+          onChanged: () => {
+            draftCache.delete(contentId);
+            refresh().then(() => { if (state.route === 'board') renderRoute(); });
+          }
+        }));
+      } else if (tab === 'ana') {
+        body.appendChild(analysisSection(contentId, d, m, payload, dlg));
+      } else {
+        body.appendChild(sourceSection(contentId, d, m, payload, dlg));
+      }
     };
 
     paintTabs();
