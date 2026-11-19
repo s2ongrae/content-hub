@@ -32,20 +32,42 @@ export function postHref(source, id, contentId) {
 }
 
 /**
- * 목록에 쓸 '현재' 행 — 소스·트랙 채널셋·LATEST 만, 같은 영상은 가장 최근 수집 한 줄.
+ * 목록에 쓸 '현재' 행 — 소스·트랙 채널셋만, 같은 영상은 최근 수집 한 줄.
+ *  · 보통은 checkpoint='LATEST' 행을 쓴다.
+ *  · 발행 D+1·7·14·30일째는 수집기가 LATEST 대신 D1/D7/D14/D30 행을 쓴다 → 그날은 LATEST 가 없다.
+ *    그때 영상이 목록에서 하루 사라지지 않도록 가장 최근 수집일(collected_date/collected_at) 행으로 폴백한다.
  * (화면 없이도 시험할 수 있게 순수 함수로 둔다)
  */
 export function currentRows(rows, source, brand) {
   const surfaces = (SOURCE_SURFACES[source] || []).filter((s) => trackChannelsOf(brand).indexOf(s) >= 0);
-  const best = new Map();
+  const newestOf = (a, b) => {
+    const da = String(a.collected_date || a.collected_at || '');
+    const db = String(b.collected_date || b.collected_at || '');
+    if (db !== da) return db > da ? b : a;
+    const ta = String(a.collected_at || '');
+    const tb = String(b.collected_at || '');
+    if (tb !== ta) return tb > ta ? b : a;
+    return (b.views > a.views) ? b : a;
+  };
+  const best = new Map();      // external_id → LATEST 중 최신
+  const fallback = new Map();  // external_id → LATEST 가 없을 때 쓸 최신 체크포인트 행
   (rows || []).forEach((r) => {
-    if (!r || r.source !== source || r.checkpoint !== 'LATEST' || !r.external_id) return;
+    if (!r || r.source !== source || !r.external_id) return;
     if (surfaces.indexOf(r.channel) < 0) return;
-    const prev = best.get(r.external_id);
-    if (!prev || String(r.collected_at) > String(prev.collected_at)
-      || (String(r.collected_at) === String(prev.collected_at) && r.views > prev.views)) best.set(r.external_id, r);
+    if (r.checkpoint === 'LATEST') {
+      const prev = best.get(r.external_id);
+      best.set(r.external_id, prev ? newestOf(prev, r) : r);
+      return;
+    }
+    if (r.checkpoint === 'channel') return;
+    const prev = fallback.get(r.external_id);
+    fallback.set(r.external_id, prev ? newestOf(prev, r) : r);
   });
-  return Array.from(best.values());
+  const out = [];
+  const seen = new Set();
+  best.forEach((r, id) => { out.push(r); seen.add(id); });
+  fallback.forEach((r, id) => { if (!seen.has(id)) out.push(r); });
+  return out;
 }
 
 /** 표면별 합계 */

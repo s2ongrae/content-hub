@@ -176,7 +176,8 @@ function mediaMetaRowOf_(it) {
     external_id: externalId,
     channel: channel,
     title: String(it.title || '').replace(/\s+/g, ' ').trim().slice(0, 200),
-    thumbnail_url: /^https:\/\/\S{1,480}$/.test(thumb) ? thumb : '',
+    /* 인스타 CDN 썸네일 주소는 630~700자까지 온다 — 480자 상한이면 통째로 버려진다(2026-11-19 상향). */
+    thumbnail_url: /^https:\/\/\S{1,1200}$/.test(thumb) ? thumb : '',
     published_at: String(it.published_at || '').trim().slice(0, 40),
     duration_sec: isFinite(dur) && dur >= 0 ? Math.round(dur) : 0
   };
@@ -315,9 +316,16 @@ function postLatest_(rows) {
   return best;
 }
 
-/** 현재값 = checkpoint 가 LATEST 인 행 중 가장 최근 하나(누적값이라 여러 날을 더하면 중복). */
+/**
+ * 현재값 = checkpoint 가 LATEST 인 행 중 가장 최근 하나(누적값이라 여러 날을 더하면 중복).
+ * 발행 D+1·7·14·30일째는 수집기가 LATEST 대신 D1/D7/D14/D30 행을 쓴다 → 그날은 LATEST 가 없다.
+ * 그때 목록·비교에서 영상이 하루 사라지지 않도록, 가장 최근 수집일(collected_at) 행으로 폴백한다.
+ * (체크포인트 행도 누적값이므로 그날의 최신값이 맞다. 'channel' 요약 행은 영상이 아니라 제외.)
+ */
 function postCurrentRow_(rows) {
-  return postLatest_(rows.filter(function (r) { return String(r.checkpoint) === 'LATEST'; }));
+  const ofVideo = rows.filter(function (r) { return String(r.checkpoint) !== 'channel'; });
+  const latest = postLatest_(ofVideo.filter(function (r) { return String(r.checkpoint) === 'LATEST'; }));
+  return latest || postLatest_(ofVideo);
 }
 
 function postFindContent_(contents, contentId, source, externalId) {

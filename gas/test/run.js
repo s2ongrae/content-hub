@@ -668,6 +668,10 @@ const metaItem = (id, extra) => Object.assign({ source: 'youtube', external_id: 
   eq('501건은 거부', callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: Array.from({ length: 501 }, (_, i) => metaItem('v' + String(i).padStart(10, '0'))) }, {}).code, 'ERR_VALIDATION_FAILED');
   r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAC1', { title: '  긴   공백\n제목 '.padEnd(400, '가') })] }, { brand: 'ALL' });
   ok('제목은 한 줄·200자 이내', r.ok && MSS.getSheetByName('Media_Meta').rows.slice(-1)[0][4].length <= 200 && !/\n/.test(MSS.getSheetByName('Media_Meta').rows.slice(-1)[0][4]));
+  /* 2026-11-19 결함 수정: 인스타 CDN 썸네일 주소는 630~700자 — 480자 상한이면 통째로 버린다. */
+  const longThumb = 'https://scontent-icn2-1.cdninstagram.com/v/t51.2885-15/' + 'x'.repeat(660) + '.jpg';
+  r = callHandler(PD.ctx, 'handleUpsertMediaMeta_', MSS, { items: [metaItem('vidAAAAAAC2', { thumbnail_url: longThumb })] }, { brand: 'ALL' });
+  ok('700자 썸네일 주소도 살린다', r.ok && MSS.getSheetByName('Media_Meta').rows.slice(-1)[0][5] === longThumb, { len: longThumb.length });
 }
 
 console.log('\n[P4] list_media_meta — 일괄 조회');
@@ -766,6 +770,24 @@ sheetOf(DSS, 'Blog_Inflow', ['day', 'blog_id', 'channel', 'count', 'synced_at'],
   ok('비교 블로그: 조회 누계 142 · 7일 42', by.blog.metrics && by.blog.metrics.views === 142 && by.blog.metrics.views_7d === 42, by.blog.metrics);
   eq('비교 블로그: 공감', by.blog.metrics.sympathy, 11);
   ok('내부 열(payload·토큰 등)이 새지 않는다', !JSON.stringify(d).match(/payload_file_id|lease_token/));
+}
+{
+  /* 2026-11-19 결함 수정: D+1·7·14·30일째는 수집기가 LATEST 대신 D1/D7… 행을 쓴다.
+     그날 목록·비교에서 영상이 사라지지 않도록 최근 수집일 행으로 폴백하는지 본다. */
+  const row = (cp, day, views) => an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: cp, collected_date: day, views: views });
+  const onlyD7 = [row('D1', '2026-11-13', 30), row('D7', '2026-11-19', 90)];
+  eq('LATEST 가 없는 D+7 당일: 가장 최근 수집일 행으로 폴백(90)', PD.ctx.postCurrentRow_(onlyD7).views, 90);
+  eq('LATEST 가 있으면 그대로 LATEST 를 쓴다', PD.ctx.postCurrentRow_(onlyD7.concat([row('LATEST', '2026-11-18', 80)])).views, 80);
+  ok('channel 요약 행은 현재값으로 쓰지 않는다', PD.ctx.postCurrentRow_([{ checkpoint: 'channel', collected_at: '2026-11-19T06:00:00+09:00', views: 999 }]) === null);
+  /* 같은 함정을 상세 응답 전체로도 확인 — D7 당일 카드 비교에 쇼츠가 남아야 한다 */
+  const D7 = new FakeSS();
+  sheetOf(D7, 'Analytics_Daily', AN_COLS, [
+    an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: 'D1', collected_date: '2026-11-13', views: 30 }),
+    an({ brand: A_BRAND, content_id: 'DY-1', source: 'youtube', external_id: 'vidAAAAAAA1', channel: 'shorts', checkpoint: 'D7', collected_date: '2026-11-19', views: 90 })
+  ]);
+  sheetOf(D7, 'Contents', CT_COLS, [{ content_id: 'DY-1', brand: A_BRAND, status: 'PUBLISHED', shorts_status: 'UPLOADED', shorts_url: 'https://youtu.be/vidAAAAAAA1', blog_status: 'SKIPPED', reels_status: 'SKIPPED', clip_status: 'SKIPPED', ig_feed_status: 'SKIPPED', daangn_status: 'SKIPPED' }]);
+  const d7 = callHandler(PD.ctx, 'getPostDetail_', D7, 'youtube', 'vidAAAAAAA1', '', '');
+  ok('D+7 당일에도 비교에 쇼츠가 남는다(사라지지 않음)', d7.ok && d7.data.compare.some((c) => c.channel === 'shorts' && c.metrics && c.metrics.views === 90), d7.data && d7.data.compare);
 }
 {
   let r = callHandler(PD.ctx, 'getPostDetail_', DSS, 'youtube', 'vidBBBBBBB1', '', '');

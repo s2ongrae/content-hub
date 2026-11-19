@@ -9,11 +9,13 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics } from './perfView.js?v=20261119o';
-import { renderPostView } from './postView.js?v=20261119o';
-import { trackChannelsOf } from './trackChannels.js?v=20261119o';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261119p';
+import { renderPostView } from './postView.js?v=20261119p';
+import { trackChannelsOf } from './trackChannels.js?v=20261119p';
 import { renderLintView } from './lintView.js?v=20261118';
-import { renderDaangnSection, loadDaangnSeed } from './daangnView.js?v=20261118';
+import { loadDaangnSeed } from './daangnView.js?v=20261119p';
+import { getAnalytics } from './analyticsView.js?v=20261119p';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119p';
 import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderBlogView } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
@@ -76,6 +78,8 @@ const state = {
   metrics: [],
   metricsError: null,
   metricsAt: null,
+  analytics: [],
+  analyticsError: null,
   daangnSeed: null
 };
 
@@ -325,6 +329,18 @@ async function refresh() {
     state.loading = false;
     // 성과 숫자는 별도 호출 — 실패해도 화면은 그대로 그린다(조용한 안내는 성과 화면에서)
     await loadMetrics(state, api);
+    // 자동 수집분도 함께 읽는다 — 보드 카드 뱃지·카드 상세의 채널 타일이 같은 값을 쓴다(60초 캐시).
+    // 보드 첫 화면을 이 호출로 붙잡지 않도록 기다리지 않고, 도착하면 보드만 다시 그린다.
+    const brandAt = state.brand;
+    getAnalytics(api, state.brand).then((cache) => {
+      if (brandAt !== state.brand) return;
+      state.analytics = (cache && cache.rows) || [];
+      state.analyticsError = (cache && cache.error) || null;
+      if (state.route === 'board') renderRoute();
+    }).catch((e) => {
+      state.analytics = state.analytics || [];
+      state.analyticsError = (e && e.code) || 'ERR_UNKNOWN';
+    });
     updateApproveBadge();
     renderBanners();
     updateConnDot();
@@ -606,11 +622,30 @@ function contentCard(item) {
     h('div', { class: 'cc-title', text: item.blog_title || item.place_name || '(제목 없음)' }),
     draftLine(item),
     renderChannelRow(item),
+    perfBadge(item),
     h('div', { class: 'cc-meta3' },
       item.region_dong ? h('span', { text: item.region_dong }) : null,
       item.category ? h('span', { text: item.category }) : null,
       h('span', { text: 'v' + (item.version || 1) }),
       h('span', { text: '수정 ' + relTime(item.updated_at) })));
+}
+
+/** 보드 카드의 미니 성과 뱃지 — 발행이 시작된 카드에만(제미나이 확정 2026-11-19). */
+function perfBadge(item) {
+  const status = String(item.status || '');
+  if (status !== 'PUBLISHED' && status !== 'LINKED') return null;
+  let totals;
+  try {
+    const rows = channelRows(item, state.metrics, state.analytics, item.brand || state.brand);
+    totals = cardTotals(rows, item, item.brand || state.brand, state.analytics);
+  } catch (e) {
+    return null;
+  }
+  if (!totals || (!totals.views && !totals.reactions)) return null;
+  const el = h('div', { class: 'cc-perf' });
+  if (totals.views) el.appendChild(h('span', { class: 'ccp', title: '조회·도달·유효시청 합', text: '👁 ' + compact(totals.views) }));
+  if (totals.reactions) el.appendChild(h('span', { class: 'ccp', title: '좋아요·댓글·저장·공유 합', text: '❤️ ' + compact(totals.reactions) }));
+  return el.children.length ? el : null;
 }
 
 /* ────────────────────────── 승인 ────────────────────────── */
@@ -1277,7 +1312,28 @@ function goDetailTab(key) {
 function analysisSection(contentId, d, m, payload, dlg) {
   const wrap = h('div', { class: 'ana' });
   const info = analysisOf(m, payload);
+  const brand = m.brand || state.brand;
+  const rows = channelRows(m, state.metrics, state.analytics, brand);
+  const totals = cardTotals(rows, m, brand, state.analytics);
+  const published = ['PUBLISHED', 'LINKED', 'PARTIAL_FAIL'].indexOf(String(m.status || '')) >= 0;
+  const showPerf = published && totals.hasAny;
 
+  /* ① 종합 성과 — 발행이 시작돼 숫자가 있는 카드에만(발행 전이면 다음 할 일이 먼저) */
+
+  /* ② 채널 타일 — 상태·링크·성과를 한 칸으로 합쳤다(기존 '채널별 현황' 목록은 삭제) */
+  const tileCtx = { d, m, contentId, dlg, toast, rows, published };
+  const tileBox = h('section', { class: 'perf-sec' },
+    h('div', { class: 'ana-h' }, h('span', { text: '채널별 성과' }),
+      h('span', { class: 'n', text: totals.done + '/' + totals.total })));
+  const grid = h('div', { class: 'cht-grid' });
+  rows.forEach((r) => grid.appendChild(channelTile(r, tileCtx)));
+  tileBox.appendChild(grid);
+  if (showPerf) {
+    tileBox.appendChild(h('p', { class: 'perf-note',
+      text: '※ 릴스는 조회, 피드는 도달, 당근은 유효시청 기준으로 합산했습니다. 쇼츠·릴스·피드는 매일 아침 자동으로 갱신됩니다.' }));
+  }
+
+  /* ③ 다음 할 일 */
   const acts = h('div', { class: 'ana-acts' });
   info.actions.forEach((a) => {
     const row = h('div', { class: 'ana-act' + (a.urgent ? ' urgent' : '') },
@@ -1313,58 +1369,226 @@ function analysisSection(contentId, d, m, payload, dlg) {
     }
     acts.appendChild(row);
   });
-  wrap.appendChild(h('section', null,
+  const actsSec = h('section', null,
     h('div', { class: 'ana-h' }, h('span', { text: '다음 할 일' })),
     acts,
-    info.more ? h('p', { class: 'ana-note', style: 'margin-top:6px', text: '그 밖에 할 일 ' + info.more + '개' }) : null));
+    info.more ? h('p', { class: 'ana-note', style: 'margin-top:6px', text: '그 밖에 할 일 ' + info.more + '개' }) : null);
 
-  const total = info.targets.length || 1;
-  const pct = Math.round((info.done.length / total) * 100);
-  wrap.appendChild(h('section', { class: 'ana-prog' },
-    h('div', { class: 'ana-h' }, h('span', { text: '채널 진행' })),
-    h('div', { class: 'pr-top' }, h('b', { text: String(info.done.length) }),
-      h('span', { text: '/ ' + info.targets.length + ' 채널 · ' + pct + '%' })),
-    h('div', { class: 'prog' }, h('i', { style: 'width:' + pct + '%' }))));
+  /* 순서: 발행분은 종합 성과 → 채널 타일 → 다음 할 일, 발행 전 카드는 다음 할 일 → 준비 상태 타일 (제미나이 확정) */
+  if (showPerf) {
+    wrap.appendChild(perfSummary(totals, m));
+    wrap.appendChild(tileBox);
+    wrap.appendChild(actsSec);
+  } else {
+    wrap.appendChild(actsSec);
+    wrap.appendChild(tileBox);
+  }
 
+  /* ④ 당근 자동 경고 — 통과하면 아무것도 안 보인다(사람이 체크하지 않는다) */
+  const warn = daangnWarnings(payload, {});
+  if (warn.length) {
+    wrap.appendChild(h('section', { class: 'perf-warn' },
+      h('div', { class: 'ana-h' }, h('span', { text: '당근 올리기 전 자동 확인' })),
+      h('ul', null, ...warn.map((w) => h('li', { text: w.text })))));
+  }
+
+  /* ⑤ 품질 점검 — 검수에 필요한 값은 남기되 접어 둔다 */
   const g = gateRows(m, payload);
   const gateWrap = h('div', { class: 'gate' });
   g.rows.forEach((r) => gateWrap.appendChild(h('div', { class: 'gate-row' },
     h('span', { text: r.k }),
     h('span', { class: 'gv ' + r.v, text: r.t }))));
-  wrap.appendChild(h('section', null,
-    h('div', { class: 'ana-h' }, h('span', { text: '품질 점검' })),
+  wrap.appendChild(h('details', { class: 'ana-gate' },
+    h('summary', { text: '품질 점검' }),
     gateWrap,
     g.note ? h('p', { class: 'ana-note', style: 'margin-top:7px', text: g.note }) : null));
 
-  const chanWrap = h('div', { class: 'ana-chans' });
-  const chans = brandChannels(m.brand || state.brand);
-  chans.forEach((c) => {
-    const raw = m[c.st];
-    const url = m[c.url];
-    const row = h('div', { class: 'ana-chan', 'data-ch': c.key },
-      channelIcon(c.key, 13),
-      h('span', { class: 'nm', text: c.label }),
-      h('span', { class: 'st', text: raw ? channelLabel(raw) : '기록 없음' }));
-    if (url) row.appendChild(h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: url }));
-    chanWrap.appendChild(row);
-  });
-  wrap.appendChild(h('section', null,
-    h('div', { class: 'ana-h' }, h('span', { text: '채널별 현황' }), h('span', { class: 'n', text: chans.length + '개' })),
-    chanWrap));
-
-  /* 당근 수익화 트래커 + 발행 전 점검 3개 — 대전 청년 카드에만 */
-  const daangn = renderDaangnSection({ h, item: m, state, seed: state.daangnSeed });
-  if (daangn) wrap.appendChild(daangn);
-
-  wrap.appendChild(h('div', { class: 'ana-note-row' },
-    h('span', { class: 'ana-note', style: 'margin:0', text: '조회·유효시청·리워드는 성과 화면에서 직접 넣습니다.' }),
-    h('button', {
-      class: 'ghost-btn sm', type: 'button', text: '성과 탭 열기',
-      onclick: () => { dlg.close(); location.hash = '#/perf'; }
-    })));
-
   wrap.appendChild(detailActionButtons(contentId, d, m, dlg));
   return wrap;
+}
+
+/** 종합 성과 요약 — 큰 숫자 4칸 + 채널 비중 막대 */
+function perfSummary(totals, m) {
+  const cell = (k, v, s) => h('div', { class: 'pf-k' },
+    h('span', { class: 'pf-l', text: k }), h('b', { class: 'pf-v', text: v }),
+    s ? h('span', { class: 'pf-s', text: s }) : null);
+  const sec = h('section', { class: 'perf-sum' },
+    h('div', { class: 'ana-h' }, h('span', { text: '종합 성과' }),
+      h('span', { class: 'tag', text: totals.done + '/' + totals.total + ' 채널 발행' })));
+  sec.appendChild(h('div', { class: 'pf-grid' },
+    cell('총 조회', compact(totals.views), '조회·도달·유효시청'),
+    cell('총 반응', compact(totals.reactions), '좋아요·댓글·저장·공유'),
+    cell('확정 보상', totals.reward ? Number(totals.reward).toLocaleString('ko-KR') + '원' : '—', '당근 기본보상'),
+    cell('게시 완료', totals.done + ' / ' + totals.total, '채널')));
+
+  const bar = h('div', { class: 'pf-bar', role: 'img', 'aria-label': '채널 비중' });
+  totals.share.forEach((s) => {
+    bar.appendChild(h('i', { 'data-ch': s.channel, style: 'width:' + Math.max(2, s.pct) + '%',
+      title: s.label + ' ' + s.pct + '%' }));
+  });
+  sec.appendChild(bar);
+  if (totals.share.length) {
+    const legend = h('div', { class: 'pf-legend' });
+    totals.share.forEach((s) => legend.appendChild(h('span', { class: 'pf-lg' },
+      h('i', { 'data-ch': s.channel }), h('em', { text: s.label }), h('b', { text: s.pct + '%' }))));
+    sec.appendChild(legend);
+  }
+  return sec;
+}
+
+/** 채널 타일 한 칸 — 채널명·상태·대표 숫자·보조(또는 입력) 세 줄까지 */
+function channelTile(r, ctx) {
+  const st = channelState(r.status);
+  const done = st === 'done';
+  const tile = h('div', { class: 'cht', 'data-ch': r.channel, 'data-state': st });
+  const head = h('div', { class: 'cht-h' },
+    channelIcon(r.channel, 14),
+    h('b', { text: r.label }),
+    h('span', { class: 'spacer' }),
+    h('span', { class: 'cht-st' + (done ? ' done' : ''), text: r.status ? channelLabel(r.status) : '아직' }));
+  tile.appendChild(head);
+
+  if (r.collected && r.value != null) {
+    tile.appendChild(h('div', { class: 'cht-big' },
+      h('span', { class: 'v', text: Number(r.value).toLocaleString('ko-KR') }),
+      h('span', { class: 'k', text: r.valueLabel }),
+      trendEl(r)));
+    if (r.sub) tile.appendChild(h('div', { class: 'cht-sub', text: r.sub }));
+  } else if (done) {
+    const msg = r.noApi && r.channel === 'daangn'
+      ? '숫자를 넣으면 여기에 쌓입니다'
+      : (r.channel === 'clip' ? '조회수를 넣어 주세요' : (state.analyticsError && state.analyticsError !== 'ERR_NO_CONFIG'
+        ? '⚠️ 수집 오류 — 관리 탭에서 토큰 확인'
+        : '⏳ 수집 대기 (매일 아침 반영)'));
+    tile.appendChild(h('div', { class: 'cht-empty', text: msg }));
+  } else if (st === 'fail') {
+    tile.appendChild(h('div', { class: 'cht-empty bad', text: '올리기 실패 — 다시 올려 주세요' }));
+  } else {
+    tile.appendChild(h('div', { class: 'cht-empty', text: '아직 안 올림' }));
+    if (r.url) {
+      tile.appendChild(h('a', { class: 'cht-link', href: r.url, target: '_blank', rel: 'noopener noreferrer', text: '열기 ↗' }));
+    }
+  }
+
+  /* 올렸다고 표시됐는데 자동 수집에 안 잡히면 = 영상이 카드에 연결되지 않은 것 */
+  if (done && !r.collected && !r.noApi && !r.url) {
+    tile.appendChild(h('div', { class: 'cht-empty', text: '🔗 영상 미연결 — 주소를 넣어 주세요' }));
+  }
+
+  /* 링크 있는 발행분은 타일 머리에 바로가기 */
+  if (r.url && (done || r.collected)) {
+    tile.appendChild(h('a', { class: 'cht-link', href: r.url, target: '_blank', rel: 'noopener noreferrer', text: '바로가기 ↗' }));
+  }
+
+  /* 수동 입력이 필요한 채널 — 클립(조회) · 당근(유효시청·좋아요·보상 + 링크) */
+  if (r.channel === 'clip' && done) {
+    tile.appendChild(numInputRow(ctx, r, [{ key: 'views', label: '조회' }]));
+  }
+  if (r.channel === 'daangn') {
+    tile.appendChild(daangnLinkRow(ctx, r));
+    tile.appendChild(numInputRow(ctx, r, [
+      { key: 'valid_views', label: '유효시청' },
+      { key: 'likes_comments', label: '좋아요' },
+      { key: 'reward_krw', label: '보상(원)' }
+    ]));
+    const goal = daangnGoal(state.metrics, kstToday().slice(0, 7),
+      state.daangnSeed && state.daangnSeed.eligibility);
+    tile.appendChild(h('div', { class: 'cht-goal',
+      text: '이번 달 ' + goal.stories + '/' + goal.storyGoal + '편 · '
+        + Number(goal.valid).toLocaleString('ko-KR') + '/' + Number(goal.viewGoal).toLocaleString('ko-KR') + '회' }));
+  }
+  return tile;
+}
+
+function trendEl(r) {
+  if (r.trend == null) return null;
+  if (r.trend === 0) return h('span', { class: 'trend flat', text: '—' });
+  const up = r.trend > 0;
+  const text = r.trendKind === 'diff'
+    ? (up ? '↑ ' : '↓ ') + Math.abs(r.trend).toLocaleString('ko-KR')
+    : (up ? '↑ ' : '↓ ') + Math.abs(r.trend) + '%';
+  return h('span', { class: 'trend' + (up ? '' : ' down'),
+    title: r.trendKind === 'diff' ? '직전 입력 대비' : '직전 수집 대비', text });
+}
+
+/** 숫자 인라인 입력 — 저장하면 Metrics 에 한 줄 쌓인다 */
+function numInputRow(ctx, r, fields) {
+  const { d, contentId, dlg, toast } = ctx;
+  const row = h('div', { class: 'cht-in' });
+  const inputs = {};
+  fields.forEach((f) => {
+    const inp = h('input', { type: 'text', inputmode: 'numeric', placeholder: f.label, 'aria-label': r.label + ' ' + f.label,
+      value: r.channel === 'daangn' && f.key === 'valid_views' && r.value ? String(r.value) : '' });
+    inputs[f.key] = inp;
+    row.appendChild(h('label', { class: 'cht-if' }, h('span', { text: f.label }), inp));
+  });
+  const btn = h('button', { class: 'btn xs', type: 'button', text: '저장' });
+  row.appendChild(btn);
+  btn.addEventListener('click', async () => {
+    const items = {};
+    for (const f of fields) {
+      const raw = String(inputs[f.key].value || '').replace(/[,\s]/g, '');
+      const n = raw === '' ? 0 : Number(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        toast(f.label + '은(는) 0 이상의 숫자로 넣어 주세요', 'err');
+        inputs[f.key].focus();
+        return;
+      }
+      items[f.key] = n;
+    }
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = '저장 중…';
+    try {
+      await api.recordMetrics({
+        items: [Object.assign({ content_id: contentId, channel: r.channel, snapshot: 'LATEST', measured_at: kstToday() }, items)]
+      }, api.createAction('metrics'));
+      toast(r.label + ' 숫자를 저장했어요', 'ok');
+      dlg.close();
+      await refresh();
+      renderRoute();
+      openDetail(contentId, 'ana');
+    } catch (err) {
+      toast(friendlyError(err), 'err');
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+  return row;
+}
+
+/** 당근 스토리 공유 링크 — 붙여넣으면 '올림'으로 바꾼다(앱 전용이라 웹 확인은 불가) */
+function daangnLinkRow(ctx, r) {
+  const { d, contentId, dlg, toast } = ctx;
+  const input = h('input', { type: 'text', inputmode: 'url', autocomplete: 'off', spellcheck: 'false',
+    placeholder: '공유 링크 붙여넣기', value: r.url || '', 'aria-label': '당근 스토리 공유 링크' });
+  const btn = h('button', { class: 'btn xs', type: 'button', text: r.url ? '변경' : '저장' });
+  const row = h('div', { class: 'cht-in' }, h('label', { class: 'cht-if wide' }, h('span', { text: '스토리 링크' }), input), btn);
+  btn.addEventListener('click', async () => {
+    const url = String(input.value || '').trim();
+    if (!/^(https?:\/\/|daangn:\/\/)\S{4,500}$/i.test(url)) {
+      toast('당근 앱에서 복사한 공유 링크를 붙여넣어 주세요', 'err');
+      input.focus();
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '저장 중…';
+    try {
+      const patch = { content_id: contentId, expected_version: d.version, daangn_url: url };
+      if (!r.status || r.status === 'PENDING') patch.daangn_status = 'UPLOADED';
+      await api.updateContent(patch, api.createAction('daangn'));
+      toast('당근 스토리 링크를 저장했어요', 'ok');
+      dlg.close();
+      await refresh();
+      renderRoute();
+      openDetail(contentId, 'ana');
+    } catch (err) {
+      toast(friendlyError(err), 'err');
+      btn.disabled = false;
+      btn.textContent = '저장';
+    }
+  });
+  return row;
 }
 
 function sourceSection(contentId, d, m, payload, dlg) {
@@ -1599,6 +1823,14 @@ async function openDetail(contentId, opts = {}) {
 
     paintTabs();
     paintBody();
+    /* 자동 수집분이 아직 없으면 한 번 읽어 와서 성과 탭만 다시 그린다(카드를 열 때마다 기다리지 않게) */
+    if (!(state.analytics || []).length && api.configured) {
+      getAnalytics(api, state.brand).then((cache) => {
+        state.analytics = (cache && cache.rows) || [];
+        state.analyticsError = (cache && cache.error) || null;
+        if (dlg.open && tab === 'ana') paintBody();
+      }).catch(() => { /* 수집 실패는 타일이 스스로 안내한다 */ });
+    }
   } catch (err) {
     clear(body);
     body.appendChild(h('div', { class: 'result err', text: friendlyError(err) }));
