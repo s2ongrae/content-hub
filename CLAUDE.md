@@ -127,3 +127,12 @@
 - `#/series` fetch 경로는 상대경로 `seeds/…`다. 하위 경로 배포를 가정해 `/seeds/…` 같은 절대경로로 바꾸지 않는다.
 - 라우터에 화면을 추가하면 `index.html`의 탭(`data-route`)과 `js/app.js`의 렌더 맵 두 곳을 같이 고친다.
 - 톤: 사용자는 "짜치다"(유행·감성 부족)에 민감하다. 카드·뱃지·이모지를 더 얹기보다 여백·정렬·색을 다듬는다.
+
+
+## 에이전트 동시 작업 규칙 (피클·집 노트북·회사 PC 공통, 2026-11-19)
+
+- **시작**: `git pull --ff-only` → 같은 기기에서 `agent-lock lock <레포> "작업명"` → `pcbeat start "작업명" <프로젝트>`. ff 불가·잠금 충돌이면 **멈추고 보고**한다(임의 merge·force 금지).
+- **같은 레포를 병렬로** 해야 하면 `agent-lock wt <레포> <작업이름>`(로컬 워크트리·브랜치 `agent/<기기>/<작업>`), 끝나면 테스트 후 `agent-lock wtdone`.
+- **끝**: 테스트 → 한 가지씩 커밋 → 즉시 `git push` → `agent-lock unlock <레포>` → `pcbeat done`.
+- **금지**: `push --force`·`reset --hard`·충돌 파일 통째 덮어쓰기·남의 `agent/…`·`auto/…` 브랜치 수정·`status/agent.json` 직접 수정(피클 전용). 키·주소·고객 정보는 어디에도 넣지 않는다.
+- 전체 규칙·한계·설치: `s2ongrae.github.io` 의 `docs/AGENT_COORDINATION.md`, 도구 `tools/agent-lock.ps1`.
