@@ -9,7 +9,7 @@
  * 하지 않는 것: SRT 생성(다음 단계). 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261120b';
+import { tcToSec } from './yt/edl.js?v=20261120c';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
