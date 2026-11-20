@@ -343,6 +343,15 @@ function getOrCreatePrivateFolder_(parent, name) {
   return folder;
 }
 
+/**
+ * 트리거만 다시 설치한다(편집기 함수 목록에서 고를 수 있는 공개 함수). 시트·폴더·토큰은 건드리지 않는다.
+ * 백업·무결성 점검 일정이 바뀐 새 버전을 배포한 뒤 한 번 실행한다. 여러 번 실행해도 중복되지 않는다.
+ */
+function reinstallSystemTriggers() {
+  installSystemTriggers_();
+  Logger.log('시스템 트리거를 다시 설치했습니다.');
+}
+
 function installSystemTriggers_() {
   const managedHandlers = [
     'runDailyBackupTrigger',
