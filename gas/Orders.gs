@@ -175,7 +175,7 @@ function hubOrderPrompt_(type, payload) {
  *   inputs 가 없는 옛 content_render(#/create 의 조립본 오더)는 그대로 claude_prompt 경로다.
  *   노트북이 inbox/<content_id>/ 안의 파일만 읽는다 — 여기서는 경로가 아니라 '이름'만 통과시킨다.
  * ------------------------------------------------------------------ */
-const RENDER_CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const RENDER_CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 const RENDER_FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
 const RENDER_EXT_RE = /\.(mp4|mov|m4v)$/i;
 const RENDER_PROFILES = ['captions', 'bgm'];

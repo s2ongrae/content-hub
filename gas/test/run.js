@@ -1128,6 +1128,7 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     getBlob() { return { getBytes: () => this.bytes.slice(), getDataAsString: () => Buffer.from(this.bytes).toString('utf8') }; }
     getLastUpdated() { return this.updated || (this.updated = new Date()); }
     setTrashed(v) { this.trashed = !!v; return this; }
+    isTrashed() { return this.trashed === true; }
   }
   const iter = (arr) => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
   class DFolder {
@@ -1272,6 +1273,16 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
   eq('200KB 넘으면 거부', put({ content_id: 'C-ASSET', kind: 'srt_draft', text: 'a'.repeat(200001) }).code, 'ERR_PAYLOAD_TOO_LARGE');
   ok('200KB 이하는 통과', put({ content_id: 'C-ASSET', kind: 'srt_draft', text: 'a'.repeat(200000) }).ok);
   ok('자산 파일은 영상 조각 목록에 섞이지 않는다', list('C-ASSET').data.items.length === 0);
+  {
+    // 실제 드라이브는 폴더 목록에 휴지통 파일을 섞어 줄 수 있다 → 휴지통에 넣은 옛 글이 더 최근 시각이어도 읽지 않는다
+    put({ content_id: 'C-ASSET', kind: 'srt_final', text: '새 확정본' });
+    const oldF = assetFolder.files.find((f) => f.name === 'srt_final.txt' && f.trashed);
+    oldF.updated = new Date(Date.now() + 3600000);
+    const liveOrig = assetFolder.live;
+    assetFolder.live = function () { return this.files.slice(); };   // 휴지통 포함 목록
+    ok('휴지통에 넣은 옛 자산은 읽지 않는다(시각이 더 늦어도)', get({ content_id: 'C-ASSET', kind: 'srt_final' }).data.text === '새 확정본');
+    assetFolder.live = liveOrig;
+  }
   ['asset_put', 'asset_get'].forEach((a) => {
     eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
     ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
@@ -1293,6 +1304,7 @@ console.log('\n[B] 백업 버그 3종 (gas/Backup.gs) — 보존 정리 · 시�
     getDateCreated() { return this.created; }
     getBlob() { return { getBytes: () => Array.from(Buffer.from(String(this.content))), getDataAsString: () => String(this.content) }; }
     setTrashed(v) { this.trashed = !!v; return this; }
+    isTrashed() { return this.trashed === true; }
     getSharingAccess() { return 'PRIVATE'; }
     makeCopy(name, folder) { this.copies++; const f = new BFile(name, this.content, new Date(), this.registry); (folder || this.parent).adopt(f); return f; }
     moveTo(folder) { if (this.parent) this.parent.files = this.parent.files.filter((x) => x !== this); folder.adopt(this); return this; }

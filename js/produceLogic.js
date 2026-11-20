@@ -10,9 +10,9 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261120f';
+import { tcToSec } from './yt/edl.js?v=20261121a';
 
-export const CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
 export const EXT_RE = /\.(mp4|mov|m4v)$/i;
 export const MAX_INPUTS = 8;
@@ -121,6 +121,7 @@ export function normalizeState(raw) {
     const r = raw.srt;
     s.srt = { confirmed: r.confirmed === true, skipped: r.skipped === true, ai: r.ai !== false, hash: String(r.hash || '').slice(0, 40), cues: Math.max(0, Math.min(500, Math.floor(Number(r.cues)) || 0)), at: String(r.at || '').slice(0, 40) };
     if (s.srt.confirmed) s.srt.skipped = false;
+    if (r.stale === true && !s.srt.confirmed) s.srt.stale = true;   // ④를 다시 만들어 확정이 풀린 상태(⑤에 안내)
   }
   if (raw.make && typeof raw.make === 'object') {
     const m = raw.make;
@@ -458,6 +459,20 @@ export function describeOrder(live, nowMs) {
 const CHECK_STATUS = ['PASS', 'WARN', 'FAIL'];
 
 /** 노트북 결과(report) 모양 검사 — 문자열(JSON)도 받는다. 숫자가 숫자가 아니면 거부한다(지어내지 않는다). */
+/**
+ * 노트북이 올려 둔 결과 보고가 '이번 오더'의 것인가. 이번 실행이 허브에 결과를 못 올리면 예전 보고가 남아 있어서,
+ * 그걸 이번 결과로 보여 주면 안 된다. finished_at 이 오더를 보낸 때(sent_at)보다 앞서면 예전 것으로 본다(두 기계 시계 차이 2분 허용).
+ * 시각을 모르면(옛 보고·직접 붙여넣기) 막지 않는다.
+ */
+export function reportIsFresh(text, sentAt) {
+  let r;
+  try { r = typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return true; }
+  const fin = Date.parse((r && r.finished_at) || '');
+  const sent = Date.parse(sentAt || '');
+  if (!Number.isFinite(fin) || !Number.isFinite(sent)) return true;
+  return fin >= sent - 120000;
+}
+
 export function parseReport(input) {
   let r = input;
   if (typeof input === 'string') {

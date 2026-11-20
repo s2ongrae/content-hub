@@ -455,7 +455,8 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('깨진 블록은 건너뛰고 위치·이유를 알린다', spBad.cues.length === 1 && spBad.errors.length === 1 && spBad.errors[0].block === 1 && R.parseSrt('').cues.length === 0 && R.parseSrt(null).cues.length === 0);
     ok('analyzeSrt: 막힌 문제 수(fail)에 형식 오류가 합쳐진다 · 알림(warn)은 따로', R.analyzeSrt('1\n시간 없음\n본문', 'daejeon_youth').fail === 1 && R.analyzeSrt('1\n00:00:01,000 --> 00:00:01,400\n짧음\n', 'daejeon_youth').warn >= 1 && R.analyzeSrt('1\n00:00:01,000 --> 00:00:01,400\n짧음\n', 'daejeon_youth').fail === 0);
     ok('textHash: 줄바꿈·앞뒤 공백 차이는 같은 글, 글이 바뀌면 다르다', R.textHash('a\r\nb ') === R.textHash('a\nb') && R.textHash('a') !== R.textHash('b') && typeof R.textHash(null) === 'string');
-    const shared = [[[Cq(1, 2.5, '가\n나\n다')], 'FAIL:lines'], [[Cq(1, 2.5, '끝났어요.')], 'WARN:period'], [[Cq(1, 1.5, '짧음')], 'WARN:short'], [[Cq(1, 2.5, '{\\an8}위')], 'FAIL:ass_tag']];
+    const shared = [[[Cq(1, 2.5, '가\n나\n다')], 'FAIL:lines'], [[Cq(1, 2.5, '끝났어요.')], 'WARN:period'], [[Cq(1, 1.5, '짧음')], 'WARN:short'], [[Cq(1, 2.5, '{\\an8}위')], 'FAIL:ass_tag'], [[Cq(1, 2.5, '짜장면 [채우기]원')], 'FAIL:slot'], [[Cq(1, 2.5, '[성래] 안녕하세요')], 'FAIL:speaker']];
+    ok('채우지 않은 칸 [채우기]·[ ] 는 FAIL(slot) · 줄 앞에 있어도 화자 표기로 오인하지 않는다', codesOf([Cq(1, 2.5, '[채우기] 원이에요')]).join() === 'FAIL:slot' && codesOf([Cq(1, 2.5, '가격 [ ]원')]).includes('FAIL:slot'));
     ok('노트북 srt.js 와 같은 규칙 표(코드값이 서로 같다) — 한쪽만 바꾸지 않는다', fs.existsSync(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'srt.js')) ? (() => {
       const N = require(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'srt.js'));
       return shared.every(([cues, code]) => R.checkSrt(cues, 'daejeon_youth').map((i) => i.level + ':' + i.code).includes(code) && N.checkSrt(cues, 'daejeon_youth').map((i) => i.level + ':' + i.code).includes(code));
@@ -501,6 +502,17 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오더를 보내는 코드는 하나(orderBlock)로 ④⑤⑥ 이 같이 쓴다', (pvSrc.match(/api\.post\('hub_order'/g) || []).length === 1 && /orderBlock\('order_tr'/.test(pvSrc) && /orderBlock\('order_fin'/.test(pvSrc) && /orderBlock\('render'/.test(pvSrc));
     ok('오더 내용은 입력이 바뀔 때마다·보내는 순간마다 다시 만든다(낡은 값이 실리지 않는다)', /compute: \(\) =>/.test(pvSrc) && /refresh\(\);\s*\/\/ 보내는 순간의 값으로 다시 만든다/.test(pvSrc) && /if \(poll\.refresh\) poll\.refresh\(\)/.test(pvSrc));
     ok('오더가 DONE 이 되면 한 번만 결과를 가져온다(같은 오더로 되풀이하지 않는다)', /poll\.done\[poll\.key\] === o\.order_id/.test(pvSrc));
+    ok('결과 보고 신선도: 오더를 보낸 뒤 끝난 보고만 이번 결과(시계 차이 2분 허용) · 시각을 모르면 막지 않는다',
+      L.reportIsFresh(JSON.stringify({ finished_at: '2026-11-21T03:00:00Z' }), '2026-11-21T02:59:00Z') === true
+      && L.reportIsFresh(JSON.stringify({ finished_at: '2026-11-21T02:00:00Z' }), '2026-11-21T03:00:00Z') === false
+      && L.reportIsFresh(JSON.stringify({ out: 'x' }), '2026-11-21T03:00:00Z') === true && L.reportIsFresh('깨진 글', '') === true);
+    ok('예전 결과 보고는 이번 결과로 보여 주지 않는다(④·⑥)', (pvSrc.match(/reportIsFresh\(a\.text/g) || []).length === 2);
+    ok('④를 다시 보내면 확정 자막·마무리 결과가 풀린다(새 영상과 시간이 어긋날 수 있다) · ⑤에 안내', /s\.srt\.confirmed = false; s\.srt\.stale = true/.test(pvSrc) && /s\.fin_report = null/.test(pvSrc) && /④를 다시 만들어서 확정이 풀렸어요/.test(pvSrc)
+      && L.normalizeState({ srt: { stale: true } }).srt.stale === true && L.normalizeState({ srt: { stale: true, confirmed: true } }).srt.stale === undefined);
+    ok('⑤ 초안 오더가 끝나도 확정·고치던 자막을 AI 초안으로 덮지 않는다', /if \(state\.srt\.confirmed \|\| editing\)/.test(pvSrc));
+    ok('⑤ 의 AI 안내 선택이 ⑥ 의 기본값이 된다', /s\.make\.ai_notice = aiBox\.checked/.test(pvSrc));
+    ok('단계를 옮기면 앞 단계의 진행 상태를 이어 쓰지 않는다 · 조회가 겹치면 끝난 뒤 다시 확인', /if \(poll\.key !== key\) \{ poll\.live = null/.test(pvSrc) && /poll\.key !== key \|\| state\[key\]\.order_id !== orderId/.test(pvSrc) && /poll\.again = true/.test(pvSrc));
+    ok('⑥ 칸에 잘못 적힌 BGM·커버 값이 있으면 보내지 않는다(보이는 값 ≠ 보내는 값 방지)', /const inputErr = bgmErr\.textContent \|\| coverErr\.textContent/.test(pvSrc));
     ok('produceView 가 srtRules·produceLogic 을 버전 쿼리로 부른다', /from '\.\/srtRules\.js\?v=\d+[a-z]'/.test(pvSrc));
 
     /* ── 화면 스모크: 가짜 DOM 으로 produceSection 을 그려 7개 단계를 전부 열어 본다 ──

@@ -47,7 +47,8 @@
 | `gas/Onboarding.gs` | 콜드스타트 위저드(훅·포맷·플레이스·키워드 + 2주 캘린더 10건) |
 | `gas/Blog.gs` · `js/blogView.js` | `#/blog` 내 블로그 — 네이버 공개 데이터(글·댓글·공감·방문자) 수집·본문 린터·검색 순위(오픈API 키는 스크립트 속성에만). 쿠키·로그인 금지. 로그인 통계(조회수·검색어·독자)는 피클이 `blog_stats_ingest`로 보냄 → `docs/BLOG_STATS_INGEST.md` |
 | `js/produceView.js` · `js/produceLogic.js` · `js/uploadVideo.js` | 카드 상세 '제작' 탭(스텝퍼). ① 영상을 구글 드라이브에 올리기(2MB 조각) · ③ 컷 목록(`js/yt/edl.js` 계산, 켜고 끄기) · ④ 노트북 렌더 오더(`cuts` 포함). 올리기·컷 계산은 `produceLogic.js`(순수 계산, 시험됨) |
-| `gas/Upload.gs` | 영상 올리기 4액션 `upload_video_chunk/list/fetch/delete` — 드라이브 `ContentHubOS_Uploads/<content_id>/` 비공개 폴더에 조각 저장(감사 행 없음, 요청 본문 3.4MB 허용은 이 액션만). **새 파일이라 Apps Script 에 파일 추가 후 새 버전 배포.** 노트북은 `.env` 의 `CONTENT_HUB_GAS_URL`·`CONTENT_HUB_API_TOKEN` 으로 받아 간다 |
+| `gas/Upload.gs` | 영상 올리기 4액션 `upload_video_chunk/list/fetch/delete` — 드라이브 `ContentHubOS_Uploads/<content_id>/` 비공개 폴더에 조각 저장(감사 행 없음, 요청 본문 3.4MB 허용은 이 액션만). **새 파일이라 Apps Script 에 파일 추가 후 새 버전 배포.** 노트북은 `.env` 의 `CONTENT_HUB_GAS_URL`·`CONTENT_HUB_API_TOKEN` 으로 받아 간다. **자산 2액션(2026-11-20)** `asset_put`/`asset_get` — 짧은 글(`srt_draft`·`srt_final`·`report_clean`·`report_transcribe`·`report_finish`)을 같은 폴더의 `<kind>.txt` 로 주고받는다(⑤ 자막 초안→사람 확정, ⑥ 마무리 보고) |
+| (교훈) 오더 payload 새 칸 | 허브 GAS(`Orders.gs hubRenderPayload_`)에 칸을 더하면 **포털 큐 GAS(`s2ongrae.github.io/apps-script/Code.gs qqRenderPayloadOf_`)에도 같이 더하고 재배포**해야 한다. 큐가 payload 를 고정 키로 다시 만들어서, 빠진 칸은 오류 없이 조용히 사라진다(2026-11-20 컷·stage 가 그랬다) |
 | `seeds/series_pack_2026w47.json` | **시리즈 10편(2×5)·키워드팩·훅 A/B 시드.** 읽기 전용 정적 JSON(공개 페이지가 `fetch`로 읽음) |
 | `tools/render_series_pack.py` | 시드 JSON → 기획 문서 렌더러. **문서를 직접 고치지 않는다** |
 | `docs/M2_ROADMAP.md` | M2에서 서버(GAS)·시트가 받아야 할 것(스키마 3컬럼·액션·품질 게이트) |

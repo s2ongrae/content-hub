@@ -57,7 +57,9 @@ export function checkSrt(cues, brand) {
     if (!(c.end > c.start)) add(n, 'FAIL', 'time_order', '끝 시각이 시작보다 빨라요');
     if (lines.length > MAX_LINES) add(n, 'FAIL', 'lines', lines.length + '줄이에요(최대 ' + MAX_LINES + '줄)');
     if (/\{\\[^}]*\}|\\an?\d|\\k\d|\\c&|\\fad/i.test(body)) add(n, 'FAIL', 'ass_tag', 'ASS 태그는 쓸 수 없어요');
-    if (/^\s*(\[[^\]]{1,12}\]|\([^)]{1,12}\)|[가-힣A-Za-z0-9]{1,8}\s*:)\s/.test(body) && /^\s*(\[|\(|[가-힣A-Za-z0-9]{1,8}\s*:)/.test(lines[0])) add(n, 'FAIL', 'speaker', '화자 표기는 쓸 수 없어요');
+    const slot = /\[\s*(채우기)?\s*\]/.test(body);
+    if (slot) add(n, 'FAIL', 'slot', '채우지 않은 칸([ ])이 남아 있어요 — 영상에서 확인한 값으로 채워 주세요');
+    if (!slot && /^\s*(\[[^\]]{1,12}\]|\([^)]{1,12}\)|[가-힣A-Za-z0-9]{1,8}\s*:)\s/.test(body) && /^\s*(\[|\(|[가-힣A-Za-z0-9]{1,8}\s*:)/.test(lines[0])) add(n, 'FAIL', 'speaker', '화자 표기는 쓸 수 없어요');
     lines.forEach((ln, li) => { if (ln.length > cpl) add(n, 'WARN', 'cpl', (li + 1) + '번째 줄이 ' + ln.length + '자예요(최대 ' + cpl + '자)'); });
     const dur = c.end - c.start;
     if (dur > 0 && dur < MIN_DUR - 1e-6) add(n, 'WARN', 'short', '표시 시간이 ' + dur.toFixed(2) + '초예요(최소 ' + MIN_DUR + '초)');

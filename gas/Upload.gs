@@ -22,7 +22,7 @@ const UPLOAD_ROOT_NAME = 'ContentHubOS_Uploads';
 const UPLOAD_PART_MAX_BYTES = 2 * 1024 * 1024;     // 조각 하나(원본 바이트) 상한 — 브라우저도 같은 값으로 자른다
 const UPLOAD_MAX_PARTS = 800;                      // 800 × 2MB = 1.6GB
 const UPLOAD_MAX_TOTAL_BYTES = 1500 * 1024 * 1024; // 파일 하나 1.5GB
-const UPLOAD_CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const UPLOAD_CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 const UPLOAD_NAME_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}$/;
 const UPLOAD_EXT_RE = /\.(mp4|mov|m4v)$/i;
 const UPLOAD_PART_RE = /^(.+)\.part(\d{5})of(\d{5})$/;
@@ -80,12 +80,15 @@ function uploadParts_(folder) {
   const it = folder.getFiles();
   while (it.hasNext()) {
     const f = it.next();
+    if (fileTrashed_(f)) continue;   // 폴더 목록에 휴지통 파일이 섞여 나올 수 있다
     const m = String(f.getName() || '').match(UPLOAD_PART_RE);
     if (!m) continue;
     out.push({ file: f, name: m[1], index: Number(m[2]), parts: Number(m[3]) });
   }
   return out;
 }
+
+function fileTrashed_(f) { try { return typeof f.isTrashed === 'function' && f.isTrashed() === true; } catch (err) { return false; } }
 
 function trashParts_(list) { list.forEach(function (p) { try { p.file.setTrashed(true); } catch (err) { /* 이미 지워짐 */ } }); }
 
@@ -154,8 +157,10 @@ function handleUploadVideoFetch_(ss, payload) {
   const folder = uploadFolder_(contentId, false);
   if (!folder) throw createAppError_('ERR_NOT_FOUND', '올라온 영상이 없습니다.', { content_id: contentId });
   const it = folder.getFilesByName(uploadPartName_(name, index, parts));
-  if (!it.hasNext()) throw createAppError_('ERR_NOT_FOUND', '조각을 찾지 못했습니다.', { name: name, index: index });
-  const bytes = it.next().getBlob().getBytes();
+  let file = null;
+  while (it.hasNext()) { const f = it.next(); if (!fileTrashed_(f)) { file = f; break; } }
+  if (!file) throw createAppError_('ERR_NOT_FOUND', '조각을 찾지 못했습니다.', { name: name, index: index });
+  const bytes = file.getBlob().getBytes();
   return { content_id: contentId, name: name, index: index, parts: parts, bytes: bytes.length, data: Utilities.base64Encode(bytes) };
 }
 
@@ -197,6 +202,7 @@ function handleAssetGet_(ss, payload) {
   let best = null;
   while (it.hasNext()) {
     const f = it.next();
+    if (fileTrashed_(f)) continue;   // 덮어쓰며 휴지통에 넣은 옛 글을 읽지 않는다
     if (!best || f.getLastUpdated().getTime() > best.getLastUpdated().getTime()) best = f;
   }
   if (!best) return { content_id: contentId, kind: kind, exists: false };
