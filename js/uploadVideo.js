@@ -10,7 +10,7 @@
  *  · 영상 바이트는 이 화면의 메모리에 2MB 씩만 올라온다(파일 전체를 읽지 않는다).
  */
 
-import { UPLOAD_PART_BYTES, checkUploadFile } from './produceLogic.js?v=20261121a';
+import { UPLOAD_PART_BYTES, checkUploadFile } from './produceLogic.js?v=20261121b';
 
 const CHUNK_TIMEOUT_MS = 120000;
 const CHUNK_TRIES = 4;

@@ -9,6 +9,10 @@ description: 촬영 원본을 클린 마스터(`{content_id}_clean.mp4`)와 SRT 
 **자막 번인 · TTS 내레이션 · 효과음 · 로고 · 커버 선택은 하지 않는다**(사람이 캡컷에서 — 수정 가능성 때문). 번인·TTS 가 필요하면 §6 예외 경로로, 사용자가 명시했을 때만.
 숫자가 어긋나면 `docs/CONTENT_STANDARD_v2.md`·`seeds/render_standard_v2.json` 이 우선.
 
+> **2026-11-20 개정 — 기본 경로는 허브다(표준 v3 §6).** 영상 제작은 손 명령이 아니라 **콘텐츠 허브 카드의 '제작' 탭**으로 한다(사용자 결정: 캡컷 하이브리드 폐지).
+> ① 영상 올리기(드라이브) → ③ 컷 목록 → ④ 클린 마스터 오더 → ⑤ 자막 초안 오더(`stage:'transcribe'`, Whisper) → **사람이 허브에서 고쳐 확정** → ⑥ 마무리 오더(`stage:'finish'`: 확정 자막 굽기·AI 안내·BGM·-14 LUFS·커버 → `{id}_finish.mp4`) → ⑦ 사람 확인 → 발행은 사람.
+> 오더는 전부 포털 오더함에서 **사람이 승인**해야 노트북(`hub-agent/notebook-agent/lib/render.js`·`render_stages.js`)이 실행한다. 이 문서의 아래 명령은 노트북이 내부에서 쓰는 것과 같은 도구이고, 허브가 없을 때·점검할 때만 손으로 쓴다. 아래 "캡컷" 언급은 허브 이전 규칙이다.
+
 출처: affaan-m/ECC `video-editing`(작업 층 구분) · remotion-dev/skills(자막 데이터 개념) · Whisper-TikTok(Apache-2.0, 구조만 참고). 코드를 가져다 붙이지 않았다.
 **검증 상태(2026-11-19, 회사 PC, ffmpeg 9.0.2 + faster-whisper 1.x + Python 3.12)**: §2 클린 마스터 인코딩·음량 측정은 4.3초 샘플로 실제 실행해 통과. §3 Whisper 는 실행은 됐으나 §3 의 주의 때문에 품질은 **아직 재지 못했다**. §6 번인·TTS 와 §7 검수는 실행하지 않았다.
 

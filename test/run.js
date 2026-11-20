@@ -529,7 +529,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
         getAttribute(k) { return this.attrs[k] === undefined ? null : this.attrs[k]; }
         addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
         removeEventListener() {}
-        append(...kids) { kids.flat(4).forEach((k) => { if (k == null || k === false) return; const n = typeof k === 'object' ? k : { textContent: String(k), tag: '#text', children: [] }; if (n.parent !== undefined) n.parent = this; this.children.push(n); }); }
+        append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { textContent: String(k), tag: '#text', children: [] }; /* 브라우저처럼: append(null) 은 'null' 글자가 된다 */ if (n.parent !== undefined) n.parent = this; this.children.push(n); }); }
         appendChild(k) { this.append(k); return k; }
         replaceChildren(...kids) { this.children = []; this.append(...kids); }
         querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
@@ -555,7 +555,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
           if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'style') n.setAttribute('style', v);
           else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v); else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
         }
-        n.append(...kids); return n;
+        n.append(...kids.flat(4).filter((k) => k != null && k !== false)); return n;   // 허브 h() 처럼 빈 값은 건너뛴다
       };
       const walk = (n, f) => { f(n); (n.children || []).forEach((c) => c && c.tag && walk(c, f)); };
       try {
@@ -580,7 +580,9 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
               const btns = []; walk(wrap, (n) => { if ((n.className || '').indexOf('pr-step-btn') >= 0) btns.push(n); });
               btns[i].click();
               const open = []; walk(wrap, (n) => { if ((n.className || '').indexOf('pr-step open') >= 0) open.push(n); });
-              if (open.length > 1) failures.push((i + 1) + '단계: 둘 이상 펼쳐짐');   // 이미 펼쳐진 단계를 누르면 접히므로 0개도 정상
+              if (open.length > 1) failures.push((i + 1) + '단계: 둘 이상 펼쳐짐');
+              const junk = []; walk(wrap, (n) => { if (n.tag === '#text' && /^(null|undefined|false)$/.test(n.textContent)) junk.push(n.textContent); });
+              if (junk.length) failures.push((i + 1) + '단계: 화면에 "' + junk[0] + '" 글자가 보임(append 에 빈 값)');   // 이미 펼쳐진 단계를 누르면 접히므로 0개도 정상
             } catch (e) { failures.push((i + 1) + '단계: ' + (e && e.message)); }
           }
           ok('화면 스모크(' + label + '): 7개 단계를 모두 열어도 오류가 없다', failures.length === 0, failures.join(' | '));

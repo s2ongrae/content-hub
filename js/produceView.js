@@ -19,16 +19,16 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121a';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121a';
+import { buildEDL } from './yt/edl.js?v=20261121b';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121b';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE
-} from './produceLogic.js?v=20261121a';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261121a';
+} from './produceLogic.js?v=20261121b';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261121b';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -847,7 +847,7 @@ export function produceSection(ctx) {
       h('div', { class: 'pr-warnbox' }, h('strong', { text: 'AI 초안은 틀려요. ' }),
         h('span', { text: '상호·메뉴·가격·숫자는 그럴듯하게 틀리는 대표 구간이에요. 영상을 보며 고친 뒤에만 확정할 수 있어요.' })),
       state.srt.stale && !state.srt.confirmed ? h('div', { class: 'pr-banner warn' }, h('strong', { text: '④를 다시 만들어서 확정이 풀렸어요. ' }),
-        h('span', { text: '컷이 바뀌면 자막 시간이 어긋나요. 초안을 다시 만들거나 지금 영상에 맞게 고친 뒤 다시 확정해 주세요.' })) : null);
+        h('span', { text: '컷이 바뀌면 자막 시간이 어긋나요. 초안을 다시 만들거나 지금 영상에 맞게 고친 뒤 다시 확정해 주세요.' })) : '');
     box.append(...orderBlock('order_tr', {
       sendText: '자막 초안 만들기(노트북)',
       compute: () => ({ built: buildStagePayload('transcribe', { contentId, brand, state }), ready: stepStatus(state, brand).render, blockedText: '④ 클린 마스터를 먼저 완료해 주세요(초안은 그 영상의 말소리로 만들어요).' }),
@@ -973,7 +973,7 @@ export function produceSection(ctx) {
         h('span', { class: 'pr-check-s', text: '네이버 클립은 AI 보조 사용 사실을 영상 안에 알려야 해요. 자막을 전부 직접 썼다면 끄세요.' }))),
       h('div', { class: 'pr-row' }, confirmBtn),
       confirmMsg,
-      state.srt.skipped ? h('div', { class: 'pr-banner' }, h('strong', { text: '자막 없이 진행 중 ' }), h('span', { text: '⑥ 에서 자막을 굽지 않아요.' })) : null);
+      state.srt.skipped ? h('div', { class: 'pr-banner' }, h('strong', { text: '자막 없이 진행 중 ' }), h('span', { text: '⑥ 에서 자막을 굽지 않아요.' })) : '');
     // 확인 체크박스는 check() 가 만든 label 안의 input — 위 verify 와 이어 준다
     const vInput = box.querySelectorAll('.pr-check input')[0];
     if (vInput) { vInput.addEventListener('change', () => { verify.checked = vInput.checked; paintAna(); }); }
