@@ -304,9 +304,15 @@ function copyPayloadBatch_(state, batchSize) {
   return { copied: copied, total: total, done: i >= total };
 }
 
-/** 값이 아니라 "앞 4KB + 크기" 지문 — 수 MB 파일을 전부 읽지 않기 위한 절충 */
+/** 값이 아니라 "앞 4KB + 크기" 지문 — 수 MB 파일을 전부 읽지 않기 위한 절충.
+ *  주의: Apps Script Blob.getBytes()는 전체를 메모리에 올린 뒤 slice하므로,
+ *  큰 파일에서는 getId()+크기 기반 경량 지문으로 전환해 OOM 을 막는다. */
 function fingerprintOf_(file) {
   try {
+    const size = file.getSize();
+    if (size > 5 * 1024 * 1024) {
+      return 'LARGE:' + file.getId().slice(-8) + ':' + size;
+    }
     const blob = file.getBlob();
     const bytes = blob.getBytes();
     const head = bytes.slice(0, Math.min(4096, bytes.length));

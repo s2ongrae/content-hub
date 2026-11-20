@@ -23,7 +23,7 @@
 | 라이브 | <https://s2ongrae.github.io/content-hub/> (GitHub Pages, `main` 푸시 → 30~60초 뒤 배포) |
 | 저장소 | **공개(public)** — 비밀·개인정보를 절대 넣지 않는다 |
 | 백엔드 | Google Sheets + Apps Script(`gas/`). 배포 주소(`/exec`)와 API 토큰은 **각 기기 브라우저 `localStorage`에만** 있고 요청 본문으로만 전송 |
-| 상태 | M1(프론트 6화면 + GAS 12액션) 배포됨. `#/series`는 M2 시리즈·키워드팩·훅 A/B (시드 JSON 기반, 서버 불필요) |
+| 상태 | M1(프론트 6화면 + GAS 21액션) 배포됨. `#/series`는 M2 시리즈·키워드팩·훅 A/B (시드 JSON 기반, 서버 불필요) |
 
 ### 구조
 
@@ -31,7 +31,7 @@
 |---|---|
 | `index.html` | 앱 셸(CSP meta, 토큰 마스킹, 하단 탭 `data-route`). 스크립트는 `js/app.js?v=m2-1`, 빌드 표시는 `#build-label` |
 | `js/app.js` | 해시 라우터 · 브랜드 스위처 · 화면 6종(보드·승인·검수·취재·노하우·운영). 렌더링은 `textContent`/`createElement` 전용 |
-| `js/api.js` | GAS 호출(30s AbortController, 429/5xx만 3회 재시도, 멱등키, 오프라인 큐, 미설정 시 `ERR_NO_CONFIG`) |
+| `js/api.js` | GAS 호출(30s AbortController, 429/5xx만 3회 재시도, 멱등키, 미설정 시 `ERR_NO_CONFIG`) |
 | `js/quickApprove.js` | 폰 10초 승인 카드 스택 |
 | `js/trackChannels.js` · `js/channelView.js` · `js/postView.js` | 채널 드릴다운 — 트랙별 운영 채널 상수(`seeds/track_channels.json` 사본, 시험이 3곳 대조) · `#/perf` 유튜브·인스타 서브탭 · `#/post` 상세. `docs/CHANNEL_DRILLDOWN_v1.md` |
 | `gas/PostDetail.gs` | `get_post_detail` · `upsert_media_meta` · `list_media_meta` + `Media_Meta` 시트(첫 올리기 때 자동 생성). 배포는 새 파일 추가 후 새 버전 |
@@ -41,7 +41,7 @@
 | `css/style.css` | 브랜드 테마(네이비·오렌지 / 코랄·크림)·상태 배지·폰/PC 레이아웃 |
 | `gas/Setup.gs` | 23시트·Drive 폴더·토큰(비노출)·시딩·트리거 |
 | `gas/Auth.gs` | 상수시간 토큰·화이트리스트·`tryLock(1800)`·멱등·민감필드 차단(`ERR_SENSITIVE_FIELD`)·쿼터 서킷 |
-| `gas/Code.gs` | `doGet`(liveness만) / `doPost` 라우터 + M1 핸들러 12종(`list_contents`·`create_content`·`update_content`·`record_checklist`·`backup_now`·`restore_from_snapshot`·`rotate_token`·`run_coldstart_onboarding` 등) |
+| `gas/Code.gs` | `doGet`(liveness만) / `doPost` 라우터 + M1 핸들러 21종(`list_contents`·`create_content`·`update_content`·`record_checklist`·`backup_now`·`restore_from_snapshot`·`rotate_token`·`run_coldstart_onboarding` 등) |
 | `gas/Backup.gs` | 일/주/월 스냅샷·80개 배치·manifest·보존·복구·무결성 6종 |
 | `gas/Notify.gs` | 헬스 경보(슬랙/메일, 4시간 쿨다운) |
 | `gas/Onboarding.gs` | 콜드스타트 위저드(훅·포맷·플레이스·키워드 + 2주 캘린더 10건) |

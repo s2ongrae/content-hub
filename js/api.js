@@ -6,17 +6,10 @@
  *  - 토큰은 URL이 아니라 JSON body 의 auth_token 으로만 보낸다
  *  - 요청 1건 30초 타임아웃(AbortController) / 429·5xx·ERR_BUSY 만 3회 재시도(0.8→1.6→3.2s)
  *  - 멱등키는 "동작 1건당 1개" 고정 → 중복 클릭·재시도에도 같은 키. 성공하면 폐기.
- *  - 오프라인/실패 큐(localStorage)에 남겨 두고 온라인 복귀 시 재전송
  *  - GAS URL/토큰이 없으면 ERR_NO_CONFIG 로 멈춘다(가짜 데이터로 대신하지 않는다).
  */
 
 const CFG_KEY = 'contenthub.config.v1';
-const QUEUE_KEY = 'contenthub.queue.v1';
-
-export const BRAND_LABEL = {
-  daejeon_youth: '대전 청년',
-  ppiyak_kimmary: '삐약 김메리'
-};
 
 export function loadConfig() {
   try {
@@ -66,7 +59,6 @@ const RETRY_DELAYS = [800, 1600, 3200];
 
 export class ContentHubApi {
   constructor(opts = {}) {
-    this.queueKey = QUEUE_KEY;
     this.clientId = 'web-admin';
     this.timeoutMs = 30000;
     this.reload();
@@ -181,35 +173,6 @@ export class ContentHubApi {
     }
   }
 
-  /* ---------------- 오프라인 큐 ---------------- */
-
-  enqueue(action, payload, idemKey) {
-    const q = this.readQueue();
-    q.push({ action, payload, idemKey, at: Date.now() });
-    localStorage.setItem(this.queueKey, JSON.stringify(q.slice(-50)));
-  }
-
-  readQueue() {
-    try { return JSON.parse(localStorage.getItem(this.queueKey)) || []; } catch (e) { return []; }
-  }
-
-  async flushQueue() {
-    const q = this.readQueue();
-    if (!q.length) return { sent: 0, failed: 0 };
-    const remain = [];
-    let sent = 0;
-    for (const item of q) {
-      try {
-        await this.post(item.action, item.payload, item.idemKey);
-        sent++;
-      } catch (e) {
-        if (e.retryable) remain.push(item);
-      }
-    }
-    localStorage.setItem(this.queueKey, JSON.stringify(remain));
-    return { sent, failed: remain.length };
-  }
-
   /* ---------------- M1 엔드포인트 ---------------- */
 
   health() { return this.post('health', {}); }
@@ -315,16 +278,3 @@ function sleep(ms) {
 }
 
 export const api = new ContentHubApi();
-
-/* 온라인 복귀·탭 포커스 복귀 시 자동 재전송 */
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    api.flushQueue().catch(() => {});
-  });
-  // 탭을 다시 볼 때(백그라운드에서 돌아왔을 때)도 큐 재시도 — 온라인 이벤트가 안 터지는 경우 보완
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      api.flushQueue().catch(() => {});
-    }
-  });
-}
