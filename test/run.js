@@ -264,7 +264,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     newFiles.forEach((f) => { src[f] = fs.readFileSync(path.join(ROOT, f), 'utf8'); });
     ok('innerHTML/outerHTML/insertAdjacentHTML 0건', newFiles.filter((f) => /\.js$/.test(f)).every((f) => !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(src[f])));
     ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', newFiles.every((f) => !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(src[f])));
-    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261119x/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261119y/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
     ok('하단 탭이 늘지 않았다(10개)', (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/class="tab"/g) || []).length === 10);
   } catch (err) {
     ok('트랙 채널 계약 시험', false, (err && err.stack) || err);
@@ -338,6 +338,36 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('payload studio 키 한 개만 저장(시트 칸을 늘리지 않는다)', /patch: \{ studio: state \}/.test(pv));
     ok('SRT 단계에 누를 수 있는 버튼이 없다', !/h\('button'/.test(pv.split('function bodySrt')[1].split('function bodyFinish')[0]));
     ok('app.js 가 제작 탭을 연결한다', /produceSection/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')));
+
+    /* 오더 진행 상태 자동 표시 (hub_order_status 폴링) */
+    const NOW = Date.parse('2026-11-19T21:05:00+09:00');
+    ok('종료 상태: 완료·실패·거절·기한지남·확인필요', ['DONE', 'FAILED', 'REJECTED', 'EXPIRED', 'REVIEW_NEEDED', 'TIMEOUT_REVIEW'].every((c) => L.isTerminalStatus(c)));
+    ok('진행 중 상태는 종료가 아니다(승인대기·실행대기·실행중·빈값)', ['WAITING_APPROVAL', 'PENDING', 'RUNNING', '', undefined].every((c) => !L.isTerminalStatus(c)));
+    ok('폴링 간격 15초 · 연속 실패 3회', L.POLL_INTERVAL_MS === 15000 && L.POLL_MAX_FAILS === 3);
+    ok('GAS 미배포 코드 판별', L.isNotDeployedCode('ERR_UNKNOWN_ACTION') && L.isNotDeployedCode('ERR_NOT_IMPLEMENTED') && !L.isNotDeployedCode('ERR_QUEUE_UNREACHABLE') && !L.isNotDeployedCode(''));
+    ok('승인 남은 시간 mm분 ss초', L.approvalRemaining('2026-11-19T21:15:03+09:00', NOW) === '10분 03초', L.approvalRemaining('2026-11-19T21:15:03+09:00', NOW));
+    ok('기한이 지났거나 모르면 null', L.approvalRemaining('2026-11-19T21:00:00+09:00', NOW) === null && L.approvalRemaining('', NOW) === null && L.approvalRemaining('abc', NOW) === null);
+    const D = (live) => L.describeOrder(live, NOW);
+    ok('승인 대기: 남은 시간을 말한다', /승인 대기/.test(D({ status: 'WAITING_APPROVAL', approval_expires_at: '2026-11-19T21:15:03+09:00' }).title) && /10분 03초/.test(D({ status: 'WAITING_APPROVAL', approval_expires_at: '2026-11-19T21:15:03+09:00' }).text));
+    ok('승인 대기인데 기한이 지났으면 경고 톤', D({ status: 'WAITING_APPROVAL', approval_expires_at: '2026-11-19T21:00:00+09:00' }).kind === 'warn');
+    ok('승인 대기인데 기한을 모르면 지났다고 단정하지 않는다', D({ status: 'WAITING_APPROVAL' }).kind === 'info' && D({ status: 'WAITING_APPROVAL', approval_expires_at: '' }).kind === 'info');
+    ok('실행 대기', D({ status: 'PENDING' }).title === '실행 대기');
+    ok('실행 중: 경과 분', /시작한 지 4분/.test(D({ status: 'RUNNING', started_at: '2026-11-19T21:01:00+09:00' }).text), D({ status: 'RUNNING', started_at: '2026-11-19T21:01:00+09:00' }).text);
+    ok('완료: 초록 톤 + report 안내', D({ status: 'DONE', result: '렌더 완료 · x_clean.mp4' }).kind === 'ok' && /report/.test(D({ status: 'DONE' }).text) && /렌더 완료/.test(D({ status: 'DONE', result: '렌더 완료 · x_clean.mp4\n둘째 줄' }).text));
+    ok('실패: 에러 첫 줄', D({ status: 'FAILED', error: '세로 변환 단계 실패(exit 1)\n자세히' }).kind === 'err' && /세로 변환 단계 실패/.test(D({ status: 'FAILED', error: '세로 변환 단계 실패(exit 1)\n자세히' }).text));
+    ok('만료·거절·확인필요는 경고 톤', ['EXPIRED', 'REJECTED', 'REVIEW_NEEDED', 'TIMEOUT_REVIEW'].every((c) => D({ status: c }).kind === 'warn'));
+    ok('화면 문구에 큐 코드값이 그대로 나오지 않는다', ['WAITING_APPROVAL', 'PENDING', 'RUNNING', 'DONE', 'FAILED', 'REJECTED', 'EXPIRED', 'REVIEW_NEEDED', 'TIMEOUT_REVIEW'].every((c) => { const d = D({ status: c, approval_expires_at: '2026-11-19T21:15:03+09:00' }); return !/[A-Z]{4,}_?[A-Z]*/.test(d.title + d.text.replace(/report/g, '')); }));
+    ok('모르는 상태도 깨지지 않는다', typeof D({ status: 'WHATEVER' }).title === 'string' && typeof D(null).title === 'string');
+
+    ok('api.js 에 hubOrderStatus(읽기)가 있다', /async hubOrderStatus\(orderId\)[\s\S]*?post\('hub_order_status'/.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')));
+    ok('api.js 재시도 규칙은 그대로(429/5xx 3회)', /RETRY_DELAYS/.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')) && !/hub_order_status[\s\S]{0,200}retry/i.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')));
+    ok('폴링은 숨은 탭에서 쉬고, 화면을 떠나면 멈춘다', /document\.hidden/.test(pv) && /visibilitychange/.test(pv) && /wrap\.isConnected/.test(pv) && /openStep !== 'render'/.test(pv));
+    ok('상세 시트를 닫으면(DOM 이 남아도) 폴링이 멈춘다', /wrap\.closest\('dialog'\)/.test(pv) && /!dlg\.open/.test(pv));
+    ok('종료 상태가 되면 다음 폴링을 걸지 않는다', /if \(!isTerminalStatus\(d\.status\)\) schedulePoll\(POLL_INTERVAL_MS\)/.test(pv));
+    ok('연속 실패 3회 뒤 멈추고 안내', /poll\.fails >= POLL_MAX_FAILS/.test(pv) && /상태를 가져오지 못했습니다/.test(pv));
+    ok('GAS 미배포면 중립 안내(재배포 후 켜짐)', /isNotDeployedCode\(code\)/.test(pv) && /재배포하면 이 상태 표시가 켜져요/.test(pv));
+    ok('produceLogic import 에 버전 쿼리(캐시 어긋남 방지)', /from '\.\/produceLogic\.js\?v=\d+[a-z]'/.test(pv));
+    ok('app.js 의 produceView import 버전이 index 와 같다', (fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8').match(/produceView\.js\?v=(\d+[a-z])/) || [])[1] === (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/js\/app\.js\?v=(\d+[a-z])/) || [])[1]);
   } catch (err) {
     ok('제작 스텝퍼 시험', false, (err && err.stack) || err);
   }

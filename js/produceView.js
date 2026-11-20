@@ -4,6 +4,7 @@
  * 카드 하나를 ①재료 → ②기획 → ③컷 목록 → ④클린 마스터 → ⑤자막 파일 → ⑥검수·마무리 순서로 따라간다.
  *  · 표준은 docs/CONTENT_STANDARD_v3.md — AI 는 클린 마스터(컷·9:16·음량)와 SRT 까지, 자막 번인·TTS·BGM·커버는 사람이 캡컷에서.
  *  · ④ 는 노트북에 영상 렌더 오더(hub_order · content_render)를 보낸다. 승인(15분) 뒤에만 실행된다.
+ *    보낸 뒤에는 hub_order_status(읽기 전용)로 15초마다 진행 상태를 가져와 보여 준다(종료 상태·화면 이탈·탭 숨김이면 멈춤).
  *  · ⑤ 자막 파일(Whisper)은 아직 없다 — '준비 중'으로만 표시하고 누를 수 있는 버튼은 만들지 않는다.
  *  · 영상이 노트북 inbox 로 들어오는 방법은 아직 정해지지 않았다 → 이 화면은 파일을 올리지 않는다(안내만).
  *
@@ -16,8 +17,9 @@ import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
 import {
   STEPS, PROFILES, MAX_INPUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
-  parseReport, compareStandard, stepStatus, orderStatusLabel
-} from './produceLogic.js';
+  parseReport, compareStandard, stepStatus, orderStatusLabel,
+  isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS
+} from './produceLogic.js?v=20261119y';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -43,6 +45,10 @@ export function produceSection(ctx) {
   let version = detail.version;
   let openStep = null;
   let saveTimer = null;
+
+  /* ── 오더 진행 상태 폴링 (④) ── */
+  const poll = { timer: null, fails: 0, live: null, halted: '', busy: false, vis: false };
+  let statusHost = null;
   let chain = Promise.resolve();
   const saveLine = h('span', { class: 'pr-save', 'aria-live': 'polite', text: '' });
 
@@ -157,6 +163,80 @@ export function produceSection(ctx) {
     });
   }
 
+  /* ── 오더 진행 상태 폴링 ── */
+  function stopPoll() { if (poll.timer) { clearTimeout(poll.timer); poll.timer = null; } }
+  function schedulePoll(ms) { stopPoll(); poll.timer = setTimeout(runPoll, ms); }
+  /** ④ 가 펼쳐져 있고 이 화면이 아직 붙어 있고 보낸 오더가 있을 때만 의미가 있다. */
+  function pollAlive() {
+    if (!wrap.isConnected || openStep !== 'render' || !(state.render && state.render.order_id)) return false;
+    const dlg = wrap.closest('dialog');                // 상세 시트를 닫으면 DOM 은 남아 있어도 '화면을 떠난 것'으로 본다
+    return !(dlg && !dlg.open);
+  }
+  function currentStatus() { return (poll.live && poll.live.status) || (state.render && state.render.status) || ''; }
+
+  async function fetchOrderStatus(id) {
+    if (typeof api.hubOrderStatus === 'function') return api.hubOrderStatus(id);
+    const res = await api.post('hub_order_status', { order_id: id });   // api.js 가 아직 옛 캐시일 때를 위한 대비
+    return (res && res.data) || {};
+  }
+
+  function onVisible() {
+    if (!wrap.isConnected) { document.removeEventListener('visibilitychange', onVisible); poll.vis = false; stopPoll(); return; }
+    if (!document.hidden && pollAlive() && !poll.timer && !poll.busy && !poll.halted && !isTerminalStatus(currentStatus())) runPoll();
+  }
+
+  function paintOrderStatus() {
+    if (!statusHost) return;
+    const r = state.render || {};
+    const live = poll.live || { status: r.status, approval_expires_at: r.approval_expires_at, created_at: r.sent_at, started_at: '', result: '', error: '' };
+    const d = describeOrder(live, Date.now());
+    const rows = [h('div', { class: 'pr-banner' + (d.kind === 'warn' || d.kind === 'err' ? ' ' + d.kind : '') },
+      h('strong', { text: d.title + ' ' }), h('span', { text: d.text }))];
+    if (String(live.status).toUpperCase() === 'DONE') {
+      rows.push(h('p', { class: 'hint', text: '큐가 돌려주는 결과는 짧게 잘려 있어서 규격 대조 표를 만들 수 없어요. 포털 오더함의 결과(report)를 아래에 붙여 넣어 주세요.' }));
+    }
+    if (poll.halted) rows.push(h('p', { class: 'hint', text: poll.halted }));
+    if (!isTerminalStatus(live.status) || poll.halted) {
+      rows.push(h('div', { class: 'pr-row' }, h('button', {
+        class: 'btn sm', type: 'button', text: poll.halted ? '다시 확인' : '지금 확인',
+        onclick: () => { poll.fails = 0; poll.halted = ''; runPoll(); }
+      })));
+    }
+    statusHost.replaceChildren(...rows);
+  }
+
+  async function runPoll() {
+    stopPoll();
+    if (poll.busy || !pollAlive()) return;
+    if (document.hidden) return;                       // 숨겨진 탭은 쉰다 — 다시 보이면 onVisible 이 이어서 한다
+    poll.busy = true;
+    const orderId = state.render.order_id;
+    try {
+      const d = await fetchOrderStatus(orderId);
+      if (!pollAlive() || state.render.order_id !== orderId) return;   // 기다리는 동안 화면을 떠났거나 다른 오더로 바뀜
+      poll.fails = 0; poll.halted = ''; poll.live = d;
+      if (d.status && d.status !== state.render.status) change((s) => { s.render.status = d.status; });
+      paintOrderStatus();
+      if (!isTerminalStatus(d.status)) schedulePoll(POLL_INTERVAL_MS);
+    } catch (err) {
+      const code = err && err.code;
+      if (isNotDeployedCode(code)) {
+        poll.halted = '서버(GAS)를 새 버전으로 재배포하면 이 상태 표시가 켜져요. 그때까지는 포털 오더함에서 진행을 확인해 주세요.';
+      } else if (code === 'ERR_NOT_FOUND') {
+        poll.halted = '최근 오더 20건 안에서 이 오더를 찾지 못했어요(목록에서 밀려났을 수 있어요). 포털 오더함에서 확인해 주세요.';
+      } else if (code === 'ERR_NO_CONFIG') {
+        poll.halted = '연결 설정이 없어요. ⚙︎ 에서 GAS 주소와 토큰을 넣어 주세요.';
+      } else {
+        poll.fails += 1;
+        if (poll.fails >= POLL_MAX_FAILS) poll.halted = '상태를 가져오지 못했습니다. 잠시 뒤 [다시 확인]을 눌러 주세요.';
+        else if (pollAlive()) schedulePoll(POLL_INTERVAL_MS);
+      }
+      if (pollAlive()) paintOrderStatus();
+    } finally {
+      poll.busy = false;
+    }
+  }
+
   /* ── 공통 조각 ── */
   const note = (text) => h('p', { class: 'hint', text });
   const check = (label, checked, onChange, sub) => {
@@ -255,6 +335,8 @@ export function produceSection(ctx) {
 
   /* ── ④ 클린 마스터 ── */
   function bodyRender(box) {
+    stopPoll();
+    statusHost = null;
     const built = buildRenderPayload({ contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x });
     const p = PROFILES[state.profile];
 
@@ -293,6 +375,7 @@ export function produceSection(ctx) {
           };
         });
         toast('렌더 오더를 보냈어요', 'ok');
+        poll.fails = 0; poll.halted = ''; poll.live = null;
         paintList();
       } catch (err) {
         const code = err && err.code;
@@ -319,7 +402,7 @@ export function produceSection(ctx) {
 
     box.append(
       h('div', { class: 'pr-row' }, sendBtn, copyBtn),
-      note('위험 작업이라 승인 카드가 뜨고, 15분 안에 승인해야 실행돼요. 승인과 결과 확인은 포털 오더함에서 해요.'),
+      note('위험 작업이라 승인 카드가 뜨고, 15분 안에 승인해야 실행돼요. 승인은 포털 오더함에서 하고, 진행 상태는 이 화면이 15초마다 알려 줘요.'),
       banner);
 
     if (built.ok) {
@@ -338,7 +421,11 @@ export function produceSection(ctx) {
         r.approval_expires_at ? h('dt', { text: '승인 기한' }) : null,
         r.approval_expires_at ? h('dd', { text: new Date(r.approval_expires_at).toLocaleString('ko-KR') }) : null));
       if (r.note && !r.needs_approval) box.appendChild(note(r.note));
-      box.appendChild(note('이 화면은 오더의 진행 상태를 자동으로 가져오지 않아요(조회 기능 없음). 실행이 끝나면 포털 오더함의 결과(report)를 아래에 붙여 넣어 규격 대조를 해 보세요.'));
+      statusHost = h('div', { class: 'pr-live', role: 'status', 'aria-live': 'polite' });
+      box.appendChild(statusHost);
+      paintOrderStatus();
+      if (!poll.vis) { document.addEventListener('visibilitychange', onVisible); poll.vis = true; }
+      if (!isTerminalStatus(currentStatus()) && !poll.halted) schedulePoll(400);   // 열자마자 한 번 확인하고, 이후 15초 간격
     }
 
     /* 결과 붙여넣기 → 표 */

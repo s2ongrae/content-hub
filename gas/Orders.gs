@@ -303,7 +303,8 @@ function handleHubOrder_(ss, payload, ctx) {
     const msg = e.message || (typeof json.error === 'string' ? json.error : '') || '큐가 거절';
     const code = String(e.code || json.code || '');
     // 큐(Apps Script)가 아직 content_render 를 모르는 동안: 옛 동작으로 되돌리지 않고 분명히 알린다.
-    if (realRender && (code === 'ERR_UNKNOWN_TYPE' || /ERR_UNKNOWN_TYPE|허용되지 않은 작업 타입/.test(msg))) {
+    // (포털 오더함 큐는 code 'type' + "보낼 수 없는 오더" 로, 노트북 큐는 ERR_UNKNOWN_TYPE 으로 거절한다 — 둘 다 같은 안내)
+    if (realRender && (code === 'ERR_UNKNOWN_TYPE' || code === 'type' || /ERR_UNKNOWN_TYPE|허용되지 않은 작업 타입|보낼 수 없는 오더/.test(msg))) {
       throw createAppError_('ERR_QUEUE_TYPE_UNKNOWN',
         '노트북 큐가 아직 영상 렌더(content_render)를 모릅니다. 큐 Apps Script 를 새 버전으로 배포한 뒤 다시 보내 주세요(오더는 만들어지지 않았습니다).',
         { queue_code: code || 'ERR_UNKNOWN_TYPE' });
@@ -321,6 +322,84 @@ function handleHubOrder_(ss, payload, ctx) {
     detail: type + ' → ' + (out.order_id || '(id 없음)') + ' · ' + workspace
   });
   return out;
+}
+
+/* ------------------------------------------------------------------ *
+ * 오더 진행 상태 — hub_order 로 보낸 오더가 지금 어디까지 갔는지(읽기 전용)
+ *
+ *   · 큐 웹앱의 queue_list(최근 20건, 읽기)만 부르고 그 안에서 order_id 한 건만 골라 돌려준다.
+ *   · 오더를 만들거나 바꾸지 않는다. 큐 토큰은 요청 본문으로만 가고 응답에는 없다.
+ *   · result 는 큐가 200자로 자른 값이라 검수표(PASS/WARN/FAIL)를 만들 수 없다 — 그건 report.json 을 붙여 넣는다.
+ *   · 최근 20건 밖으로 밀려난 오더는 ERR_NOT_FOUND (화면은 '목록에서 사라짐'으로 안내).
+ * ------------------------------------------------------------------ */
+const HUB_ORDER_ID_RE = /^Q-\d{8}-\d{6}-[a-z0-9]{4}$/;
+const HUB_STATUS_LIST_LIMIT = 20;   // 포털 queue_list 의 상한(QQ_LIST_MAX)
+
+function handleHubOrderStatus_(ss, payload) {
+  const orderId = String((payload && payload.order_id) || '').trim();
+  if (!HUB_ORDER_ID_RE.test(orderId)) {
+    throw createAppError_('ERR_VALIDATION_FAILED', 'order_id 형식이 올바르지 않습니다(예: Q-20261119-210000-ab12).');
+  }
+  const props = PropertiesService.getScriptProperties();
+  const url = String(props.getProperty('QUEUE_EXEC_URL') || '').trim();
+  const token = String(props.getProperty('QUEUE_TOKEN') || '').trim();
+  if (!url || !/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url)) {
+    throw createAppError_('ERR_SERVER_CONFIG', 'QUEUE_EXEC_URL 이 없거나 형식이 다릅니다. 스크립트 속성에 큐 웹앱 /exec 주소를 넣어 주세요.');
+  }
+  if (!token) {
+    throw createAppError_('ERR_SERVER_CONFIG', 'QUEUE_TOKEN 이 없습니다. 스크립트 속성에 큐 키를 넣어 주세요(브라우저에는 내려가지 않습니다).');
+  }
+
+  let res, text;
+  try {
+    res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'text/plain;charset=utf-8',
+      payload: JSON.stringify({ key: token, action: 'queue_list', limit: HUB_STATUS_LIST_LIMIT }),
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+    text = res.getContentText();
+  } catch (err) {
+    throw createAppError_('ERR_QUEUE_UNREACHABLE', '큐에 연결하지 못했습니다(잠시 뒤 다시 시도).',
+      { reason: sanitizeErrorDetail_((err && err.message) || '') });
+  }
+  let json = null;
+  try { json = JSON.parse(text); } catch (e) { json = null; }
+  if (!json) {
+    throw createAppError_('ERR_QUEUE_UNREACHABLE', '큐가 JSON 이 아닌 응답을 줬습니다(배포·권한 확인).',
+      { status: (res && res.getResponseCode && res.getResponseCode()) || 0 });
+  }
+  if (!json.ok) {
+    const e = (json.error && typeof json.error === 'object') ? json.error : {};
+    const msg = e.message || (typeof json.error === 'string' ? json.error : '') || '큐가 거절';
+    throw createAppError_('ERR_QUEUE_REJECTED', '큐가 상태 조회를 받지 않았습니다: ' + msg,
+      { queue_code: String(e.code || json.code || '') });
+  }
+
+  const items = Array.isArray(json.items) ? json.items : [];
+  let hit = null;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] && String(items[i].id) === orderId) { hit = items[i]; break; }
+  }
+  if (!hit) {
+    throw createAppError_('ERR_NOT_FOUND', '최근 오더 ' + HUB_STATUS_LIST_LIMIT + '건 안에 이 오더가 없습니다(목록에서 밀려났거나 id 가 다릅니다).',
+      { order_id: orderId });
+  }
+  const clip = function (v, n) { return String(v == null ? '' : v).slice(0, n); };
+  return {
+    order_id: orderId,
+    status: clip(hit.status, 30).toUpperCase(),
+    type: clip(hit.type, 40),
+    risk_level: clip(hit.risk_level, 10).toUpperCase(),
+    created_at: clip(hit.created_at, 40),
+    started_at: clip(hit.started_at, 40),
+    beat_at: clip(hit.beat_at, 40),
+    finished_at: clip(hit.finished_at, 40),
+    approval_expires_at: clip(hit.approval_expires_at, 40),
+    result: clip(hit.result, 300),
+    error: clip(hit.error, 300)
+  };
 }
 
 /* ------------------------------------------------------------------ *

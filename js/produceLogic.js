@@ -127,6 +127,79 @@ export function orderStatusLabel(code) {
   return ORDER_STATUS_KO[c] || '확인 필요';
 }
 
+/* ── 오더 진행 상태 자동 표시 (hub_order_status 폴링) ───────────────────────── */
+
+/** 더 기다려도 바뀌지 않는 상태 — 폴링을 멈춘다. */
+export const ORDER_TERMINAL = ['DONE', 'FAILED', 'REJECTED', 'EXPIRED', 'REVIEW_NEEDED', 'TIMEOUT_REVIEW'];
+export const POLL_INTERVAL_MS = 15000;
+export const POLL_MAX_FAILS = 3;
+
+export function isTerminalStatus(code) {
+  return ORDER_TERMINAL.indexOf(String(code || '').toUpperCase()) >= 0;
+}
+
+/** 서버(GAS)가 이 액션을 아직 모르는 코드들 — 빨간 에러 대신 중립 안내(기존 화면들과 같은 기준). */
+export function isNotDeployedCode(code) {
+  return ['ERR_UNKNOWN_ACTION', 'ERR_NOT_IMPLEMENTED', 'ERR_ACTION_NOT_ALLOWED', 'ERR_INVALID_ACTION'].indexOf(String(code || '')) >= 0;
+}
+
+/** 승인 기한까지 남은 시간 → '12분 03초' / 지났으면 null. 기한을 모르면 null. */
+export function approvalRemaining(expiresAt, nowMs) {
+  const t = Date.parse(String(expiresAt || ''));
+  if (!Number.isFinite(t)) return null;
+  const left = Math.floor((t - nowMs) / 1000);
+  if (left <= 0) return null;
+  const m = Math.floor(left / 60), sec = left % 60;
+  return m + '분 ' + String(sec).padStart(2, '0') + '초';
+}
+
+function minutesSince(iso, nowMs) {
+  const t = Date.parse(String(iso || ''));
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((nowMs - t) / 60000));
+}
+
+/**
+ * 큐가 준 상태 → 화면 문구. 코드값(WAITING_APPROVAL 등)은 그대로 보이지 않는다.
+ * live = { status, approval_expires_at, started_at, created_at, result, error }
+ * 반환 { kind: 'info'|'ok'|'warn'|'err', title, text }
+ */
+export function describeOrder(live, nowMs) {
+  const l = live || {};
+  const c = String(l.status || '').toUpperCase();
+  const first = (v) => String(v || '').split(/\r?\n/).find((x) => x.trim()) || '';
+  switch (c) {
+    case 'WAITING_APPROVAL': {
+      if (!Date.parse(String(l.approval_expires_at || ''))) {
+        return { kind: 'info', title: '승인 대기', text: '포털 오더함에서 [승인]을 눌러 주세요(15분 안에).' };   // 기한을 모르면 지났다고 단정하지 않는다
+      }
+      const left = approvalRemaining(l.approval_expires_at, nowMs);
+      return left
+        ? { kind: 'info', title: '승인 대기', text: '포털 오더함에서 [승인]을 눌러 주세요. 남은 시간 ' + left + '.' }
+        : { kind: 'warn', title: '승인 대기', text: '승인 기한이 지났을 수 있어요. 포털 오더함에서 확인해 주세요.' };
+    }
+    case 'PENDING':
+      return { kind: 'info', title: '실행 대기', text: '승인됐어요. 노트북이 곧 집어 가요(1분 안팎).' };
+    case 'RUNNING': {
+      const m = minutesSince(l.started_at || l.created_at, nowMs);
+      return { kind: 'info', title: '실행 중', text: '노트북에서 만들고 있어요' + (m !== null ? ' · 시작한 지 ' + m + '분' : '') + '. 영상 길이에 따라 몇 분 걸려요.' };
+    }
+    case 'DONE':
+      return { kind: 'ok', title: '완료', text: (first(l.result) ? first(l.result) + ' ' : '') + '결과 표(규격 대조)는 아래에 report 를 붙여 넣어 보세요.' };
+    case 'FAILED':
+      return { kind: 'err', title: '실패', text: (first(l.error) || first(l.result) || '노트북에서 실패했어요.') + ' — 원인은 포털 오더함에서 확인해 주세요.' };
+    case 'REJECTED':
+      return { kind: 'warn', title: '거절됨', text: '승인에서 거절됐어요. 필요하면 다시 보내 주세요.' };
+    case 'EXPIRED':
+      return { kind: 'warn', title: '승인 기한 지남', text: '15분 안에 승인되지 않아 실행되지 않았어요. 다시 보내 주세요.' };
+    case 'REVIEW_NEEDED':
+    case 'TIMEOUT_REVIEW':
+      return { kind: 'warn', title: '확인 필요', text: '실행 결과를 사람이 확인해야 해요. 포털 오더함에서 확인해 주세요.' };
+    default:
+      return { kind: 'info', title: orderStatusLabel(c), text: '' };
+  }
+}
+
 const CHECK_STATUS = ['PASS', 'WARN', 'FAIL'];
 
 /** 노트북 결과(report) 모양 검사 — 문자열(JSON)도 받는다. 숫자가 숫자가 아니면 거부한다(지어내지 않는다). */

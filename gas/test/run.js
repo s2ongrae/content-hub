@@ -344,6 +344,83 @@ eq('큐 타입 claude_prompt', rs3.body.type, 'claude_prompt');
 eq('mode=edit', rs3.body.payload.mode, 'edit');
 eq('응답 queue_type', o.ok && o.data.queue_type, 'claude_prompt');
 
+console.log('\n[8f] 오더 진행 상태 (hub_order_status) — 읽기 전용, 큐 queue_list 한 번');
+eq('hub_order_status 는 읽기', ev(A.ctx, 'ACTION_WHITELIST').hub_order_status.mode, 'READ');
+ok('핸들러가 등록됨', typeof ev(A.ctx, 'M1_HANDLERS').hub_order_status === 'function');
+ok('긴 외부 호출이라 라우터 락을 잡지 않는다', ev(A.ctx, 'ACTION_WHITELIST').hub_order_status.longRunning === true);
+{
+  const ST = (extra) => Object.assign({ id: 'Q-20261119-210000-rend', type: 'content_render', status: 'RUNNING', risk_level: 'HIGH',
+    created_at: '2026-11-19T21:00:00+09:00', started_at: '2026-11-19T21:01:00+09:00', beat_at: '2026-11-19T21:02:00+09:00',
+    finished_at: '', approval_expires_at: '2026-11-19T21:15:00+09:00', result: '', error: '', summary: '영상 렌더 → CH-1', needs_decision: false,
+    changed_files: 'x', branch: 'secret-branch' }, extra || {});
+  const listReply = (items) => ({ code: 200, body: JSON.stringify({ ok: true, items: items, count: items.length }) });
+
+  // 입력 검증 — 큐를 부르지 않는다
+  const b0 = A.env.fetched.length;
+  ['', 'Q-1', '../x', 'Q-20261119-210000-REND', 'Q-20261119-210000-rend; DROP', 'x'.repeat(200)].forEach((bad) => {
+    eq('order_id 형식 거부: ' + JSON.stringify(bad).slice(0, 30), callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: bad }).code, 'ERR_VALIDATION_FAILED');
+  });
+  ok('형식 검증은 큐를 부르기 전에 끝난다', A.env.fetched.length === b0);
+
+  // 설정 없음
+  const savedUrl = A.env.props.get('QUEUE_EXEC_URL'), savedTok = A.env.props.get('QUEUE_TOKEN');
+  A.env.props.delete('QUEUE_EXEC_URL');
+  eq('QUEUE_EXEC_URL 없음', callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' }).code, 'ERR_SERVER_CONFIG');
+  A.env.props.set('QUEUE_EXEC_URL', 'https://example.com/not-gas');
+  eq('큐 주소 형식이 아니면 거부', callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' }).code, 'ERR_SERVER_CONFIG');
+  A.env.props.set('QUEUE_EXEC_URL', savedUrl);
+  A.env.props.delete('QUEUE_TOKEN');
+  eq('QUEUE_TOKEN 없음', callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' }).code, 'ERR_SERVER_CONFIG');
+  A.env.props.set('QUEUE_TOKEN', savedTok);
+
+  // 정상
+  A.env.setFetchReply(listReply([ST({ id: 'Q-20261119-200000-aaaa', status: 'DONE' }), ST()]));
+  const nb = A.env.fetched.length;
+  let s = callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' });
+  ok('상태 조회 성공', s.ok, s);
+  eq('그 id 의 항목만 고른다(다른 오더 DONE 이 섞이지 않는다)', s.ok && s.data.status, 'RUNNING');
+  const sent = A.env.fetched[A.env.fetched.length - 1];
+  ok('큐를 한 번만 불렀다', A.env.fetched.length === nb + 1);
+  eq('큐 본문은 queue_list(읽기)', sent.body.action, 'queue_list');
+  eq('포털 상한 20건', sent.body.limit, 20);
+  ok('큐 토큰은 본문에만, 응답에는 없다', sent.body.key === 'portal-key-for-test-0123456789abcdef' && !JSON.stringify(s.data).includes('portal-key'));
+  eq('돌려주는 필드는 정해진 것뿐', Object.keys(s.data).sort().join(','),
+    'approval_expires_at,beat_at,created_at,error,finished_at,order_id,result,risk_level,started_at,status,type');
+  ok('큐의 다른 필드(branch·changed_files·summary)는 내려가지 않는다', !/secret-branch|changed_files|summary/.test(JSON.stringify(s.data)));
+
+  // 길이 제한 · 대소문자
+  A.env.setFetchReply(listReply([ST({ status: 'done', result: 'r'.repeat(900), error: 'e'.repeat(900) })]));
+  s = callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' });
+  ok('result·error 는 300자로 자른다', s.ok && s.data.result.length === 300 && s.data.error.length === 300, s.data && s.data.result.length);
+  eq('status 는 대문자로', s.ok && s.data.status, 'DONE');
+
+  // 없는 id
+  A.env.setFetchReply(listReply([ST({ id: 'Q-20261119-200000-aaaa' })]));
+  s = callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' });
+  eq('목록에 없으면 ERR_NOT_FOUND', s.code, 'ERR_NOT_FOUND');
+  ok('안내 문구에 20건 한계를 말한다', /20건/.test(s.message || ''), s.message);
+
+  // 큐 거절 · 장애
+  A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: 'unauthorized' }) });
+  eq('큐 거절은 ERR_QUEUE_REJECTED', callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' }).code, 'ERR_QUEUE_REJECTED');
+  A.env.setFetchReply({ code: 200, body: '<html>로그인</html>' });
+  eq('JSON 이 아니면 ERR_QUEUE_UNREACHABLE', callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' }).code, 'ERR_QUEUE_UNREACHABLE');
+  A.env.setFetchReply({ throw: 'DNS 실패' });
+  s = callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend' });
+  eq('네트워크 실패도 ERR_QUEUE_UNREACHABLE', s.code, 'ERR_QUEUE_UNREACHABLE');
+  ok('오류 문구에 토큰이 새지 않는다', !/portal-key/.test(s.message || ''), s.message);
+  A.env.setFetchReply(okReply);
+}
+
+console.log('\n[8g] 포털 오더함 큐가 content_render 를 모를 때(code "type") — 같은 안내');
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, code: 'type', error: '이 오더함에서는 보낼 수 없는 오더예요.' }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
+eq('포털식 거절도 ERR_QUEUE_TYPE_UNKNOWN', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code: 'type', message: '이 오더함에서는 보낼 수 없는 오더예요.' } }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
+eq('객체 형태 type 거절도 같은 코드', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
+A.env.setFetchReply(okReply);
+
 /* ───────── 내 블로그 보기 (gas/Blog.gs, 2026-11-19) ───────── */
 
 /** 시트 흉내 — getRange(r,c,nr,nc).getValues/setValues 만 지원 */

@@ -238,6 +238,7 @@ const M1_HANDLERS = {
   // 원스톱 만들기 화면 (2026-11-18, O4) — gas/Orders.gs
   list_drive_media: handleListDriveMedia_,
   hub_order: handleHubOrder_,
+  hub_order_status: handleHubOrderStatus_,
   // 내 블로그 보기 (2026-11-19) — gas/Blog.gs
   blog_sync: handleBlogSync_,
   list_blog_stats: handleListBlogStats_,
