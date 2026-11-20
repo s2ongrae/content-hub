@@ -103,7 +103,8 @@ function handleListDriveMedia_(ss, payload) {
   }
 
   // 이름 순 — 화면 표가 새로고침마다 흔들리지 않게.
-  items.sort(function (a, b) { return a.name.localeCompare(b.name); });
+  // 코드 포인트 순(로케일 비의존) — 실행 환경의 정렬 규칙에 따라 목록 순서가 달라지지 않게 한다
+  items.sort(function (a, b) { return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); });
 
   const byKind = { IMAGE: 0, VIDEO: 0, OTHER: 0 };
   items.forEach(function (x) { byKind[x.kind] = (byKind[x.kind] || 0) + 1; });
