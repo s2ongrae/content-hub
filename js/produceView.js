@@ -18,16 +18,16 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261120e';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120e';
+import { buildEDL } from './yt/edl.js?v=20261120f';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120f';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE
-} from './produceLogic.js?v=20261120e';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261120e';
+} from './produceLogic.js?v=20261120f';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261120f';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -381,6 +381,35 @@ export function produceSection(ctx) {
     }
     return nodes;
   }
+
+  /* ── 공통 조각 ── */
+  const note = (text) => h('p', { class: 'hint', text });
+  const check = (label, checked, onChange, sub) => {
+    const cb = h('input', { type: 'checkbox' });
+    cb.checked = !!checked;
+    cb.addEventListener('change', () => onChange(cb.checked));
+    return h('label', { class: 'pr-check' }, cb,
+      h('span', null, h('span', { class: 'pr-check-t', text: label }), sub ? h('span', { class: 'pr-check-s', text: sub }) : null));
+  };
+  const goSeries = (tab, label) => h('button', {
+    class: 'btn sm', type: 'button', text: label,
+    onclick: () => { openSeriesTab(tab); if (onNavigate) onNavigate('#/series'); else location.hash = '#/series'; }
+  });
+  const copyText = (text, okMsg) => {
+    const done = () => toast(okMsg, 'ok');
+    const fallback = () => {
+      const ta = h('textarea', { readonly: true, style: 'position:fixed;opacity:0' });
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      if (ok) done(); else toast('복사가 막혔어요 — 길게 눌러 직접 복사해 주세요', 'err');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
+    else fallback();
+  };
 
   /* ── ① 영상 올리기(구글 드라이브) ── */
   const up = { busy: false, cancel: false };

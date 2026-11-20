@@ -503,6 +503,83 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오더가 DONE 이 되면 한 번만 결과를 가져온다(같은 오더로 되풀이하지 않는다)', /poll\.done\[poll\.key\] === o\.order_id/.test(pvSrc));
     ok('produceView 가 srtRules·produceLogic 을 버전 쿼리로 부른다', /from '\.\/srtRules\.js\?v=\d+[a-z]'/.test(pvSrc));
 
+    /* ── 화면 스모크: 가짜 DOM 으로 produceSection 을 그려 7개 단계를 전부 열어 본다 ──
+     *  병합·붙여넣기 중에 도우미 함수(note·check·orderBlock…)가 사라져도 정규식 시험은 통과하지만 실제 화면은 열리지 않는다
+     *  (2026-11-20 실제로 라이브에서 '제작' 탭이 안 열렸다). 정의 안 된 이름을 실행으로 잡는다. */
+    {
+      class FNode {
+        constructor(tag) { this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.style = {}; this.className = ''; this._text = ''; this.value = ''; this.checked = false; this.isConnected = true; this.parent = null; }
+        set textContent(v) { this._text = String(v); this.children = []; }
+        get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+        setAttribute(k, v) { this.attrs[k] = String(v); }
+        removeAttribute(k) { delete this.attrs[k]; }
+        hasAttribute(k) { return k in this.attrs; }
+        getAttribute(k) { return this.attrs[k] === undefined ? null : this.attrs[k]; }
+        addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+        removeEventListener() {}
+        append(...kids) { kids.flat(4).forEach((k) => { if (k == null || k === false) return; const n = typeof k === 'object' ? k : { textContent: String(k), tag: '#text', children: [] }; if (n.parent !== undefined) n.parent = this; this.children.push(n); }); }
+        appendChild(k) { this.append(k); return k; }
+        replaceChildren(...kids) { this.children = []; this.append(...kids); }
+        querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+        querySelectorAll(sel) { const out = []; const cls = (sel.match(/^\.([\w-]+)/) || [])[1]; (function w(n) { (n.children || []).forEach((c) => { if (!c || !c.tag) return; if (!cls || (c.className || '').split(/\s+/).indexOf(cls) >= 0) out.push(c); w(c); }); })(this); return out; }
+        closest() { return null; }
+        remove() {}
+        focus() {}
+        select() {}
+        click() { (this.listeners.click || []).forEach((f) => f({ target: this })); }
+      }
+      const dom = {
+        createElement: (t) => new FNode(t), createTextNode: (t) => ({ tag: '#text', textContent: String(t), children: [] }), body: new FNode('body'),
+        addEventListener() {}, removeEventListener() {}, hidden: false, execCommand: () => false
+      };
+      const prevDoc = global.document, prevWin = global.window, prevLs = global.localStorage;
+      global.document = dom;
+      global.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+      global.window = { localStorage: global.localStorage, confirm: () => true };
+      const hh = (tag, attrs, ...kids) => {
+        const n = new FNode(tag);
+        if (attrs) for (const [k, v] of Object.entries(attrs)) {
+          if (v == null || v === false) continue;
+          if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'style') n.setAttribute('style', v);
+          else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v); else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+        }
+        n.append(...kids); return n;
+      };
+      const walk = (n, f) => { f(n); (n.children || []).forEach((c) => c && c.tag && walk(c, f)); };
+      try {
+        const PV = await import('file://' + path.join(ROOT, 'js', 'produceView.js'));
+        const mkCtx = (studio) => ({ h: hh, detail: { content_id: 'KM-1', version: 1, payload: { studio } }, meta: { content_id: 'KM-1', brand: 'ppiyak_kimmary' }, toast() {}, onNavigate() {} });
+        const finishedClean = { out: 'a_clean.mp4', width: 1080, height: 1920, fps: 30, duration: 8, lufs: -16, tp: -2.3, checks: [] };
+        const states = {
+          '처음(빈 카드)': {},
+          '자막 확정 전': { inputs: ['a.mp4'], plan: true, cuts: true, render: { order_id: 'Q-0', status: 'DONE', report: finishedClean } },
+          '자막 확정·마무리 보고': { inputs: ['a.mp4'], plan: true, cuts: true, render: { order_id: 'Q-0', status: 'DONE', report: finishedClean }, srt: { confirmed: true, cues: 3, hash: 'x' }, order_tr: { order_id: 'Q-1', status: 'DONE' }, order_fin: { order_id: 'Q-2', status: 'DONE' },
+            fin_report: { out: 'a_finish.mp4', width: 1080, height: 1920, fps: 30, duration: 8, lufs: -14, tp: -1.8, checks: [{ id: 'x', status: 'PASS', msg: 'ok' }], burn: { cues: 3, font: 'NanumGothic', font_preferred_missing: true, font_preferred: 'Pretendard', warnings: [] }, bgm: { name: 'b.mp3', volume_db: -24 } } },
+          '컷 목록이 있는 카드': { inputs: ['a.mp4', 'b.mp4'], cut_input: 'a.mp4', cut_list: [{ type: 'DEAD', from: 1, to: 2, on: true }] }
+        };
+        for (const [label, studio] of Object.entries(states)) {
+          const wrap = PV.produceSection(mkCtx(studio));
+          const stepBtns = []; walk(wrap, (n) => { if ((n.className || '').indexOf('pr-step-btn') >= 0) stepBtns.push(n); });
+          ok('화면 스모크(' + label + '): 단계 7개가 그려진다', stepBtns.length === 7, stepBtns.length);
+          const failures = [];
+          for (let i = 0; i < stepBtns.length; i++) {
+            try {
+              // 목록이 다시 그려지므로 매번 새로 찾아 누른다
+              const btns = []; walk(wrap, (n) => { if ((n.className || '').indexOf('pr-step-btn') >= 0) btns.push(n); });
+              btns[i].click();
+              const open = []; walk(wrap, (n) => { if ((n.className || '').indexOf('pr-step open') >= 0) open.push(n); });
+              if (open.length > 1) failures.push((i + 1) + '단계: 둘 이상 펼쳐짐');   // 이미 펼쳐진 단계를 누르면 접히므로 0개도 정상
+            } catch (e) { failures.push((i + 1) + '단계: ' + (e && e.message)); }
+          }
+          ok('화면 스모크(' + label + '): 7개 단계를 모두 열어도 오류가 없다', failures.length === 0, failures.join(' | '));
+        }
+      } catch (err) {
+        ok('화면 스모크', false, (err && err.stack) || err);
+      } finally {
+        global.document = prevDoc; global.window = prevWin; global.localStorage = prevLs;
+      }
+    }
+
     /* 코드 규칙 */
     const pv = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
     const pl = fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8');
