@@ -61,6 +61,7 @@ function makeEnv() {
       getScriptProperties: () => ({
         getProperty: k => (props.has(k) ? props.get(k) : null),
         setProperty: (k, v) => { props.set(k, String(v)); },
+        deleteProperty: k => { props.delete(k); },
         getProperties: () => Object.fromEntries(props)
       })
     },
@@ -1177,6 +1178,322 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
     ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
   });
+}
+
+console.log('\n[B] 백업 버그 3종 (gas/Backup.gs) — 보존 정리 · 시트 사본 · 무결성 점검 분리/이어하기');
+{
+  /* ── 가짜 드라이브·시트 ── */
+  const iter = (arr) => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
+  class BFile {
+    constructor(name, content, created, registry) {
+      this.name = name; this.content = content == null ? '' : content; this.created = created || new Date(); this.trashed = false; this.parent = null;
+      this.id = 'bf_' + Math.random().toString(36).slice(2, 12); this.copies = 0; this.registry = registry; if (registry) registry.set(this.id, this);
+    }
+    getId() { return this.id; }
+    getName() { return this.name; }
+    getSize() { return String(this.content).length || 10; }
+    getDateCreated() { return this.created; }
+    getBlob() { return { getBytes: () => Array.from(Buffer.from(String(this.content))), getDataAsString: () => String(this.content) }; }
+    setTrashed(v) { this.trashed = !!v; return this; }
+    getSharingAccess() { return 'PRIVATE'; }
+    makeCopy(name, folder) { this.copies++; const f = new BFile(name, this.content, new Date(), this.registry); (folder || this.parent).adopt(f); return f; }
+    moveTo(folder) { if (this.parent) this.parent.files = this.parent.files.filter((x) => x !== this); folder.adopt(this); return this; }
+  }
+  class BFolder {
+    constructor(name, registry) { this.name = name; this.files = []; this.folders = []; this.registry = registry; this.id = 'bd_' + name + '_' + Math.random().toString(36).slice(2, 8); if (registry) registry.set(this.id, this); }
+    getId() { return this.id; }
+    getName() { return this.name; }
+    adopt(f) { f.parent = this; this.files.push(f); return f; }
+    live() { return this.files.filter((f) => !f.trashed); }
+    getFiles() { return iter(this.live()); }
+    getFilesByName(n) { return iter(this.live().filter((f) => f.name === n)); }
+    getFoldersByName(n) { return iter(this.folders.filter((f) => f.name === n)); }
+    createFolder(n) { const f = new BFolder(n, this.registry); this.folders.push(f); return f; }
+    createFile(a, content) { const name = typeof a === 'string' ? a : a.name; return this.adopt(new BFile(name, typeof a === 'string' ? content : '(blob)', new Date(), this.registry)); }
+    setSharing() { return this; }
+    getSharingAccess() { return 'PRIVATE'; }
+  }
+  class BSheet {
+    constructor(name, rows, cols, opts) { this.name = name; this.rows = rows; this.cols = cols; this.hidden = !!(opts && opts.hidden); this.values = (opts && opts.values) || null; this.formulas = (opts && opts.formulas) || 0; this.owner = null; }
+    getName() { return this.name; }
+    setName(n) { this.name = n; return this; }
+    getLastRow() { return this.rows; }
+    getLastColumn() { return this.cols; }
+    isSheetHidden() { return this.hidden; }
+    hideSheet() { this.hidden = true; return this; }
+    getRange(r, c, nr, nc) { return { getValues: () => (this.values ? this.values.slice(r - 1, r - 1 + (nr || 1)).map((x) => x.slice(c - 1)) : [Array(nc || 1).fill('')]), setValues: (v) => { this.appended = (this.appended || []).concat(v); this.rows += v.length; } }; }
+    appendRow(row) { (this.appended = this.appended || []).push(row); this.rows++; }
+    copyTo(target) { if (this.owner && this.owner.failAt && target.copyCount >= this.owner.failAt) throw new Error('copyTo 실패(시험)'); target.copyCount = (target.copyCount || 0) + 1; const c = new BSheet('Copy of ' + this.name, this.rows, this.cols, { hidden: false, formulas: this.formulas }); c.owner = target; target.sheets.push(c); return c; }
+  }
+  class BSS {
+    constructor(name, sheets, reg) { this.name = name; this.sheets = sheets; this.sheets.forEach((s) => { s.owner = this; }); this.id = 'ss_' + Math.random().toString(36).slice(2, 10); this.file = new BFile(name, 'x'.repeat(100), new Date(), reg); }
+    getId() { return this.file.id; }
+    getSheets() { return this.sheets.slice(); }
+    getSheetByName(n) { return this.sheets.find((s) => s.name === n) || null; }
+    deleteSheet(sh) { this.sheets = this.sheets.filter((s) => s !== sh); }
+  }
+
+  function makeWorld() {
+    const W = loadGas();
+    const registry = new Map();
+    const root = new BFolder('내 드라이브', registry);
+    const triggers = [];
+    const log = { triggerCalls: [] };
+    const builder = (fn) => {
+      const rec = { fn, calls: [] };
+      const b = new Proxy({}, { get: (_, name) => (name === 'create' ? () => { triggers.push(rec); return rec; } : (...a) => { rec.calls.push([String(name), a]); return b; }) });
+      return b;
+    };
+    W.ctx.DriveApp = {
+      getRootFolder: () => root,
+      getFolderById: (id) => { if (!registry.has(id)) throw new Error('폴더 없음 ' + id); return registry.get(id); },
+      getFileById: (id) => { if (!registry.has(id)) throw new Error('파일 없음 ' + id); return registry.get(id); },
+      Access: { PRIVATE: 'PRIVATE', ANYONE: 'ANYONE', ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' }, Permission: { NONE: 'NONE' }
+    };
+    W.ctx.MimeType = { PLAIN_TEXT: 'text/plain' };
+    W.ctx.ScriptApp = {
+      newTrigger: (fn) => builder(fn),
+      getProjectTriggers: () => triggers.map((t) => ({ getHandlerFunction: () => t.fn, _rec: t })),
+      deleteTrigger: (h) => { const i = triggers.indexOf(h._rec); if (i >= 0) triggers.splice(i, 1); },
+      WeekDay: { SUNDAY: 'SUNDAY' }
+    };
+    return { W, registry, root, triggers };
+  }
+  const stampOf = (day, hh) => '202611' + String(day).padStart(2, '0') + '_' + String(hh || 3).padStart(2, '0') + '0015';
+
+  /* ── 버그 3: 보존 정리 ── */
+  {
+    const { W, registry } = makeWorld();
+    const key = (n) => W.ctx.snapshotKeyOf_(n);
+    ok('이름 → 스냅샷 키: SHEETS·manifest·presets·payload 가 모두 같은 키', ['_SHEETS', '_backup_manifest.json', '_config_presets.json', '_payload_abc123.json'].every((suf) => key('SNAPSHOT_DAILY_20261120_030015' + suf).key === 'SNAPSHOT_DAILY_20261120_030015'));
+    ok('키는 tier·타임스탬프까지 읽는다', key('SNAPSHOT_MANUAL_20261120_030015_SHEETS').tier === 'MANUAL' && key('SNAPSHOT_DAILY_20261120_030015_SHEETS').stamp === '20261120_030015');
+    ok('규칙에 안 맞는 이름은 null(건드리지 않는다)', key('memo.txt') === null && key('SNAPSHOT_DAILY_x_SHEETS') === null && key('SNAPSHOT_YEARLY_20261120_030015_SHEETS') === null);
+
+    const folder = new BFolder('daily', registry);
+    const mk = (tier, day, hh, payloads) => {
+      const base = 'SNAPSHOT_' + tier + '_' + stampOf(day, hh);
+      const t = new Date(2026, 10, day, hh || 3);
+      ['_SHEETS', '_backup_manifest.json', '_config_presets.json'].forEach((s) => folder.adopt(new BFile(base + s, '', t, registry)));
+      for (let i = 0; i < payloads; i++) folder.adopt(new BFile(base + '_payload_p' + i + '.json', '{}', t, registry));
+      return base;
+    };
+    // 일일 스냅샷 20개(11/1~11/20) — 각 스냅샷에 payload 40개씩 = 파일 860개
+    for (let d = 1; d <= 20; d++) mk('DAILY', d, 3, 40);
+    for (let d = 1; d <= 3; d++) mk('MANUAL', d, 12, 5);
+    folder.adopt(new BFile('README_memo.txt', 'x', new Date(2020, 0, 1), registry));
+    const total = folder.live().length;
+    ok('시험 준비: 일일 20묶음×43파일 + 수동 3묶음×8파일 + 메모 1개', total === 20 * 43 + 3 * 8 + 1, total);
+
+    const res = W.ctx.applyRetention_('DAILY', folder);
+    const liveDaily = folder.live().filter((f) => /^SNAPSHOT_DAILY_/.test(f.name));
+    const keptKeys = new Set(liveDaily.map((f) => f.name.match(/^(SNAPSHOT_DAILY_\d{8}_\d{6})/)[1]));
+    ok('일일 14개 스냅샷이 온전히 남는다(최근 14일)', keptKeys.size === 14 && res.kept.length === 14, [keptKeys.size, res.kept.length]);
+    ok('남은 14개는 11/7~11/20 이다(최신 14개)', [...keptKeys].every((k) => Number(k.slice(15, 17)) >= 7) && keptKeys.has('SNAPSHOT_DAILY_' + stampOf(20, 3)) && keptKeys.has('SNAPSHOT_DAILY_' + stampOf(7, 3)) && !keptKeys.has('SNAPSHOT_DAILY_' + stampOf(6, 3)));
+    ok('남은 스냅샷마다 파일 43개가 전부 있다(payload 40 + 3)', [...keptKeys].every((k) => liveDaily.filter((f) => f.name.indexOf(k) === 0).length === 43));
+    ok('15번째부터(11/1~11/6, 6개)만 휴지통으로 간다', res.trashed.length === 6 && folder.files.filter((f) => f.trashed).length === 6 * 43 && folder.files.filter((f) => f.trashed).every((f) => Number(f.name.match(/_(\d{8})_/)[1].slice(6, 8)) <= 6));
+    ok('수동 백업·메모 파일은 일일 정리가 건드리지 않는다', folder.live().filter((f) => /^SNAPSHOT_MANUAL_/.test(f.name)).length === 24 && folder.live().some((f) => f.name === 'README_memo.txt'));
+
+    const again = W.ctx.applyRetention_('DAILY', folder);
+    ok('다시 돌려도 더 지우지 않는다(멱등)', again.trashed.length === 0 && folder.live().filter((f) => /^SNAPSHOT_DAILY_/.test(f.name)).length === 14 * 43);
+
+    // 14개 이하면 아무것도 지우지 않는다
+    const f2 = new BFolder('daily2', registry);
+    for (let d = 1; d <= 9; d++) { ['_SHEETS', '_backup_manifest.json'].concat(Array.from({ length: 30 }, (_, i) => '_payload_p' + i + '.json')).forEach((s) => f2.adopt(new BFile('SNAPSHOT_DAILY_' + stampOf(d, 3) + s, '', new Date(2026, 10, d), registry))); }
+    ok('스냅샷이 9개뿐이면 payload 가 수백 개여도 하나도 안 지운다', W.ctx.applyRetention_('DAILY', f2).trashed.length === 0 && f2.files.every((f) => !f.trashed));
+
+    // 수동 10 · 주간 8 · 월간 6
+    const manual = new BFolder('m', registry);
+    for (let d = 1; d <= 13; d++) { ['_SHEETS', '_backup_manifest.json', '_payload_a.json'].forEach((s) => manual.adopt(new BFile('SNAPSHOT_MANUAL_' + stampOf(d, 12) + s, '', new Date(2026, 10, d), registry))); }
+    ok('수동은 10개 스냅샷을 남긴다', W.ctx.applyRetention_('MANUAL', manual).kept.length === 10 && manual.live().length === 30);
+    const weekly = new BFolder('w', registry);
+    for (let d = 1; d <= 12; d++) ['_SHEETS', '_payload_a.json'].forEach((s) => weekly.adopt(new BFile('SNAPSHOT_WEEKLY_' + stampOf(d, 3) + s, '', new Date(2026, 10, d), registry)));
+    ok('주간은 8개', W.ctx.applyRetention_('WEEKLY', weekly).kept.length === 8 && weekly.live().length === 16);
+    const monthly = new BFolder('mo', registry);
+    for (let d = 1; d <= 9; d++) ['_SHEETS', '_payload_a.json'].forEach((s) => monthly.adopt(new BFile('SNAPSHOT_MONTHLY_' + stampOf(d, 4) + s, '', new Date(2026, 10, d), registry)));
+    ok('월간은 6개', W.ctx.applyRetention_('MONTHLY', monthly).kept.length === 6 && monthly.live().length === 12);
+
+    // 생성 시각이 뒤섞여도(복사 시각) 키의 타임스탬프로 최신을 가른다
+    const f3 = new BFolder('f3', registry);
+    for (let d = 1; d <= 16; d++) f3.adopt(new BFile('SNAPSHOT_DAILY_' + stampOf(d, 3) + '_SHEETS', '', new Date(2026, 10, 30 - d), registry));   // 만든 시각은 거꾸로
+    const r3 = W.ctx.applyRetention_('DAILY', f3);
+    ok('파일 생성 시각이 거꾸로여도 이름의 시각이 최신인 14개를 남긴다', r3.trashed.sort().join(',') === ['SNAPSHOT_DAILY_' + stampOf(1, 3), 'SNAPSHOT_DAILY_' + stampOf(2, 3)].join(','), r3.trashed);
+
+    // 이어하기 중인 스냅샷은 지우지 않는다
+    const f4 = new BFolder('f4', registry);
+    for (let d = 1; d <= 16; d++) f4.adopt(new BFile('SNAPSHOT_DAILY_' + stampOf(d, 3) + '_SHEETS', '', new Date(2026, 10, d), registry));
+    W.env.props.set('BACKUP_STATE', JSON.stringify({ snapshotName: 'SNAPSHOT_DAILY_' + stampOf(1, 3) }));
+    W.ctx.applyRetention_('DAILY', f4);
+    ok('이어하기 중인 스냅샷은 오래돼도 보호한다', f4.files.filter((f) => f.trashed).length === 1 && !f4.files.find((f) => f.name.indexOf(stampOf(1, 3)) > 0).trashed);
+    ok('모르는 tier 는 아무것도 안 한다', W.ctx.applyRetention_('YEARLY', f4).trashed.length === 0);
+  }
+
+  /* ── 버그 1: 시트 사본에 바인딩 스크립트가 딸려 오지 않는다 ── */
+  {
+    const { W, registry, root } = makeWorld();
+    let created = null;
+    const mkSS = () => new BSS('원본', [
+      new BSheet('Contents', 120, 37, { formulas: 5 }), new BSheet('Config', 9, 4), new BSheet('Brand_Config', 6, 5, { hidden: true }), new BSheet('Channel_Logs', 5000, 16)
+    ], registry);
+    const src = mkSS();
+    let makeCopyCalls = 0;
+    src.file.makeCopy = () => { makeCopyCalls++; throw new Error('makeCopy 를 쓰면 안 된다'); };
+    W.ctx.SpreadsheetApp = Object.assign({}, W.ctx.SpreadsheetApp, {
+      create: (name) => { created = new BSS(name, [new BSheet('시트1', 1000, 26)], registry); root.adopt(created.file); return created; },
+      getActiveSpreadsheet: () => src
+    });
+    const backup = new BFolder('daily', registry);
+    const r = W.ctx.copySpreadsheetWithoutScript_(src, 'SNAPSHOT_DAILY_X_SHEETS', backup);
+    ok('makeCopy 를 부르지 않는다(바인딩 스크립트 복제 원인)', makeCopyCalls === 0);
+    ok('시트 4개가 같은 이름·같은 순서로 복사된다(임시·기본 시트는 지운다)', created.sheets.map((s) => s.name).join(',') === 'Contents,Config,Brand_Config,Channel_Logs', created.sheets.map((s) => s.name));
+    ok('시트마다 copyTo 로 복사한다(값 루프가 아님 — 수식·서식 유지)', created.copyCount === 4 && r.report.sheets === 4);
+    ok('숨긴 시트는 숨긴 채로', created.sheets[2].hidden === true && created.sheets[0].hidden === false);
+    ok('행·열 수가 같다(불일치 0건)', r.report.mismatches.length === 0 && created.sheets[3].rows === 5000);
+    ok('사본 파일은 백업 폴더로 옮겨지고 루트에는 안 남는다', backup.files.includes(r.file) && !root.files.includes(r.file) && r.file.name === 'SNAPSHOT_DAILY_X_SHEETS');
+
+    // 실패하면 반쪽 사본을 지운다
+    const src2 = mkSS(); src2.failAt = 2;
+    const before = backup.live().length;
+    let msg = '';
+    try { W.ctx.copySpreadsheetWithoutScript_(src2, 'SNAPSHOT_DAILY_Y_SHEETS', backup); } catch (e) { msg = e.message; }
+    ok('중간에 실패하면 오류를 올리고 반쪽 사본은 휴지통으로', /copyTo 실패/.test(msg) && created.file.trashed === true && backup.live().length === before, msg);
+
+    // 행·열이 다르면 알린다
+    const src3 = mkSS(); const orig = src3.sheets[1].copyTo.bind(src3.sheets[1]);
+    src3.sheets[1].copyTo = (t) => { const c = orig(t); c.rows = 3; return c; };
+    const r3 = W.ctx.copySpreadsheetWithoutScript_(src3, 'SNAPSHOT_DAILY_Z_SHEETS', backup);
+    ok('복사본의 행 수가 다르면 report.mismatches 에 이름이 남는다', r3.report.mismatches.join(',') === 'Config', r3.report);
+
+    // 파이프라인 전체: SHEETS 사본·매니페스트가 생기고 makeCopy 는 시트 파일에 안 쓴다
+    const src4 = mkSS(); let mc = 0; src4.file.makeCopy = () => { mc++; throw new Error('x'); };
+    W.ctx.SpreadsheetApp.getActiveSpreadsheet = () => src4;
+    W.env.props.set('BACKUP_ROOT_FOLDER_ID', '');
+    const res = W.ctx.runBackupPipeline_('DAILY', 'test');
+    const dailyFolder = root.folders.find((f) => f.name === 'ContentHubOS_Backups').folders.find((f) => f.name === 'daily');
+    const names = dailyFolder.live().map((f) => f.name);
+    ok('백업 파이프라인: 성공·시트 사본·매니페스트·설정 프리셋이 daily 폴더에 생긴다', res.ok && res.partial === false && names.some((n) => /_SHEETS$/.test(n)) && names.some((n) => /_backup_manifest\.json$/.test(n)) && names.some((n) => /_config_presets\.json$/.test(n)), names);
+    ok('백업 파이프라인이 시트 파일을 makeCopy 하지 않는다', mc === 0);
+    const manifest = JSON.parse(dailyFolder.live().find((f) => /_backup_manifest\.json$/.test(f.name)).content);
+    ok('매니페스트에 시트 복사 점검 결과(sheet_copy_check)가 남는다', manifest.sheet_copy_check && manifest.sheet_copy_check.sheets === 4 && manifest.sheet_copy_check.mismatches.length === 0, manifest.sheet_copy_check);
+    ok('복구용 시트 찾기(_SHEETS$)가 새 사본 이름과 맞는다', names.filter((n) => /_SHEETS$/.test(n)).length === 1);
+  }
+
+  /* ── 버그 2: 무결성 점검 분리 · 시간 분할 · 이어하기 ── */
+  {
+    // 트리거 구성
+    const { W, triggers } = makeWorld();
+    W.ctx.installSystemTriggers_();
+    const find = (fn) => triggers.find((t) => t.fn === fn);
+    const call = (t, name) => (t.calls.find((c) => c[0] === name) || [null, []])[1];
+    ok('무결성 점검 트리거가 등록된다(매일 05:00 KST)', find('runIntegrityCheckTrigger') && call(find('runIntegrityCheckTrigger'), 'atHour')[0] === 5 && call(find('runIntegrityCheckTrigger'), 'inTimezone')[0] === 'Asia/Seoul' && call(find('runIntegrityCheckTrigger'), 'everyDays')[0] === 1);
+    ok('백업(03:00)·주간(일 03:30)·월간(1일 04:00)과 30분 이상 떨어져 있다', call(find('runDailyBackupTrigger'), 'atHour')[0] === 3 && 5 - 3 >= 1 && 5 - 4 >= 1);
+    ok('다시 설치해도 중복되지 않는다(멱등)', (() => { W.ctx.installSystemTriggers_(); return triggers.filter((t) => t.fn === 'runIntegrityCheckTrigger').length === 1 && triggers.filter((t) => t.fn === 'runDailyBackupTrigger').length === 1; })());
+
+    // 일일 백업 트리거는 백업만 한다
+    let backupCalls = 0, integrityCalls = 0;
+    W.ctx.runBackupPipeline_ = () => { backupCalls++; return { ok: true }; };
+    W.ctx.runIntegrityCheck_ = () => { integrityCalls++; return { ok: true }; };
+    W.ctx.runDailyBackupTrigger();
+    ok('runDailyBackupTrigger 는 백업만 돌리고 무결성 점검은 부르지 않는다', backupCalls === 1 && integrityCalls === 0, [backupCalls, integrityCalls]);
+    W.ctx.runIntegrityCheckTrigger();
+    ok('runIntegrityCheckTrigger 는 점검만 돌린다', backupCalls === 1 && integrityCalls === 1);
+  }
+
+  function integrityWorld(opts) {
+    const w = makeWorld();
+    const { W, registry, root } = w;
+    let clock = 1000000;
+    W.ctx.nowMs_ = () => clock;
+    const header = vm.runInContext('SHEET_SCHEMAS', W.ctx).Contents;
+    const col = (n) => header.indexOf(n);
+    const values = [header];
+    const files = new Map();
+    const brokenRows = opts.broken || [];
+    const calls = {};
+    for (let i = 1; i <= opts.rows; i++) {
+      const f = new BFile('payload_' + i + '.json', '{"a":1}', new Date(), registry);
+      files.set(i, f);
+      const row = Array(header.length).fill('');
+      row[col('content_id')] = 'C-' + i; row[col('brand')] = 'daejeon_youth'; row[col('payload_file_id')] = brokenRows.indexOf(i) >= 0 ? 'missing_' + i : f.id; row[col('status')] = 'REVIEW'; row[col('updated_by')] = 'user';
+      values.push(row);
+    }
+    const contents = new BSheet('Contents', values.length, header.length, { values });
+    const logs = new BSheet('Integrity_Logs', 1, 9);
+    // 스키마 점검이 '시트 없음'으로 가득 차지 않게 스키마에 있는 시트를 헤더만 갖춰 만들어 둔다(Contents·Integrity_Logs 는 위에서 만든 것)
+    const schemas = vm.runInContext('SHEET_SCHEMAS', W.ctx);
+    const extra = Object.keys(schemas).filter((n) => n !== 'Contents' && n !== 'Integrity_Logs').map((n) => new BSheet(n, 1, schemas[n].length, { values: [schemas[n]] }));
+    logs.values = [schemas.Integrity_Logs]; logs.cols = schemas.Integrity_Logs.length;
+    const ss = new BSS('원본', [contents, logs].concat(extra), registry);
+    W.ctx.SpreadsheetApp = Object.assign({}, W.ctx.SpreadsheetApp, { getActiveSpreadsheet: () => ss });
+    const realGet = W.ctx.DriveApp.getFileById;
+    W.ctx.DriveApp.getFileById = (id) => { calls[id] = (calls[id] || 0) + 1; clock += opts.stepMs || 0; return realGet(id); };
+    // payload 폴더(고아 파일 점검)
+    const pf = new BFolder('daejeon_youth', registry);
+    for (let i = 1; i <= opts.rows; i++) { files.get(i).parent = pf; pf.files.push(files.get(i)); }
+    for (let i = 0; i < (opts.orphans || 0); i++) pf.adopt(new BFile('payload_orphan_' + i + '.json', '{}', new Date(), registry));
+    W.env.props.set('FOLDER_DAEJEON_YOUTH', pf.id);
+    // 고아 파일 점검은 파일마다 이름을 읽을 때 시간이 든다(건너뛰기용 next() 는 공짜) — 이어하기 비용을 현실적으로 흉내 낸다
+    if (opts.orphanStepMs) pf.files.forEach((f) => { const gn = f.getName.bind(f); f.getName = () => { clock += opts.orphanStepMs; return gn(); }; });
+    return Object.assign(w, { logs, calls, advance: (ms) => { clock += ms; }, getClock: () => clock });
+  }
+  const logRows = (w) => (w.logs.appended || []);
+
+  {
+    const w = integrityWorld({ rows: 5, stepMs: 10 });
+    const r = w.W.ctx.runIntegrityCheck_('test');
+    ok('작으면 한 번에 끝난다(partial=false) · 문제 없음 한 줄', r.ok && r.partial === false && r.total_issues === 0 && logRows(w).length === 1 && logRows(w)[0][2] === 'INFO', JSON.stringify(r));
+    ok('끝나면 상태·실행 중 표시를 지운다', !w.W.env.props.has('INTEGRITY_STATE') && !w.W.env.props.has('INTEGRITY_RUNNING_AT') && w.triggers.length === 0);
+  }
+
+  {
+    // 행 100개, 드라이브 호출 1번마다 3초 → 4분 30초(270초)에 90행쯤 처리하고 멈춰야 한다
+    const w = integrityWorld({ rows: 100, stepMs: 3000, broken: [10, 95] });
+    const r1 = w.W.ctx.runIntegrityCheck_('trigger');
+    const st1 = JSON.parse(w.W.env.props.get('INTEGRITY_STATE'));
+    ok('1회차: 4분 30초에서 멈추고 partial=true', r1.partial === true && r1.phase === 'CONTENTS' && st1.row > 80 && st1.row < 100, JSON.stringify([r1, st1.row]));
+    ok('멈춘 지점(행 번호)이 속성에 저장된다', st1.phase === 'CONTENTS' && st1.v === 1 && w.W.env.props.get('INTEGRITY_RESUME_SCHEDULED') === '1');
+    ok('이어하기 1회성 트리거가 1개 예약된다(2분 뒤)', w.triggers.filter((t) => t.fn === 'runIntegrityResumeTrigger').length === 1 && w.triggers[0].calls.some((c) => c[0] === 'timeBased'));
+    ok('1회차에 찾은 문제(10행)는 이미 시트에 적혔고, 아직 \'문제 없음\' 줄은 없다', logRows(w).length === 1 && logRows(w)[0][2] === 'CRITICAL' && logRows(w)[0][5] === 'C-10', JSON.stringify(logRows(w)));
+    ok('1회차는 270초를 넘기지 않는다', w.getClock() - 1000000 <= 270000 + 3000 + 100, w.getClock() - 1000000);
+    const r1b = w.W.ctx.runIntegrityCheck_('again-too-soon');
+    ok('실행 중 표시가 없을 때만 새로 돈다(이전 실행이 끝났으므로 이어서 진행)', r1b.skipped !== true);
+    // 상태를 되돌려 1회차 직후 상태에서 resume 을 시험한다
+    const w2 = integrityWorld({ rows: 100, stepMs: 3000, broken: [10, 95] });
+    w2.W.ctx.runIntegrityCheck_('trigger');
+    w2.W.ctx.runIntegrityResumeTrigger();
+    const doneState = w2.W.env.props.has('INTEGRITY_STATE');
+    ok('2회차(이어하기)에서 끝까지 간다 — 상태 삭제·트리거 정리', doneState === false && w2.W.env.props.has('INTEGRITY_RESUME_SCHEDULED') === false);
+    const broken2 = logRows(w2).filter((x) => x[3] === 'BROKEN_FILE_ID');
+    ok('두 실행에 걸쳐 깨진 파일 2건(10행·95행)이 정확히 한 번씩 적힌다', broken2.length === 2 && broken2.map((x) => x[5]).sort().join(',') === 'C-10,C-95' && broken2.every((x) => x[2] === 'CRITICAL'), JSON.stringify(broken2));
+    ok('문제가 있으면 문제 없음(INFO) 줄은 쓰지 않는다', !logRows(w2).some((x) => x[2] === 'INFO'));
+    const ids = Object.keys(w2.calls).filter((k) => !/^ss_|^bd_/.test(k));
+    ok('모든 행의 파일을 정확히 한 번씩만 확인한다(처음부터 다시 하지 않는다)', ids.filter((k) => !/^missing_/.test(k)).every((k) => w2.calls[k] === 1) && Object.keys(w2.calls).filter((k) => /^missing_/.test(k)).every((k) => w2.calls[k] === 1), JSON.stringify(w2.calls).slice(0, 200));
+    ok('이어하기 트리거 핸들러가 이미 지나간 1회성 트리거를 지운다', w2.triggers.filter((t) => t.fn === 'runIntegrityResumeTrigger').length === 0);
+  }
+
+  {
+    // 고아 파일 단계에서 멈췄다가 이어하기 — 찾은 고아가 중복·누락 없이 적힌다
+    const w = integrityWorld({ rows: 3, stepMs: 0, orphans: 120, orphanStepMs: 1500 });
+    const r1 = w.W.ctx.runIntegrityCheck_('trigger');
+    const st = JSON.parse(w.W.env.props.get('INTEGRITY_STATE') || 'null');
+    ok('고아 파일 단계에서도 4분 30초에 멈추고 이어하기를 예약한다', r1.partial === true && r1.phase === 'ORPHANS' && st && st.orphanSkip > 0 && w.triggers.length === 1, JSON.stringify([r1, st]));
+    w.W.ctx.runIntegrityResumeTrigger();
+    const orphanRows = logRows(w).filter((x) => x[3] === 'ORPHAN_DRIVE_FILE');
+    ok('고아 120개가 중복·누락 없이 한 번씩 적힌다', orphanRows.length === 120 && new Set(orphanRows.map((x) => x[5])).size === 120 && !w.W.env.props.has('INTEGRITY_STATE'), [orphanRows.length, new Set(orphanRows.map((x) => x[5])).size]);
+  }
+
+  {
+    // 동시 실행 방지 · 오래된 상태 버리기
+    const w = integrityWorld({ rows: 3, stepMs: 0 });
+    w.W.env.props.set('INTEGRITY_RUNNING_AT', String(w.getClock() - 60000));
+    const r = w.W.ctx.runIntegrityCheck_('x');
+    ok('1분 전부터 실행 중이면 새로 돌지 않는다(skipped)', r.skipped === true && r.reason === 'already_running' && logRows(w).length === 0);
+    w.W.env.props.set('INTEGRITY_RUNNING_AT', String(w.getClock() - 20 * 60 * 1000));
+    ok('20분 넘게 남은 실행 표시는 죽은 것으로 보고 새로 돈다', w.W.ctx.runIntegrityCheck_('x').skipped !== true);
+    w.W.env.props.set('INTEGRITY_STATE', JSON.stringify({ v: 1, phase: 'ORPHANS', row: 1, total: 9, critical: 9, warn: 0, written: 9, startedAt: w.getClock() - 20 * 3600 * 1000, actor: 'old' }));
+    const r2 = w.W.ctx.runIntegrityCheck_('x');
+    ok('12시간 넘은 저장 상태는 버리고 처음부터(옛 문제 수가 섞이지 않는다)', r2.total_issues === 0 && r2.critical === 0, JSON.stringify(r2));
+    ok('백업 상태 요약에 점검 대기 여부가 나온다', typeof w.W.ctx.getBackupStatus_().pending_integrity === 'boolean');
+  }
 }
 
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));

@@ -154,7 +154,9 @@ function runManualBackupFromMenu() {
 
 function runIntegrityCheckFromMenu() {
   const res = runIntegrityCheck_('sheet-menu');
-  SpreadsheetApp.getUi().alert('무결성 점검 완료: 총 ' + res.total_issues + '건 발견');
+  SpreadsheetApp.getUi().alert(res.partial
+    ? '무결성 점검을 이어서 하는 중이에요(지금까지 ' + res.total_issues + '건). 몇 분 뒤 Integrity_Logs 시트에서 확인하세요.'
+    : '무결성 점검 완료: 총 ' + res.total_issues + '건 발견');
 }
 
 /**
@@ -346,6 +348,7 @@ function installSystemTriggers_() {
     'runDailyBackupTrigger',
     'runWeeklyBackupTrigger',
     'runMonthlyBackupTrigger',
+    'runIntegrityCheckTrigger',
     'runMaintenanceTrigger'
   ];
   ScriptApp.getProjectTriggers().forEach((t) => {
@@ -354,11 +357,20 @@ function installSystemTriggers_() {
     }
   });
 
-  // 일일 백업 + 무결성 점검 (매일 03:00 KST)
+  // 일일 백업 (매일 03:00 KST)
   ScriptApp.newTrigger('runDailyBackupTrigger')
     .timeBased()
     .everyDays(1)
     .atHour(3)
+    .inTimezone('Asia/Seoul')
+    .create();
+
+  // 무결성 점검 (매일 05:00 KST) — 백업(03:00~)·주간(일 03:30)·월간(1일 04:00)과 1시간 이상 떨어뜨린다.
+  // 한 번에 4분 30초까지만 돌고 남으면 2분 뒤 이어서 한다(runIntegrityResumeTrigger).
+  ScriptApp.newTrigger('runIntegrityCheckTrigger')
+    .timeBased()
+    .everyDays(1)
+    .atHour(5)
     .inTimezone('Asia/Seoul')
     .create();
 

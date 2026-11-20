@@ -3,13 +3,15 @@
  * Content Hub OS
  *
  * 트리거 (Setup.gs 가 설치)
- *  - runDailyBackupTrigger     매일 03:00 KST  : 시트 사본 + payload 배치 + 매니페스트 + 무결성
+ *  - runDailyBackupTrigger     매일 03:00 KST  : 시트 사본 + payload 배치 + 매니페스트 + 보존 정리
+ *  - runIntegrityCheckTrigger  매일 05:00 KST  : 무결성 점검(백업과 분리 · 4분 30초마다 끊고 이어하기)
  *  - runWeeklyBackupTrigger    매주 일 03:30   : 주간 보관본
  *  - runMonthlyBackupTrigger   매월 1일 04:00  : 월간 보관본
  *  - runMaintenanceTrigger     15분마다        : 끊긴 백업 이어하기 · 만료 리스 회수 · Ops_Queue 재적용
  *
  * 설계 원칙
- *  - 시트는 값 루프가 아니라 파일 통째 복사(makeCopy) — 수식·서식·모든 시트 보존, 6분 예산 안전.
+ *  - 시트는 새 스프레드시트에 시트별 copyTo — 수식·서식·모든 시트 보존, 6분 예산 안전.
+ *    (파일 통째 makeCopy 는 컨테이너 바인딩 Apps Script 까지 복제해 백업 때마다 스크립트 사본이 쌓여 쓰지 않는다 — 2026-11-20)
  *  - payload는 폴더 복사 API가 없어 파일별 복사. 80개/배치 + 이어하기 커서.
  *  - 모든 스냅샷에 backup_manifest.json 을 남겨 복구 전에 기계 검증.
  *  - 원본 덮어쓰기 금지: 복구는 항상 "사본 + restored_YYYYMMDD/" 로만.
@@ -25,11 +27,33 @@ const BACKUP_RESUME_DELAY_MIN_ = 5;
  * ------------------------------------------------------------------ */
 
 function runDailyBackupTrigger() {
+  // 백업은 이미 약 4분을 쓴다 — 무결성 점검을 같은 실행에 이으면 6분 한도를 넘어 강제 종료된다(2026-11-20). 점검은 별도 트리거.
   runTriggerSafely_('DAILY', function () {
-    const res = runBackupPipeline_('DAILY', 'trigger');
-    runIntegrityCheck_('trigger');
-    return res;
+    return runBackupPipeline_('DAILY', 'trigger');
   });
+}
+
+/** 무결성 점검 트리거(매일 05:00 KST) — 한 번에 4분 30초까지만 돌고, 남으면 이어하기 트리거를 예약한다. */
+function runIntegrityCheckTrigger() {
+  runTriggerSafely_('INTEGRITY', function () {
+    return runIntegrityCheck_('trigger');
+  });
+}
+
+/** 무결성 점검 이어하기용 1회성 트리거 */
+function runIntegrityResumeTrigger() {
+  try {
+    PropertiesService.getScriptProperties().deleteProperty('INTEGRITY_RESUME_SCHEDULED');
+    // 이미 지나간 1회성 트리거가 쌓이지 않게 자기 자신 종류는 정리한다
+    ScriptApp.getProjectTriggers().forEach(function (t) {
+      if (t.getHandlerFunction() === 'runIntegrityResumeTrigger') {
+        try { ScriptApp.deleteTrigger(t); } catch (e) { /* 이미 지워짐 */ }
+      }
+    });
+    runIntegrityCheck_('resume');
+  } catch (err) {
+    recordBackupFailure_('INTEGRITY', err);
+  }
 }
 
 function runWeeklyBackupTrigger() {
@@ -173,11 +197,14 @@ function runBackupPipeline_(tier, actor) {
   // 1) 설정 프리셋 JSON (토큰 제외)
   exportConfigPresets_(ss, folder, snapshotName);
 
-  // 2) 스프레드시트 통째 사본 — 수식·서식·전 시트 보존
+  // 2) 스프레드시트 사본 — 수식·서식·전 시트 보존, 바인딩된 Apps Script 는 복제하지 않는다
+  //    (makeCopy 를 쓰면 백업 때마다 'ContentHub M1 API 사본' 프로젝트가 1개씩 쌓였다)
   let sheetCopy = null;
+  let sheetCopyReport = null;
   try {
-    const file = DriveApp.getFileById(ss.getId());
-    sheetCopy = file.makeCopy(snapshotName + '_SHEETS', folder);
+    const made = copySpreadsheetWithoutScript_(ss, snapshotName + '_SHEETS', folder);
+    sheetCopy = made.file;
+    sheetCopyReport = made.report;
   } catch (err) {
     recordBackupFailure_(tier, err);
     throw err;
@@ -191,6 +218,7 @@ function runBackupPipeline_(tier, actor) {
     folderId: folder.getId(),
     sheetsFileId: sheetCopy.getId(),
     sheetsFileSize: sheetCopy.getSize(),
+    sheetCopyReport: sheetCopyReport,
     payloadIndex: 0,
     copied: [],          // {name, size, fileId, fingerprint}
     startedAt: nowMs_(),
@@ -218,7 +246,7 @@ function runBackupPipeline_(tier, actor) {
   }
 
   // 4) 매니페스트 + 보존 정리 + 기록
-  const manifest = writeManifest_(ss, folder, snapshotName, sheetCopy, state.copied);
+  const manifest = writeManifest_(ss, folder, snapshotName, sheetCopy, state.copied, state.sheetCopyReport);
   applyRetention_(tier, folder);
   clearBackupState_();
 
@@ -239,6 +267,39 @@ function runBackupPipeline_(tier, actor) {
 
   return { ok: true, partial: false, copied: state.copied.length, snapshot: snapshotName,
            manifest_hash: manifest.manifest_hash };
+}
+
+/**
+ * 스프레드시트를 "바인딩된 Apps Script 없이" 복사한다.
+ *  새 스프레드시트를 만들고 시트를 하나씩 copyTo(값·수식·서식·데이터 검증·조건부 서식·고정 행 유지) 한 뒤
+ *  이름·순서를 원본과 맞추고 백업 폴더로 옮긴다. 도중에 실패하면 반쪽 사본은 휴지통으로 보낸다.
+ * @return {{file: GoogleAppsScript.Drive.File, report: {sheets: number, mismatches: string[]}}}
+ */
+function copySpreadsheetWithoutScript_(srcSs, name, folder) {
+  const target = SpreadsheetApp.create(name);
+  const targetId = target.getId();
+  try {
+    const report = { sheets: 0, mismatches: [] };
+    // 새 파일이 가진 기본 시트가 원본 시트 이름과 겹치지 않게 임시 이름을 붙여 두고, 끝나면 지운다
+    const tmp = target.getSheets()[0];
+    tmp.setName('__backup_tmp__');
+    srcSs.getSheets().forEach(function (src) {
+      const copy = src.copyTo(target);          // 이름이 'Copy of …' 로 만들어진다
+      copy.setName(src.getName());
+      if (src.isSheetHidden()) copy.hideSheet();
+      report.sheets++;
+      if (copy.getLastRow() !== src.getLastRow() || copy.getLastColumn() !== src.getLastColumn()) {
+        report.mismatches.push(src.getName());
+      }
+    });
+    target.deleteSheet(tmp);
+    const file = DriveApp.getFileById(targetId);
+    file.moveTo(folder);                        // 드라이브 루트에 남지 않게 백업 폴더로
+    return { file: file, report: report };
+  } catch (err) {
+    try { DriveApp.getFileById(targetId).setTrashed(true); } catch (e) { /* 이미 없음 */ }
+    throw err;
+  }
 }
 
 function exportConfigPresets_(ss, folder, snapshotName) {
@@ -354,7 +415,7 @@ function continuePendingBackup_() {
   let sheetFile = null;
   try { sheetFile = DriveApp.getFileById(state.sheetsFileId); } catch (err) { sheetFile = null; }
 
-  const manifest = writeManifest_(ss, dest, state.snapshotName, sheetFile, state.copied);
+  const manifest = writeManifest_(ss, dest, state.snapshotName, sheetFile, state.copied, state.sheetCopyReport);
   applyRetention_(state.tier, dest);
   appendSystemHealth_({
     eventType: 'BACKUP_' + state.tier,
@@ -384,7 +445,7 @@ function scheduleResume_() {
  * 매니페스트 · 보존
  * ------------------------------------------------------------------ */
 
-function writeManifest_(ss, folder, snapshotName, sheetFile, copied) {
+function writeManifest_(ss, folder, snapshotName, sheetFile, copied, sheetCopyReport) {
   const sheets = ss.getSheets().map(function (sh) {
     const headers = sh.getLastColumn() > 0
       ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String)
@@ -411,6 +472,7 @@ function writeManifest_(ss, folder, snapshotName, sheetFile, copied) {
     sheet_file_id: sheetFile ? sheetFile.getId() : '',
     sheet_file_size: sheetFile ? sheetFile.getSize() : 0,
     sheets: sheets,
+    sheet_copy_check: sheetCopyReport || null,
     payload_count: payloads.length,
     payloads: payloads,
     total_bytes: totalBytes
@@ -422,37 +484,53 @@ function writeManifest_(ss, folder, snapshotName, sheetFile, copied) {
   return manifest;
 }
 
+/**
+ * 파일 이름 → 스냅샷 묶음 키.  SNAPSHOT_DAILY_20261120_030015_SHEETS / _backup_manifest.json / _config_presets.json /
+ * _payload_xxx.json 은 모두 같은 스냅샷 SNAPSHOT_DAILY_20261120_030015 이다. 규칙에 안 맞는 이름은 null(건드리지 않는다).
+ */
+function snapshotKeyOf_(name) {
+  const m = String(name || '').match(/^(SNAPSHOT_(DAILY|WEEKLY|MONTHLY|MANUAL)_(\d{8}_\d{6}))(?:_|$)/);
+  return m ? { key: m[1], tier: m[2], stamp: m[3] } : null;
+}
+
+/**
+ * 보존 정리 — 스냅샷(타임스탬프까지 같은 파일들의 묶음) 단위로 keep 개만 남기고 오래된 묶음을 휴지통으로 보낸다.
+ *  (2026-11-20 수정: 예전에는 payload 파일 하나하나가 스냅샷 하나로 세어져 14일 보관이 2일치로 줄었다)
+ *  · 같은 tier 의 스냅샷만 센다(수동 백업이 일일 보관 칸을 차지하거나 지워지지 않게).
+ *  · 최신 3개는 keep 이 얼마든 보호하고, 지금 이어하기 중인 스냅샷은 건드리지 않는다.
+ * @return {{kept: string[], trashed: string[]}}
+ */
 function applyRetention_(tier, folder) {
   const keep = BACKUP_KEEP_[tier];
-  if (!keep) return;
+  if (!keep) return { kept: [], trashed: [] };
 
-  const all = [];
+  const groups = {};
   const it = folder.getFiles();
   while (it.hasNext()) {
     const f = it.next();
-    const n = f.getName();
-    if (n.indexOf('SNAPSHOT_') !== 0) continue;
-    all.push({ file: f, name: n, time: f.getDateCreated().getTime() });
+    const parsed = snapshotKeyOf_(f.getName());
+    if (!parsed || parsed.tier !== tier) continue;
+    const g = groups[parsed.key] || (groups[parsed.key] = { stamp: parsed.stamp, files: [] });
+    g.files.push(f);
   }
-  all.sort(function (a, b) { return b.time - a.time; });   // 최신 먼저
 
-  const snapshotNames = {};
-  all.forEach(function (x) {
-    const key = x.name.replace(/_(SHEETS|backup_manifest\.json|config_presets\.json).*$/, '');
-    snapshotNames[key] = snapshotNames[key] || [];
-    snapshotNames[key].push(x.file);
+  // 최신 먼저 — 키의 타임스탬프(yyyyMMdd_HHmmss)는 글자 순서가 곧 시간 순서다
+  const keys = Object.keys(groups).sort(function (a, b) {
+    return groups[a].stamp < groups[b].stamp ? 1 : (groups[a].stamp > groups[b].stamp ? -1 : 0);
   });
 
-  const keys = Object.keys(snapshotNames).sort(function (a, b) {
-    return snapshotNames[b][0].getDateCreated().getTime() - snapshotNames[a][0].getDateCreated().getTime();
-  });
-
-  // 최신 3개는 무조건 보호
-  keys.slice(Math.max(keep, 3)).forEach(function (k) {
-    snapshotNames[k].forEach(function (f) {
+  const pending = loadBackupState_();
+  const pendingName = pending && pending.snapshotName ? String(pending.snapshotName) : '';
+  const keepN = Math.max(keep, 3);
+  const trashed = [];
+  keys.slice(keepN).forEach(function (k) {
+    if (k === pendingName) return;
+    groups[k].files.forEach(function (f) {
       try { f.setTrashed(true); } catch (err) { /* 이미 없음 */ }
     });
+    trashed.push(k);
   });
+  return { kept: keys.slice(0, keepN), trashed: trashed };
 }
 
 function appendSystemHealth_(payload) {
@@ -620,67 +698,173 @@ function remapContentsFromRestore_(fileIdByName) {
  * 무결성 점검 (6종)
  * ------------------------------------------------------------------ */
 
+const INTEGRITY_BUDGET_MS_ = 270000;            // 한 번에 4분 30초까지만(6분 한도 안전 여유)
+const INTEGRITY_RESUME_DELAY_MIN_ = 2;
+const INTEGRITY_STALE_RUN_MS_ = 8 * 60 * 1000;  // 이보다 오래 '실행 중' 표시가 남아 있으면 죽은 실행으로 본다
+const INTEGRITY_STATE_MAX_AGE_MS_ = 12 * 60 * 60 * 1000;
+const INTEGRITY_MAX_ISSUES_ = 200;
+const INTEGRITY_ORPHAN_SCAN_MAX_ = 400;         // 폴더 하나에서 훑는 파일 수
+
+function loadIntegrityState_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('INTEGRITY_STATE');
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (err) { return null; }
+}
+
+function saveIntegrityState_(st) {
+  PropertiesService.getScriptProperties().setProperty('INTEGRITY_STATE', JSON.stringify(st));
+}
+
+function clearIntegrityState_() {
+  const p = PropertiesService.getScriptProperties();
+  p.deleteProperty('INTEGRITY_STATE');
+  p.deleteProperty('INTEGRITY_RESUME_SCHEDULED');
+}
+
+function scheduleIntegrityResume_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('INTEGRITY_RESUME_SCHEDULED') === '1') return;
+  const soon = new Date(Date.now() + INTEGRITY_RESUME_DELAY_MIN_ * 60 * 1000);
+  ScriptApp.newTrigger('runIntegrityResumeTrigger').timeBased().at(soon).create();
+  props.setProperty('INTEGRITY_RESUME_SCHEDULED', '1');
+}
+
+/** 본문 시트 행에서 payload_file_id → content_id 표(드라이브 호출 없음). 고아 파일 판정에 쓴다. */
+function integrityReferenced_(rows) {
+  const out = {};
+  if (!rows.length) return out;
+  const headers = rows[0].map(String);
+  const idCol = headers.indexOf('content_id');
+  const fileCol = headers.indexOf('payload_file_id');
+  if (idCol < 0 || fileCol < 0) return out;
+  for (let r = 1; r < rows.length; r++) {
+    const fileId = String(rows[r][fileCol] || '').trim();
+    if (fileId) out[fileId] = String(rows[r][idCol] || '').trim();
+  }
+  return out;
+}
+
+/**
+ * 무결성 점검 (6종) — 4분 30초 안에 끝나지 않으면 상태를 저장하고 멈춘 뒤 2분 뒤 이어서 한다.
+ *  단계: CONTENTS(행별 payload 파일 확인) → ORPHANS(고아 파일) → REST(스키마·공유 권한).
+ *  상태는 PropertiesService(INTEGRITY_STATE)에 작게만 저장한다(찾은 문제는 그때그때 Integrity_Logs 에 적는다).
+ * @return {{ok:true, partial:boolean, total_issues:number, critical:number, warn:number}}
+ */
 function runIntegrityCheck_(actor) {
+  const props = PropertiesService.getScriptProperties();
+  const t0 = nowMs_();
+  const runningAt = Number(props.getProperty('INTEGRITY_RUNNING_AT') || 0);
+  if (runningAt && t0 - runningAt < INTEGRITY_STALE_RUN_MS_) {
+    return { ok: true, partial: true, skipped: true, reason: 'already_running', total_issues: 0, critical: 0, warn: 0 };
+  }
+  props.setProperty('INTEGRITY_RUNNING_AT', String(t0));
+  try {
+    return runIntegrityStep_(actor, t0);
+  } finally {
+    props.deleteProperty('INTEGRITY_RUNNING_AT');
+  }
+}
+
+function runIntegrityStep_(actor, t0) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const issues = [];
+  let st = loadIntegrityState_();
+  if (st && (!st.startedAt || t0 - st.startedAt > INTEGRITY_STATE_MAX_AGE_MS_)) st = null;   // 오래된 상태는 버리고 처음부터
+  if (!st) {
+    st = { v: 1, phase: 'CONTENTS', row: 1, orphanFolder: 0, orphanSkip: 0,
+           total: 0, critical: 0, warn: 0, written: 0, runs: 0, startedAt: t0, actor: String(actor || 'system') };
+  }
+  st.runs = (st.runs || 0) + 1;
+  const over = function () { return nowMs_() - t0 > INTEGRITY_BUDGET_MS_; };
+
+  // 이번 실행에서 찾은 문제 — 멈추거나 끝낼 때 한 번에 시트에 적는다
+  let issues = [];
+  const flush = function () {
+    if (!issues.length) return;
+    issues.forEach(function (i) { st.total++; if (i.severity === 'CRITICAL') st.critical++; else st.warn++; });
+    const room = Math.max(0, INTEGRITY_MAX_ISSUES_ - (st.written || 0));
+    const toWrite = issues.slice(0, room);
+    if (toWrite.length) writeIntegrityIssues_(toWrite, st.actor, true);
+    st.written = (st.written || 0) + toWrite.length;
+    issues = [];
+  };
+  const pause = function () {
+    flush();
+    saveIntegrityState_(st);
+    scheduleIntegrityResume_();
+    return { ok: true, partial: true, phase: st.phase, total_issues: st.total, critical: st.critical, warn: st.warn };
+  };
 
   const contents = ss.getSheetByName('Contents');
   const rows = contents && contents.getLastRow() > 1
     ? contents.getRange(1, 1, contents.getLastRow(), contents.getLastColumn()).getValues()
     : [];
-  const headers = rows.length ? rows[0].map(String) : [];
-  const idCol = headers.indexOf('content_id');
-  const brandCol = headers.indexOf('brand');
-  const fileCol = headers.indexOf('payload_file_id');
-  const statusCol = headers.indexOf('status');
-  const updatedByCol = headers.indexOf('updated_by');
 
-  const referenced = {};
-  if (rows.length > 1 && idCol >= 0 && fileCol >= 0) {
-    for (let r = 1; r < rows.length; r++) {
-      const contentId = String(rows[r][idCol] || '').trim();
-      const fileId = String(rows[r][fileCol] || '').trim();
-      if (!fileId) {
-        // DRAFT·캘린더 슬롯은 payload가 아직 없는 것이 정상
-        const st = statusCol >= 0 ? String(rows[r][statusCol]) : '';
-        // 과거 발행분을 시트로만 가져온 행(published-import)은 payload 원본이 애초에 없다.
-        // 이걸 WARN 으로 올리면 매 점검마다 같은 경고가 쌓여 진짜 문제를 가린다.
-        const by = updatedByCol >= 0 ? String(rows[r][updatedByCol] || '') : '';
-        if (st !== 'DRAFT' && by !== 'published-import') {
-          issues.push(issue_('WARN', 'BROKEN_FILE_ID', rows[r][brandCol] || '', contentId,
-            'payload_file_id 가 비어 있습니다 (status=' + st + ')'));
+  /* 1) 행별 payload 파일 확인 — 행마다 드라이브를 부르므로 시간을 보며 간다 */
+  if (st.phase === 'CONTENTS') {
+    const headers = rows.length ? rows[0].map(String) : [];
+    const idCol = headers.indexOf('content_id');
+    const brandCol = headers.indexOf('brand');
+    const fileCol = headers.indexOf('payload_file_id');
+    const statusCol = headers.indexOf('status');
+    const updatedByCol = headers.indexOf('updated_by');
+
+    if (rows.length > 1 && idCol >= 0 && fileCol >= 0) {
+      for (let r = st.row || 1; r < rows.length; r++) {
+        if (over()) { st.row = r; return pause(); }
+        const contentId = String(rows[r][idCol] || '').trim();
+        const fileId = String(rows[r][fileCol] || '').trim();
+        if (!fileId) {
+          // DRAFT·캘린더 슬롯은 payload가 아직 없는 것이 정상
+          const stt = statusCol >= 0 ? String(rows[r][statusCol]) : '';
+          // 과거 발행분을 시트로만 가져온 행(published-import)은 payload 원본이 애초에 없다.
+          // 이걸 WARN 으로 올리면 매 점검마다 같은 경고가 쌓여 진짜 문제를 가린다.
+          const by = updatedByCol >= 0 ? String(rows[r][updatedByCol] || '') : '';
+          if (stt !== 'DRAFT' && by !== 'published-import') {
+            issues.push(issue_('WARN', 'BROKEN_FILE_ID', rows[r][brandCol] || '', contentId,
+              'payload_file_id 가 비어 있습니다 (status=' + stt + ')'));
+          }
+          continue;
         }
-        continue;
-      }
-      referenced[fileId] = contentId;
-      try {
-        const f = DriveApp.getFileById(fileId);
-        if (f.getSize() > MAX_PAYLOAD_BYTES_) {
-          issues.push(issue_('WARN', 'OVERSIZED_PAYLOAD', rows[r][brandCol] || '', contentId,
-            'payload ' + f.getSize() + ' bytes (>200KB)'));
+        try {
+          const f = DriveApp.getFileById(fileId);
+          if (f.getSize() > MAX_PAYLOAD_BYTES_) {
+            issues.push(issue_('WARN', 'OVERSIZED_PAYLOAD', rows[r][brandCol] || '', contentId,
+              'payload ' + f.getSize() + ' bytes (>200KB)'));
+          }
+          f.getBlob().getDataAsString().slice(0, 16);   // 읽기 성공 = 파일 정상
+        } catch (err) {
+          issues.push(issue_('CRITICAL', 'BROKEN_FILE_ID', rows[r][brandCol] || '', contentId,
+            'file_id 접근 실패: ' + sanitizeErrorDetail_(err.message)));
         }
-        f.getBlob().getDataAsString().slice(0, 16);   // 읽기 성공 = 파일 정상
-      } catch (err) {
-        issues.push(issue_('CRITICAL', 'BROKEN_FILE_ID', rows[r][brandCol] || '', contentId,
-          'file_id 접근 실패: ' + sanitizeErrorDetail_(err.message)));
       }
     }
+    st.phase = 'ORPHANS'; st.orphanFolder = 0; st.orphanSkip = 0; st.row = 1;
   }
 
-  // 고아 파일 (Drive에 있는데 Contents가 참조하지 않음)
-  payloadFolders_().forEach(function (folder) {
-    const it = folder.getFiles();
-    let n = 0;
-    while (it.hasNext() && n < 400) {
-      const f = it.next(); n++;
-      if (/^payload_.*\.json$/.test(f.getName()) && !referenced[f.getId()]) {
-        issues.push(issue_('WARN', 'ORPHAN_DRIVE_FILE', '', f.getName(),
-          'Contents 미참조 payload (file_id=' + f.getId() + ')'));
+  /* 2) 고아 파일 (Drive에 있는데 Contents가 참조하지 않음) — 참조 표는 시트에서 다시 만든다(드라이브 호출 없음) */
+  if (st.phase === 'ORPHANS') {
+    const referenced = integrityReferenced_(rows);
+    const folders = payloadFolders_();
+    for (let fi = st.orphanFolder || 0; fi < folders.length; fi++) {
+      const it = folders[fi].getFiles();
+      let n = 0;
+      // 이어하기: 앞서 훑은 만큼 건너뛴다(이름·ID 만 읽으므로 가볍다)
+      const skip = fi === (st.orphanFolder || 0) ? (st.orphanSkip || 0) : 0;
+      while (n < skip && it.hasNext()) { it.next(); n++; }
+      while (it.hasNext() && n < INTEGRITY_ORPHAN_SCAN_MAX_) {
+        if (over()) { st.orphanFolder = fi; st.orphanSkip = n; return pause(); }
+        const f = it.next(); n++;
+        if (/^payload_.*\.json$/.test(f.getName()) && !referenced[f.getId()]) {
+          issues.push(issue_('WARN', 'ORPHAN_DRIVE_FILE', '', f.getName(),
+            'Contents 미참조 payload (file_id=' + f.getId() + ')'));
+        }
       }
     }
-  });
+    st.phase = 'REST'; st.orphanFolder = 0; st.orphanSkip = 0;
+  }
 
-  // 스키마 불일치
+  /* 3) 스키마 불일치 · 공유 권한 노출 감사 — 가벼워서 한 번에 */
+  if (over()) return pause();
   const schemas = (typeof SHEET_SCHEMAS !== 'undefined') ? SHEET_SCHEMAS : null;
   if (schemas) {
     Object.keys(schemas).forEach(function (name) {
@@ -697,7 +881,6 @@ function runIntegrityCheck_(actor) {
     });
   }
 
-  // 공유 권한 노출 감사
   try {
     const props = PropertiesService.getScriptProperties();
     ['ROOT_FOLDER_ID', 'BACKUP_ROOT_FOLDER_ID', 'BACKUP_DAILY_FOLDER_ID', 'FOLDER_DAEJEON_YOUTH']
@@ -720,14 +903,11 @@ function runIntegrityCheck_(actor) {
     }
   } catch (err) { /* 권한 조회 실패는 skip */ }
 
-  writeIntegrityIssues_(issues, actor);
-
-  return {
-    ok: true,
-    total_issues: issues.length,
-    critical: issues.filter(function (i) { return i.severity === 'CRITICAL'; }).length,
-    warn: issues.filter(function (i) { return i.severity === 'WARN'; }).length
-  };
+  flush();
+  if (st.total === 0) writeIntegrityIssues_([], st.actor);   // 문제 없음 한 줄(INFO)
+  const result = { ok: true, partial: false, runs: st.runs, total_issues: st.total, critical: st.critical, warn: st.warn };
+  clearIntegrityState_();
+  return result;
 }
 
 function issue_(severity, type, brand, targetRef, detail) {
@@ -738,11 +918,12 @@ function payloadMinimal_(file) {
   try { return JSON.parse(file.getBlob().getDataAsString()); } catch (err) { return {}; }
 }
 
-function writeIntegrityIssues_(issues, actor) {
+function writeIntegrityIssues_(issues, actor, quiet) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Integrity_Logs');
   if (!sheet) return;
   if (!issues.length) {
+    if (quiet) return;
     sheet.appendRow(['INT-' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMddHHmmss') + '-000',
       Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'), 'INFO', 'SCHEMA_MISMATCH',
       '', 'ALL', '점검 완료 · 문제 없음 (' + (actor || 'system') + ')', true, formatKstIso_(new Date())]);
@@ -777,6 +958,7 @@ function getBackupStatus_() {
     backup_stale: staleDays === null || staleDays >= 2,
     last_failure_at: props.getProperty('LAST_BACKUP_FAILURE_AT') || null,
     last_failure_msg: props.getProperty('LAST_BACKUP_FAILURE_MSG') || null,
-    pending_backup: !!loadBackupState_()
+    pending_backup: !!loadBackupState_(),
+    pending_integrity: !!loadIntegrityState_()
   };
 }
