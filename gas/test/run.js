@@ -345,6 +345,7 @@ ok('자막이 있는 렌더 오더 접수', o.ok, o);
 const rcap = A.env.fetched[A.env.fetched.length - 1].body.payload;
 eq('자막 큐는 [start,end,text] 로 줄여 보낸다', JSON.stringify(rcap.captions), JSON.stringify([[0.23, 1.4, '오토바이 여러 대']]));
 eq('sub_style 을 그대로 넘긴다', rcap.sub_style, 'long');
+eq('응답이 접수한 자막 큐 수를 알려 준다(옛 GAS 는 없어 화면이 알아챈다)', o.ok && o.data.captions, 1);
 o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, oneIn, {
   captions: [[0, 2, '가']], narration: [[0, 2, '와! 대박', 'hype']], narrate: true, voice: 'ko-KR-SunHiNeural', burn_subtitles: false
 }), { brand: 'daejeon_youth' });

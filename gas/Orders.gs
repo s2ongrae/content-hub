@@ -324,9 +324,10 @@ function hubRenderCuts_(raw, inputCount) {
 }
 
 /** 큐 응답(JSON)에서 사람이 볼 값만 꺼낸다. */
-function hubOrderResult_(json, type, workspace, prompt, queueType, cutCount) {
+function hubOrderResult_(json, type, workspace, prompt, queueType, cutCount, cueCounts) {
   const item = (json && json.item) || {};
   const id = String(item.id || (json && json.order_id) || '');
+  const cues = cueCounts || {};
   return {
     order_id: id,
     status: String(item.status || (json && json.status) || ''),
@@ -339,6 +340,8 @@ function hubOrderResult_(json, type, workspace, prompt, queueType, cutCount) {
     needs_approval: !!((json && json.needs_approval) || (item && item.needs_approval)),
     risk_level: String((json && json.risk_level) || (item && item.risk_level) || ''),
     cuts: (typeof cutCount === 'number') ? cutCount : undefined,
+    captions: (typeof cues.captions === 'number') ? cues.captions : undefined,
+    narration: (typeof cues.narration === 'number') ? cues.narration : undefined,
     approval_expires_at: String((json && json.approval_expires_at) || (item && item.approval_expires_at) || '')
   };
 }
@@ -428,7 +431,8 @@ function handleHubOrder_(ss, payload, ctx) {
   }
 
   const out = hubOrderResult_(json, type, workspace, prompt, realRender ? 'content_render' : 'claude_prompt',
-    realRender ? (body.payload.cuts ? body.payload.cuts.length : 0) : undefined);
+    realRender ? (body.payload.cuts ? body.payload.cuts.length : 0) : undefined,
+    realRender ? { captions: (body.payload.captions || []).length, narration: (body.payload.narration || []).length } : undefined);
   appendSystemHealth_({
     eventType: 'HUB_ORDER', status: 'SUCCESS', actor: 'api',
     detail: type + ' → ' + (out.order_id || '(id 없음)') + ' · ' + workspace
