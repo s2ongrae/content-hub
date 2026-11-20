@@ -210,11 +210,46 @@ function hubRenderPayload_(payload) {
     if (!isFinite(c) || c < 0 || c > 1) throw bad('crop_x 는 0~1 사이 숫자여야 합니다.');
     out.crop_x = c;
   }
+  const cuts = hubRenderCuts_(payload.cuts, names.length);
+  if (cuts.length) out.cuts = cuts;
+  return out;
+}
+
+/**
+ * 잘라낼 구간(초) 검사 → 큐 payload 용 짧은 모양으로. 큐 payload 가 4000자까지라 구간 하나를 [from,to] 또는 [from,to,파일번호] 로 줄인다.
+ * 받는 모양은 [from,to,(파일번호)] 또는 { from, to, file }. 영상이 둘 이상이면 파일번호(inputs 순서, 0부터)가 꼭 필요하다.
+ */
+const RENDER_MAX_CUTS = 150;
+const RENDER_MAX_CUT_SPAN_S = 3600;
+function hubRenderCuts_(raw, inputCount) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  if (!Array.isArray(raw)) throw bad('cuts 는 구간 목록(배열)이어야 합니다.');
+  if (raw.length > RENDER_MAX_CUTS) throw bad('cuts 는 ' + RENDER_MAX_CUTS + '개까지입니다(지금 ' + raw.length + '개).');
+  const r2 = function (n) { return Math.round(n * 100) / 100; };
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    let from, to, file;
+    if (Array.isArray(c)) { from = Number(c[0]); to = Number(c[1]); file = c.length > 2 && c[2] !== null && c[2] !== undefined ? Number(c[2]) : null; }
+    else if (c && typeof c === 'object') { from = Number(c.from); to = Number(c.to); file = c.file !== undefined && c.file !== null ? Number(c.file) : null; }
+    else throw bad('cuts[' + i + '] 모양이 올바르지 않습니다.');
+    if (!isFinite(from) || !isFinite(to) || from < 0 || to <= from) throw bad('cuts[' + i + '] 의 from·to 는 0 이상이고 to 가 from 보다 커야 합니다(초).');
+    if (to - from > RENDER_MAX_CUT_SPAN_S) throw bad('cuts[' + i + '] 구간이 너무 깁니다(최대 ' + RENDER_MAX_CUT_SPAN_S + '초).');
+    if (file === null) {
+      if (inputCount !== 1) throw bad('cuts[' + i + '] 에 어느 영상인지(파일 번호)가 필요합니다. 영상이 여러 개입니다.');
+      out.push([r2(from), r2(to)]);
+    } else {
+      if (Math.floor(file) !== file || file < 0 || file >= inputCount) throw bad('cuts[' + i + '] 의 파일 번호가 올바르지 않습니다.');
+      out.push([r2(from), r2(to), file]);
+    }
+    if (out[out.length - 1][1] <= out[out.length - 1][0]) throw bad('cuts[' + i + '] 구간이 반올림 뒤 0초가 됩니다(0.01초 이상으로).');
+  }
   return out;
 }
 
 /** 큐 응답(JSON)에서 사람이 볼 값만 꺼낸다. */
-function hubOrderResult_(json, type, workspace, prompt, queueType) {
+function hubOrderResult_(json, type, workspace, prompt, queueType, cutCount) {
   const item = (json && json.item) || {};
   const id = String(item.id || (json && json.order_id) || '');
   return {
@@ -228,6 +263,7 @@ function hubOrderResult_(json, type, workspace, prompt, queueType) {
     duplicate: !!(json && json.duplicate),
     needs_approval: !!((json && json.needs_approval) || (item && item.needs_approval)),
     risk_level: String((json && json.risk_level) || (item && item.risk_level) || ''),
+    cuts: (typeof cutCount === 'number') ? cutCount : undefined,
     approval_expires_at: String((json && json.approval_expires_at) || (item && item.approval_expires_at) || '')
   };
 }
@@ -316,7 +352,8 @@ function handleHubOrder_(ss, payload, ctx) {
       { queue_code: code });
   }
 
-  const out = hubOrderResult_(json, type, workspace, prompt, realRender ? 'content_render' : 'claude_prompt');
+  const out = hubOrderResult_(json, type, workspace, prompt, realRender ? 'content_render' : 'claude_prompt',
+    realRender ? (body.payload.cuts ? body.payload.cuts.length : 0) : undefined);
   appendSystemHealth_({
     eventType: 'HUB_ORDER', status: 'SUCCESS', actor: 'api',
     detail: type + ' → ' + (out.order_id || '(id 없음)') + ' · ' + workspace

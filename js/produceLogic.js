@@ -4,13 +4,24 @@
  * 규격의 원본은 docs/CONTENT_STANDARD_v3.md(표1 클린 마스터·표3 캡컷 7단계)다. 숫자가 어긋나면 그 문서가 우선.
  * 노트북 content_render 오더 계약 v1 과 같은 규칙으로 입력을 검사한다(노트북·GAS 가 각자 한 번 더 검사한다).
  *
- * 하지 않는 것: 영상 업로드·전송(inbox 로 파일이 들어오는 방법은 아직 정해지지 않았다), SRT 생성(다음 단계).
+ * 2026-11-20: ① 영상 올리기(구글 드라이브 조각 업로드의 계산)와 ③ 컷 목록 → ④ 오더의 cuts 를 더했다.
+ * 하지 않는 것: SRT 생성(다음 단계). 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
+
+import { tcToSec } from './yt/edl.js?v=20261120a';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
 export const EXT_RE = /\.(mp4|mov|m4v)$/i;
 export const MAX_INPUTS = 8;
+export const MAX_CUTS = 150;                 // 노트북·GAS 와 같은 값(큐 payload 4000자 한도)
+export const MAX_CUT_SPAN_S = 3600;
+
+/* ── 영상 올리기(구글 드라이브) — GAS gas/Upload.gs 와 같은 값 ── */
+export const UPLOAD_PART_BYTES = 2 * 1024 * 1024;
+export const UPLOAD_MAX_BYTES = 1500 * 1024 * 1024;
+export const UPLOAD_MAX_PARTS = 800;
+const UPLOAD_NAME_OK = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}$/;
 
 /** 음량 프로필 — 표1. tpTarget 은 오더에 쓰는 목표, tpMax 는 검수 한도(목표에 여유를 둔다). */
 export const PROFILES = {
@@ -50,7 +61,7 @@ export const STEPS = [
 ];
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, review: {}, render: null };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', review: {}, render: null };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -63,6 +74,13 @@ export function normalizeState(raw) {
   else if (Number.isFinite(Number(raw.crop_x))) s.crop_x = Number(raw.crop_x);
   s.plan = raw.plan === true;
   s.cuts = raw.cuts === true;
+  if (Array.isArray(raw.cut_list)) {
+    s.cut_list = raw.cut_list.map((c) => {
+      const o = c && typeof c === 'object' ? c : {};
+      return { type: ['DEAD', 'FILLER', 'REPEAT'].indexOf(o.type) >= 0 ? o.type : 'DEAD', from: Number(o.from), to: Number(o.to), on: o.on !== false, text: String(o.text || '').slice(0, 60) };
+    }).filter((c) => Number.isFinite(c.from) && Number.isFinite(c.to) && c.from >= 0 && c.to > c.from).slice(0, MAX_CUTS);
+  }
+  if (typeof raw.cut_input === 'string') s.cut_input = raw.cut_input.slice(0, 80);
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
@@ -96,8 +114,94 @@ export function parseInputs(text) {
   return { names: names.slice(0, MAX_INPUTS), errors };
 }
 
-/** 오더 payload 만들기 — 계약 v1. 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX }) {
+/* ── ③ 컷 목록 ── */
+
+/** buildEDL 결과의 컷(타임코드 글자) → 상태에 저장하는 초 단위 목록. 전부 켜진 채로 시작한다. */
+export function cutsFromEdl(result) {
+  const list = [];
+  ((result && result.cuts) || []).forEach((c) => {
+    const from = tcToSec(c.from), to = tcToSec(c.to);
+    if (from === null || to === null || !(to > from)) return;
+    list.push({ type: c.type, from: Math.round(from * 100) / 100, to: Math.round(to * 100) / 100, on: true, text: String(c.text || '').slice(0, 60) });
+  });
+  return list;
+}
+
+/** 켜진 컷의 개수·잘라낼 초·남는 길이(원본 길이를 알 때). */
+export function cutSummary(list, sourceSeconds) {
+  const on = (list || []).filter((c) => c.on !== false);
+  const sec = on.reduce((a, c) => a + (c.to - c.from), 0);
+  const out = { count: on.length, seconds: Math.round(sec * 100) / 100, left: null };
+  if (Number.isFinite(sourceSeconds) && sourceSeconds > 0) out.left = Math.round((sourceSeconds - sec) * 100) / 100;
+  return out;
+}
+
+/**
+ * 켜진 컷 → 오더에 싣는 짧은 모양. 영상이 하나면 [from,to], 둘 이상이면 [from,to,파일번호].
+ * 영상이 여럿인데 어느 영상의 컷인지 정하지 않았으면 오류.
+ */
+export function cutsForOrder(state, inputs) {
+  const s = normalizeState(state);
+  const on = s.cut_list.filter((c) => c.on !== false);
+  if (!on.length) return { ok: true, cuts: [] };
+  const names = Array.isArray(inputs) ? inputs : s.inputs;
+  if (on.length > MAX_CUTS) return { ok: false, error: '컷은 ' + MAX_CUTS + '곳까지예요(지금 ' + on.length + '곳). 덜 중요한 것을 꺼 주세요.' };
+  let idx = null;
+  if (names.length > 1) {
+    idx = names.indexOf(s.cut_input);
+    if (idx < 0) return { ok: false, error: '컷이 어느 영상의 것인지 ③에서 골라 주세요(영상이 ' + names.length + '개예요).' };
+  } else if (names.length === 0) {
+    return { ok: false, error: '컷을 자를 영상이 없어요. ①에서 영상을 먼저 정해 주세요.' };
+  }
+  const cuts = on.map((c) => {
+    const f = Math.round(c.from * 100) / 100, t = Math.round(c.to * 100) / 100;
+    return idx === null ? [f, t] : [f, t, idx];
+  });
+  for (const c of cuts) {
+    if (!(c[1] > c[0]) || c[1] - c[0] > MAX_CUT_SPAN_S) return { ok: false, error: '컷 구간이 올바르지 않아요(' + c[0] + '~' + c[1] + '초).' };
+  }
+  return { ok: true, cuts };
+}
+
+/* ── ① 영상 올리기 ── */
+
+/** 드라이브 보관·노트북 inbox 에서 쓸 수 있는 이름으로 바꾼다(허용 밖 글자 → _). 바뀌었는지도 알려 준다. */
+export function safeUploadName(name) {
+  const orig = String(name || '').trim();
+  let n = orig.replace(/[^A-Za-z0-9가-힣._ -]/g, '_').replace(/\.{2,}/g, '_').replace(/^[^A-Za-z0-9가-힣]+/, '');
+  const m = n.match(/^(.*?)(\.[A-Za-z0-9]+)?$/);
+  let base = (m && m[1]) || '';
+  const ext = (m && m[2]) || '';
+  if (base.length + ext.length > 80) base = base.slice(0, 80 - ext.length);
+  n = base + ext;
+  return { name: n, changed: n !== orig };
+}
+
+/** 올릴 파일 검사 → { ok, name, renamed, parts, errors }. 이름은 안전한 이름으로 고쳐서 돌려준다. */
+export function checkUploadFile(file) {
+  const errors = [];
+  const f = file || {};
+  const fixed = safeUploadName(f.name);
+  if (!UPLOAD_NAME_OK.test(fixed.name) || !EXT_RE.test(fixed.name)) errors.push('"' + String(f.name || '').slice(0, 40) + '" — mp4 · mov · m4v 영상만 올릴 수 있어요');
+  const size = Number(f.size);
+  if (!Number.isFinite(size) || size < 1) errors.push('파일이 비어 있어요');
+  else if (size > UPLOAD_MAX_BYTES) errors.push('파일이 너무 커요(' + Math.round(size / 1048576) + 'MB, 최대 ' + Math.round(UPLOAD_MAX_BYTES / 1048576) + 'MB)');
+  const parts = Number.isFinite(size) && size > 0 ? Math.ceil(size / UPLOAD_PART_BYTES) : 0;
+  if (parts > UPLOAD_MAX_PARTS) errors.push('조각이 너무 많아요');
+  return { ok: errors.length === 0, name: fixed.name, renamed: fixed.changed, parts, errors };
+}
+
+/** 바이트 수 → '12.3MB' 같은 짧은 글자. */
+export function formatBytes(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 0) return '-';
+  if (v < 1024 * 1024) return Math.max(1, Math.round(v / 1024)) + 'KB';
+  if (v < 1024 * 1024 * 1024) return (v / 1048576).toFixed(1) + 'MB';
+  return (v / 1073741824).toFixed(2) + 'GB';
+}
+
+/** 오더 payload 만들기 — 계약 v1(+ cuts). 하나라도 어긋나면 { ok:false, errors }. */
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -112,6 +216,18 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX })
     const n = Number(cropX);
     if (!Number.isFinite(n) || n < 0 || n > 1) errors.push('crop_x 는 0~1 사이 숫자예요(0=왼쪽, 0.5=가운데, 1=오른쪽)');
     else payload.crop_x = n;
+  }
+  if (cuts !== undefined && cuts !== null) {
+    if (!Array.isArray(cuts)) errors.push('cuts 는 구간 목록이어야 해요');
+    else if (cuts.length > MAX_CUTS) errors.push('컷은 ' + MAX_CUTS + '곳까지예요');
+    else {
+      cuts.forEach((c, i) => {
+        const good = Array.isArray(c) && c.length >= 2 && c.length <= 3 && Number.isFinite(c[0]) && Number.isFinite(c[1]) && c[0] >= 0 && c[1] > c[0] && c[1] - c[0] <= MAX_CUT_SPAN_S
+          && (c.length === 2 ? chk.names.length === 1 : (Number.isInteger(c[2]) && c[2] >= 0 && c[2] < chk.names.length));
+        if (!good) errors.push('컷 ' + (i + 1) + '번 구간이 올바르지 않아요');
+      });
+      if (cuts.length && !errors.length) payload.cuts = cuts;
+    }
   }
   return errors.length ? { ok: false, errors } : { ok: true, payload };
 }

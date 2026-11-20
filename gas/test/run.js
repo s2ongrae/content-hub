@@ -126,7 +126,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Blog.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Blog.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -296,6 +296,35 @@ ok('profile·crop_x 생략 가능', o.ok, o);
 const rs2 = A.env.fetched[A.env.fetched.length - 1];
 eq('profile 기본 captions', rs2.body.payload.profile, 'captions');
 ok('crop_x 를 만들어 넣지 않는다', !('crop_x' in rs2.body.payload));
+
+console.log('\n[8b-2] 컷(잘라낼 구간) — 짧은 모양으로 큐에 보낸다');
+A.env.setFetchReply(okReply);
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { inputs: ['a.mp4'], cuts: [[1.234, 2.5], { from: 4, to: 5 }] }), { brand: 'daejeon_youth' });
+ok('컷이 있는 오더 접수', o.ok, o);
+eq('응답이 접수한 컷 개수를 알려 준다(옛 GAS 는 이 값이 없어 화면이 알아챈다)', o.ok && o.data.cuts, 2);
+const rcut = A.env.fetched[A.env.fetched.length - 1];
+eq('영상 1개면 [from,to] 로 줄여 보낸다(소수 2자리)', JSON.stringify(rcut.body.payload.cuts), JSON.stringify([[1.23, 2.5], [4, 5]]));
+ok('payload 키에 cuts 가 더해진다', Object.keys(rcut.body.payload).indexOf('cuts') >= 0);
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { cuts: [[1, 2, 1], { from: 3, to: 4, file: 0 }] }), { brand: 'daejeon_youth' });
+eq('영상이 둘이면 [from,to,파일번호]', JSON.stringify(A.env.fetched[A.env.fetched.length - 1].body.payload.cuts), JSON.stringify([[1, 2, 1], [3, 4, 0]]));
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { cuts: [] }), { brand: 'daejeon_youth' });
+ok('cuts 가 빈 목록이면 키를 넣지 않는다', o.ok && !('cuts' in A.env.fetched[A.env.fetched.length - 1].body.payload));
+const nCut = A.env.fetched.length;
+const one = Object.assign({}, goodRender, { inputs: ['a.mp4'] });
+[
+  ['cuts 가 배열 아님', 'x', goodRender],
+  ['to<=from', [[2, 1]], one],
+  ['음수', [[-1, 1]], one],
+  ['숫자 아님', [['a', 3]], one],
+  ['영상이 둘인데 파일 번호 없음', [[1, 2]], goodRender],
+  ['파일 번호 범위 밖', [[1, 2, 5]], goodRender],
+  ['151개', Array.from({ length: 151 }, (_, i) => [i * 2, i * 2 + 1]), one],
+  ['구간 1시간 초과', [[0, 3601]], one],
+  ['반올림하면 0초', [[1.001, 1.004]], one]
+].forEach(([name, cuts, base]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, base, { cuts }), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+ok('거부된 컷 오더는 큐를 부르지 않았다', A.env.fetched.length === nCut);
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
+eq('컷이 없으면 0개로 알려 준다', o.ok && o.data.cuts, 0);
 
 console.log('\n[8c] 렌더 오더 입력 검증 — 큐를 부르기 전에 막는다');
 const n0 = A.env.fetched.length;
@@ -1016,6 +1045,138 @@ console.log('\n[P6] 입력 검증 · 권한');
   });
   eq('화이트리스트 밖 액션은 거부', authOf('delete_everything', 'test-secret-token-0123456789abcdef').code, 'ERR_UNKNOWN_ACTION');
   eq('GET 쿼리 토큰은 거부', callHandler(PD.ctx, 'authenticateRequest_', { parameter: { auth_token: 'x' } }, { action: 'get_post_detail', auth_token: 'test-secret-token-0123456789abcdef' }, {}).code, 'ERR_GET_TOKEN_FORBIDDEN');
+}
+
+console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저장 · 목록 · 받아 가기');
+{
+  class DFile {
+    constructor(name, bytes) { this.name = name; this.bytes = Array.from(bytes); this.trashed = false; this.id = 'df_' + Math.random().toString(36).slice(2); }
+    getId() { return this.id; }
+    getName() { return this.name; }
+    getSize() { return this.bytes.length; }
+    getBlob() { return { getBytes: () => this.bytes.slice() }; }
+    setTrashed(v) { this.trashed = !!v; return this; }
+  }
+  const iter = (arr) => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
+  class DFolder {
+    constructor(name) { this.name = name; this.id = 'dfolder_' + name + '_' + Math.random().toString(36).slice(2, 8); this.files = []; this.folders = []; this.shared = 'default'; }
+    getId() { return this.id; }
+    getName() { return this.name; }
+    live() { return this.files.filter(f => !f.trashed); }
+    getFiles() { return iter(this.live()); }
+    getFilesByName(n) { return iter(this.live().filter(f => f.name === n)); }
+    getFoldersByName(n) { return iter(this.folders.filter(f => f.name === n)); }
+    createFolder(n) { const f = new DFolder(n); this.folders.push(f); return f; }
+    createFile(blob) { const f = new DFile(blob.name, blob.bytes); this.files.push(f); return f; }
+    setSharing(a, p) { this.shared = a + '/' + p; return this; }
+  }
+  const U = loadGas();
+  const root = new DFolder('내 드라이브');
+  const all = new Map();
+  const reg = (f) => { all.set(f.id, f); f.folders.forEach(reg); };
+  U.ctx.DriveApp = {
+    getRootFolder: () => root,
+    getFolderById: (id) => { reg(root); if (!all.has(id)) throw new Error('폴더 없음: ' + id); return all.get(id); },
+    Access: { PRIVATE: 'PRIVATE' }, Permission: { NONE: 'NONE' }
+  };
+  const origBlob = U.ctx.Utilities.newBlob;
+  U.ctx.Utilities.newBlob = (x, mime, name) => (typeof x === 'string' ? origBlob(x) : { bytes: Array.from(x), name, getBytes: () => Array.from(x) });
+  U.ctx.Utilities.base64Decode = (s) => Array.from(Buffer.from(String(s), 'base64'));
+  U.ctx.Utilities.base64Encode = (b) => Buffer.from(b).toString('base64');
+
+  const chunk = (p) => callHandler(U.ctx, 'handleUploadVideoChunk_', null, p);
+  const list = (cid) => callHandler(U.ctx, 'handleUploadVideoList_', null, { content_id: cid });
+  const fetchPart = (p) => callHandler(U.ctx, 'handleUploadVideoFetch_', null, p);
+  const b64 = (buf) => Buffer.from(buf).toString('base64');
+  const orig = Buffer.from(Array.from({ length: 4500 }, (_, i) => (i * 7) % 256));
+  const slices = [orig.subarray(0, 2000), orig.subarray(2000, 4000), orig.subarray(4000)];
+
+  const wl = ev(U.ctx, 'ACTION_WHITELIST');
+  ok('4개 액션이 화이트리스트·핸들러에 있다', ['upload_video_chunk', 'upload_video_list', 'upload_video_fetch', 'upload_video_delete'].every(a => wl[a] && wl[a].m1 === true && typeof ev(U.ctx, 'M1_HANDLERS')[a] === 'function'));
+  ok('조각 저장은 쓰기(감사 행은 남기지 않음)·목록/받기는 읽기', wl.upload_video_chunk.mode === 'WRITE' && wl.upload_video_chunk.noAudit === true && wl.upload_video_list.mode === 'READ' && wl.upload_video_fetch.mode === 'READ');
+  ok('모두 라우터 락을 잡지 않는다(드라이브 외부 호출)', ['upload_video_chunk', 'upload_video_list', 'upload_video_fetch', 'upload_video_delete'].every(a => wl[a].longRunning === true));
+  ok('doPost 가 noAudit 액션은 감사 행을 건너뛴다', /auth\.spec\.mode === 'WRITE' && !auth\.spec\.noAudit/.test(fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8')));
+
+  eq('아무것도 안 올렸으면 빈 목록(폴더도 만들지 않는다)', JSON.stringify(list('C-001').data), JSON.stringify({ content_id: 'C-001', items: [] }));
+  ok('빈 목록 조회는 드라이브 폴더를 만들지 않는다', root.folders.length === 0);
+
+  slices.forEach((s, i) => {
+    const r1 = chunk({ content_id: 'C-001', name: '외관 01.mp4', index: i, parts: 3, total_size: 4500, data: b64(s) });
+    ok('조각 ' + i + ' 저장', r1.ok && r1.data.bytes === s.length && r1.data.index === i, r1);
+  });
+  const L1 = list('C-001');
+  ok('목록: 이름·크기·조각 수·완료', L1.ok && L1.data.items.length === 1 && L1.data.items[0].name === '외관 01.mp4' && L1.data.items[0].size === 4500 && L1.data.items[0].parts === 3 && L1.data.items[0].parts_found === 3 && L1.data.items[0].complete === true, L1);
+  const up = root.folders[0];
+  ok('폴더 구조: ContentHubOS_Uploads / C-001', up.name === 'ContentHubOS_Uploads' && up.folders[0].name === 'C-001');
+  ok('폴더는 비공개로 만든다', up.shared === 'PRIVATE/NONE' && up.folders[0].shared === 'PRIVATE/NONE', [up.shared, up.folders[0].shared]);
+  ok('조각 파일 이름 규칙(.part00001of00003)', up.folders[0].live().map(f => f.name).sort().join(',') === '외관 01.mp4.part00000of00003,외관 01.mp4.part00001of00003,외관 01.mp4.part00002of00003', up.folders[0].live().map(f => f.name));
+  ok('루트 폴더 ID 를 스크립트 속성에 기억한다', U.env.props.get('UPLOAD_ROOT_FOLDER_ID') === up.id);
+
+  const got = [0, 1, 2].map(i => fetchPart({ content_id: 'C-001', name: '외관 01.mp4', index: i, parts: 3 }));
+  ok('조각 받기: 이어 붙이면 원본과 같다', got.every(g => g.ok) && Buffer.compare(Buffer.concat(got.map(g => Buffer.from(g.data.data, 'base64'))), orig) === 0, got.map(g => g.code));
+  eq('없는 조각은 ERR_NOT_FOUND', fetchPart({ content_id: 'C-001', name: '외관 01.mp4', index: 1, parts: 4 }).code, 'ERR_NOT_FOUND');
+  eq('올린 적 없는 content_id 는 ERR_NOT_FOUND', fetchPart({ content_id: 'C-NONE', name: 'a.mp4', index: 0, parts: 1 }).code, 'ERR_NOT_FOUND');
+
+  const retry = chunk({ content_id: 'C-001', name: '외관 01.mp4', index: 1, parts: 3, data: b64(slices[1]) });
+  ok('같은 조각을 다시 보내도 중복되지 않는다', retry.ok && list('C-001').data.items[0].size === 4500 && up.folders[0].live().length === 3);
+
+  // 안 끝난 업로드
+  chunk({ content_id: 'C-002', name: 'b.mov', index: 0, parts: 3, data: b64(slices[0]) });
+  chunk({ content_id: 'C-002', name: 'b.mov', index: 2, parts: 3, data: b64(slices[2]) });
+  const L2 = list('C-002').data.items[0];
+  ok('조각이 빠지면 complete=false 와 찾은 개수를 알린다', L2.complete === false && L2.parts_found === 2 && L2.parts === 3, L2);
+
+  // 0번은 새 업로드: 조각 수가 달랐던 옛 조각을 치운다
+  chunk({ content_id: 'C-002', name: 'b.mov', index: 0, parts: 1, data: b64(slices[2]) });
+  const L3 = list('C-002').data.items[0];
+  ok('0번을 다시 올리면 옛 조각을 모두 지운다', L3.parts === 1 && L3.complete === true && L3.size === slices[2].length && !L3.mixed, L3);
+
+  // 다른 파일이 섞여 있어도 건드리지 않는다
+  const c1 = up.folders[0];
+  c1.createFile({ name: 'memo.txt', bytes: [1, 2, 3] });
+  chunk({ content_id: 'C-001', name: '외관 01.mp4', index: 0, parts: 3, data: b64(slices[0]) });
+  ok('이름 규칙에 안 맞는 파일은 건드리지 않고 목록에도 안 나온다', c1.live().some(f => f.name === 'memo.txt') && list('C-001').data.items.length === 1);
+
+  // 검증
+  const goodP = { content_id: 'C-003', name: 'z.mp4', index: 0, parts: 1, data: b64(Buffer.from('abc')) };
+  const code = (p) => chunk(Object.assign({}, goodP, p)).code;
+  eq('content_id 에 경로 금지', code({ content_id: '../x' }), 'ERR_VALIDATION_FAILED');
+  eq('확장자 mp4·mov·m4v 만', code({ name: 'z.exe' }), 'ERR_VALIDATION_FAILED');
+  eq('경로·.. 금지', code({ name: '../z.mp4' }), 'ERR_VALIDATION_FAILED');
+  eq('점으로 시작 금지', code({ name: '.z.mp4' }), 'ERR_VALIDATION_FAILED');
+  eq('index 는 parts 안', code({ index: 1 }), 'ERR_VALIDATION_FAILED');
+  eq('index 는 정수', code({ index: 0.5 }), 'ERR_VALIDATION_FAILED');
+  eq('parts 상한 800', code({ parts: 801 }), 'ERR_VALIDATION_FAILED');
+  eq('base64 아닌 data 거부', code({ data: '<script>' }), 'ERR_VALIDATION_FAILED');
+  eq('빈 data 거부', code({ data: '' }), 'ERR_VALIDATION_FAILED');
+  eq('조각 2MB 초과 거부', code({ data: b64(Buffer.alloc(2 * 1024 * 1024 + 1, 1)) }), 'ERR_VALIDATION_FAILED');
+  ok('조각 정확히 2MB 는 통과', chunk(Object.assign({}, goodP, { data: b64(Buffer.alloc(2 * 1024 * 1024, 1)) })).ok);
+  eq('total_size 1.5GB 초과 거부', code({ total_size: 1500 * 1024 * 1024 + 1 }), 'ERR_VALIDATION_FAILED');
+  eq('list: 이상한 content_id 거부', list('a b').code, 'ERR_VALIDATION_FAILED');
+  eq('fetch: parts 누락 거부', fetchPart({ content_id: 'C-001', name: '외관 01.mp4', index: 0 }).code, 'ERR_VALIDATION_FAILED');
+
+  // 삭제
+  chunk({ content_id: 'C-001', name: '외관 01.mp4', index: 1, parts: 3, data: b64(slices[1]) });
+  chunk({ content_id: 'C-001', name: '외관 01.mp4', index: 2, parts: 3, data: b64(slices[2]) });
+  const del = callHandler(U.ctx, 'handleUploadVideoDelete_', null, { content_id: 'C-001', name: '외관 01.mp4' });
+  ok('삭제: 조각을 모두 휴지통으로', del.ok && del.data.removed === 3 && list('C-001').data.items.length === 0 && c1.live().some(f => f.name === 'memo.txt'), del);
+  eq('삭제: 올린 적 없으면 0개', callHandler(U.ctx, 'handleUploadVideoDelete_', null, { content_id: 'C-NONE', name: 'a.mp4' }).data.removed, 0);
+
+  // 요청 크기 한도: 조각 업로드만 3.4MB, 나머지는 그대로 512KB
+  const big = (action, n) => '{"action":"' + action + '","payload":{"data":"' + 'A'.repeat(n) + '"}}';
+  const sizeCode = (raw) => callHandler(U.ctx, 'assertRequestSizeWithinLimit_', raw).code;
+  ok('일반 액션 600KB 는 거부(512KB 유지)', sizeCode(big('update_content', 600 * 1024)) === 'ERR_PAYLOAD_TOO_LARGE');
+  ok('조각 업로드 2.8MB 는 통과', sizeCode(big('upload_video_chunk', 2800000)) === undefined);
+  ok('조각 업로드도 3.4MB 초과는 거부', sizeCode(big('upload_video_chunk', 3600000)) === 'ERR_PAYLOAD_TOO_LARGE');
+  ok('action 을 뒤에 숨겨도 큰 본문은 거부', sizeCode('{"payload":{"data":"' + 'A'.repeat(2800000) + '"},"action":"upload_video_chunk"}') === 'ERR_PAYLOAD_TOO_LARGE');
+
+  // 인증
+  U.env.props.set('API_SECRET_TOKEN', 'test-secret-token-0123456789abcdef');
+  const authOf = (action, token) => callHandler(U.ctx, 'authenticateRequest_', null, { action, auth_token: token, client_id: 'up-test' }, { allowAllBrand: true });
+  ['upload_video_chunk', 'upload_video_list', 'upload_video_fetch', 'upload_video_delete'].forEach((a) => {
+    eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
+    ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
+  });
 }
 
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));

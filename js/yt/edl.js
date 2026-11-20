@@ -22,7 +22,7 @@ const norm = (s) => String(s || '')
 
 const tokens = (s) => norm(s).split(' ').filter(Boolean);
 
-function tcToSec(s) {
+export function tcToSec(s) {
   const m = String(s).trim().match(/(\d{1,2}):(\d{2})(?::(\d{2}))?[,.](\d{1,3})/);
   if (m) {
     const h = m[3] ? Number(m[1]) : 0;

@@ -42,6 +42,12 @@ const ACTION_WHITELIST = {
   hub_order:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   // 오더 진행 상태(읽기 전용) — 큐 queue_list 를 한 번 부른다(외부 호출 → 라우터 락 없음)
   hub_order_status:     { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  // 영상 올리기 (2026-11-20, gas/Upload.gs) — 브라우저가 2MB 조각으로 드라이브에 올리고, 노트북이 받아 간다.
+  //   조각마다 감사 행을 남기면 시트가 수백 줄 불어난다 → noAudit(오류는 그대로 기록). 외부(드라이브) 호출이라 라우터 락 없음.
+  upload_video_chunk:   { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true, noAudit: true },
+  upload_video_delete:  { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  upload_video_list:    { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  upload_video_fetch:   { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   // 내 블로그 보기 (2026-11-19) — gas/Blog.gs. 네이버 공개 데이터를 모은다(외부 호출 → 라우터 락 없음, 시트 쓰기만 자체 락)
   blog_sync:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   list_blog_stats:      { mode: 'READ',  allowDegraded: true,  m1: true },
@@ -72,6 +78,7 @@ const RATE_LIMIT_WINDOW_SEC_ = 60;
 const RATE_LIMIT_MAX_REQ_ = 120;        // 1인 사용 + 피클 병렬 호출 여유
 const MAX_REQUEST_BYTES_ = 524288;      // 512KB
 const MAX_PAYLOAD_BYTES_ = 204800;      // 200KB (Drive payload 1개)
+const MAX_UPLOAD_REQUEST_BYTES_ = 3565158;   // 3.4MB — upload_video_chunk 만(2MB 조각의 base64 약 2.8MB + 봉투)
 
 /** 비밀번호·쿠키·2FA·카드·주민번호 등은 저장 자체를 막는다 (C7) */
 const SENSITIVE_KEY_PATTERN_ = /(passwd|password|pwd|secret|cookie|session(id)?|otp|2fa|auth_?code|cvc|cvv|card_?num|account_?num|rrn|resident|주민|계좌비번|api_?key|private_?key|access_?token|refresh_?token)/i;
@@ -267,11 +274,15 @@ function getDailyCallCount_() {
  * ------------------------------------------------------------------ */
 
 function assertRequestSizeWithinLimit_(rawBody) {
+  // 영상 조각 업로드만 더 큰 본문을 받는다. 액션 이름은 본문 앞부분에서 가볍게 확인하고(api.js 가 action 을 맨 앞에 쓴다),
+  // 진짜 액션은 인증 단계에서 다시 확인된다 — 여기서 속여도 얻는 것은 '큰 본문을 파싱해 보는 것'뿐이다.
+  const isUpload = String(rawBody || '').slice(0, 120).indexOf('"action":"upload_video_chunk"') !== -1;
+  const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES_ : MAX_REQUEST_BYTES_;
   const bytes = Utilities.newBlob(rawBody || '').getBytes().length;
-  if (bytes > MAX_REQUEST_BYTES_) {
+  if (bytes > limit) {
     throw createAppError_('ERR_PAYLOAD_TOO_LARGE',
-      '요청 본문이 최대 허용 크기(512KB)를 초과했습니다.',
-      { byte_length: bytes, max_bytes: MAX_REQUEST_BYTES_ });
+      '요청 본문이 최대 허용 크기(' + (isUpload ? '3.4MB' : '512KB') + ')를 초과했습니다.',
+      { byte_length: bytes, max_bytes: limit });
   }
   return bytes;
 }

@@ -264,7 +264,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     newFiles.forEach((f) => { src[f] = fs.readFileSync(path.join(ROOT, f), 'utf8'); });
     ok('innerHTML/outerHTML/insertAdjacentHTML 0건', newFiles.filter((f) => /\.js$/.test(f)).every((f) => !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(src[f])));
     ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', newFiles.every((f) => !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(src[f])));
-    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261119y/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=20261120a/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
     ok('하단 탭이 늘지 않았다(10개)', (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/class="tab"/g) || []).length === 10);
   } catch (err) {
     ok('트랙 채널 계약 시험', false, (err && err.stack) || err);
@@ -330,6 +330,90 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('캡컷 7단계 모두 체크하면 마무리 완료', L.stepStatus(L.normalizeState({ review: allReview }), 'daejeon_youth').finish === true);
     ok('손상된 저장값을 믿지 않는다', same(L.normalizeState({ inputs: 'x', profile: 'zz', review: { zz: true }, render: 5 }), L.defaultState()));
 
+    /* 컷 목록 → 오더 cuts (2026-11-20) */
+    const E = await import('file://' + path.join(ROOT, 'js', 'yt', 'edl.js'));
+    const SRT = '1\n00:00:01,000 --> 00:00:03,000\n여기 진짜 맛있어요\n\n2\n00:00:05,000 --> 00:00:07,000\n그래서 갔어요\n\n3\n00:00:07,000 --> 00:00:08,000\n음\n\n4\n00:00:08,000 --> 00:00:10,000\n그래서 갔어요';
+    const edl = E.buildEDL(SRT, { floor: 0.6 });
+    const fromEdl = L.cutsFromEdl(edl);
+    ok('EDL 결과를 초 단위 컷 목록으로 바꾼다(전부 켜진 채로)', edl.ok && fromEdl.length === edl.cuts.length && fromEdl.length > 0 && fromEdl.every((c) => c.on === true && c.to > c.from && Number.isFinite(c.from)), JSON.stringify(fromEdl));
+    ok('무음 구간(3초→5초 사이)이 DEAD 컷으로 들어온다', fromEdl.some((c) => c.type === 'DEAD' && c.from >= 3 && c.to <= 5), JSON.stringify(fromEdl));
+    ok('tcToSec: mm:ss.ms · hh:mm:ss.ms', E.tcToSec('00:12.340') === 12.34 && E.tcToSec('01:02:03.500') === 3723.5);
+    ok('빈 결과는 빈 목록', same(L.cutsFromEdl({ ok: false, cuts: [] }), []) && same(L.cutsFromEdl(null), []));
+    const stC = L.normalizeState({ inputs: ['a.mp4'], cut_list: [{ type: 'DEAD', from: 3.1, to: 4.9, on: true }, { type: 'FILLER', from: 7, to: 7.5, on: false }, { from: 'x', to: 1 }, { from: 5, to: 4 }] });
+    ok('저장값 정리: 깨진 컷은 버리고 꺼진 컷은 유지', stC.cut_list.length === 2 && stC.cut_list[1].on === false);
+    ok('컷 요약: 켜진 것만 센다', L.cutSummary(stC.cut_list, 20).count === 1 && L.cutSummary(stC.cut_list, 20).seconds === 1.8 && L.cutSummary(stC.cut_list, 20).left === 18.2);
+    ok('영상 1개면 [from,to] 로 오더에 싣는다(꺼진 컷 제외)', same(L.cutsForOrder(stC, ['a.mp4']), { ok: true, cuts: [[3.1, 4.9]] }), JSON.stringify(L.cutsForOrder(stC, ['a.mp4'])));
+    const stC2 = L.normalizeState({ inputs: ['a.mp4', 'b.mp4'], cut_input: 'b.mp4', cut_list: [{ type: 'DEAD', from: 1, to: 2, on: true }] });
+    ok('영상이 둘이면 [from,to,파일번호]', same(L.cutsForOrder(stC2, ['a.mp4', 'b.mp4']), { ok: true, cuts: [[1, 2, 1]] }));
+    ok('영상이 둘인데 어느 영상인지 안 골랐으면 오류', L.cutsForOrder(Object.assign({}, stC2, { cut_input: '' }), ['a.mp4', 'b.mp4']).ok === false);
+    ok('컷이 없으면 빈 목록(오더에 cuts 키가 없다)', same(L.cutsForOrder(L.defaultState(), ['a.mp4']), { ok: true, cuts: [] }) && !('cuts' in L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [] }).payload));
+    ok('영상이 없는데 컷이 있으면 오류', L.cutsForOrder(stC, []).ok === false);
+    ok('컷 151곳은 거부', !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: Array.from({ length: 151 }, (_, i) => [i * 2, i * 2 + 1]) }).ok && L.cutsForOrder(L.normalizeState({ inputs: ['a.mp4'], cut_list: Array.from({ length: 150 }, (_, i) => ({ type: 'DEAD', from: i * 2, to: i * 2 + 1, on: true })) }), ['a.mp4']).cuts.length === 150);
+    ok('payload 에 cuts 를 싣는다(계약 키 + cuts)', same(L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [[1, 2]] }).payload, { content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', cuts: [[1, 2]] }));
+    ok('cuts 값 검사: 역순·음수·파일 번호 범위 밖·모양', [[[2, 1]], [[-1, 1]], [[1, 2, 3]], [['a', 2]], [[1]]].every((c) => !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: c }).ok));
+    ok('영상 1개인데 파일 번호가 붙은 컷·영상 둘인데 번호 없는 컷은 거부', !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4', 'b.mp4'], cuts: [[1, 2]] }).ok);
+    ok('cuts 150개 payload 는 큐 한도(4000자)에 들어간다', JSON.stringify(Object.assign({ type: 'content_render' }, L.buildRenderPayload({ contentId: 'C'.repeat(40), brand: 'ppiyak_kimmary', inputs: ['01_외관.mp4', '02_메뉴판.mp4'], profile: 'bgm', cropX: 0.123, cuts: Array.from({ length: 150 }, (_, i) => [1000 + i * 2.5, 1001.5 + i * 2.5, 1]) }).payload)).length < 4000);
+
+    /* 영상 올리기 계산 */
+    ok('올리기: 조각은 2MB, 최대 1.5GB·800조각', L.UPLOAD_PART_BYTES === 2097152 && L.UPLOAD_MAX_BYTES === 1500 * 1048576 && L.UPLOAD_MAX_PARTS === 800 && L.UPLOAD_MAX_BYTES <= L.UPLOAD_PART_BYTES * L.UPLOAD_MAX_PARTS);
+    ok('조각 수 = 올림(크기/2MB)', L.checkUploadFile({ name: 'a.mp4', size: 1 }).parts === 1 && L.checkUploadFile({ name: 'a.mp4', size: 2097152 }).parts === 1 && L.checkUploadFile({ name: 'a.mp4', size: 2097153 }).parts === 2 && L.checkUploadFile({ name: 'a.mp4', size: 5e6 }).parts === 3);
+    ok('mp4·mov·m4v 만 올린다(대소문자 무시)', L.checkUploadFile({ name: 'a.MOV', size: 10 }).ok && L.checkUploadFile({ name: 'a.m4v', size: 10 }).ok && !L.checkUploadFile({ name: 'a.avi', size: 10 }).ok && !L.checkUploadFile({ name: 'a.exe', size: 10 }).ok);
+    ok('빈 파일·1.5GB 초과 거부', !L.checkUploadFile({ name: 'a.mp4', size: 0 }).ok && !L.checkUploadFile({ name: 'a.mp4', size: L.UPLOAD_MAX_BYTES + 1 }).ok && L.checkUploadFile({ name: 'a.mp4', size: L.UPLOAD_MAX_BYTES }).ok);
+    ok('폰 파일 이름(괄호·공백)은 안전한 이름으로 고쳐서 올린다', L.safeUploadName('IMG 0412 (1).MOV').name === 'IMG 0412 _1_.MOV' && L.safeUploadName('IMG 0412 (1).MOV').changed === true && L.safeUploadName('a.mp4').changed === false);
+    ok('고친 이름은 노트북·GAS 이름 규칙에 맞다', ['IMG 0412 (1).MOV', '..이상한.mp4', '한글 영상 #3.mp4', 'a/b\\c.mp4'].every((n) => { const c = L.checkUploadFile({ name: n, size: 10 }); return c.ok && L.parseInputs(c.name).errors.length === 0; }));
+    ok('이름이 80자를 넘으면 확장자를 지키며 자른다', (() => { const c = L.checkUploadFile({ name: 'a'.repeat(200) + '.mp4', size: 10 }); return c.ok && c.name.length === 80 && /\.mp4$/.test(c.name); })());
+    ok('바이트 표기', L.formatBytes(500) === '1KB' && L.formatBytes(5 * 1048576) === '5.0MB' && L.formatBytes(1610612736) === '1.50GB' && L.formatBytes('x') === '-');
+
+    /* uploadVideo.js — 조각 올리기(가짜 api) */
+    const U = await import('file://' + path.join(ROOT, 'js', 'uploadVideo.js'));
+    ok('base64 변환이 Buffer 와 같다(32KB 넘는 배열도)', (() => { const b = new Uint8Array(100000).map((_, i) => i % 251); return U.bytesToBase64(b) === Buffer.from(b).toString('base64'); })());
+    {
+      const calls = [];
+      const data = new Uint8Array(5 * 1024 * 1024 + 123).map((_, i) => i % 251);
+      const file = { name: 'a b (1).mov', size: data.length, slice: (a, b) => { const part = data.slice(a, b); return { size: part.length, arrayBuffer: async () => part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) }; } };
+      const api = { post: async (action, payload, key, opts) => { calls.push({ action, payload, opts }); return { ok: true, data: {} }; } };
+      const progress = [];
+      const r = await U.uploadVideo({ api, contentId: 'CH-1', file, onProgress: (p) => progress.push(p) });
+      ok('조각 3개(5MB+123B)를 순서대로 올린다', calls.length === 3 && calls.map((c) => c.payload.index).join(',') === '0,1,2' && calls.every((c) => c.action === 'upload_video_chunk' && c.payload.parts === 3 && c.payload.content_id === 'CH-1'), calls.map((c) => c.payload.index));
+      ok('이름은 안전한 이름으로 고쳐 보낸다', calls.every((c) => c.payload.name === 'a b _1_.mov') && r.name === 'a b _1_.mov');
+      const joined = Buffer.concat(calls.map((c) => Buffer.from(c.payload.data, 'base64')));
+      ok('조각을 이어 붙이면 원본과 같다', Buffer.compare(joined, Buffer.from(data)) === 0);
+      ok('조각 크기는 2MB 이하 · total_size 를 함께 보낸다', calls.every((c) => Buffer.from(c.payload.data, 'base64').length <= L.UPLOAD_PART_BYTES && c.payload.total_size === data.length));
+      ok('조각 요청은 시간 제한을 넉넉히(120초)', calls.every((c) => c.opts && c.opts.timeoutMs === 120000));
+      ok('진행 표시: 마지막은 전체 크기', progress.length === 3 && progress[2].sent === data.length && progress[2].index === 3 && progress[2].parts === 3);
+      ok('요청 본문 첫 키가 action(서버가 큰 본문을 허용하는 기준)', (() => { const env = JSON.stringify({ action: 'upload_video_chunk', auth_token: 'x' }); return env.indexOf('"action":"upload_video_chunk"') < 20; })());
+    }
+    {
+      let n = 0;
+      const data = new Uint8Array(3000000).map((_, i) => i % 7);
+      const file = { name: 'a.mp4', size: data.length, slice: (a, b) => { const part = data.slice(a, b); return { size: part.length, arrayBuffer: async () => part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) }; } };
+      const flaky = { post: async (a, p) => { if (p.index === 1 && ++n < 3) { const e = new Error('끊김'); e.code = 'ERR_NETWORK'; throw e; } return { ok: true }; } };
+      const t0 = Date.now();
+      const r = await U.uploadVideo({ api: flaky, contentId: 'CH-1', file });
+      ok('네트워크가 끊기면 그 조각만 다시 보낸다(2번 실패 뒤 성공)', r.parts === 2 && n === 3 && Date.now() - t0 >= 4000, [n, Date.now() - t0]);
+      const authBad = { post: async () => { const e = new Error('토큰'); e.code = 'ERR_UNAUTHORIZED'; throw e; } };
+      let t = 0; const origPost = authBad.post; authBad.post = async (...a) => { t++; return origPost(...a); };
+      let code = '';
+      try { await U.uploadVideo({ api: authBad, contentId: 'CH-1', file }); } catch (e) { code = e.code; }
+      ok('인증 오류는 다시 보내지 않고 바로 멈춘다', code === 'ERR_UNAUTHORIZED' && t === 1, [code, t]);
+      let c2 = 0; let code2 = '';
+      try { await U.uploadVideo({ api: { post: async () => { c2++; return {}; } }, contentId: 'CH-1', file, shouldCancel: () => c2 >= 1 }); } catch (e) { code2 = e.code; }
+      ok('취소하면 CANCELLED 로 멈춘다', code2 === 'CANCELLED' && c2 === 1, [code2, c2]);
+      let code3 = '';
+      try { await U.uploadVideo({ api: { post: async () => ({}) }, contentId: 'CH-1', file: { name: 'a.exe', size: 5, slice: () => ({}) } }); } catch (e) { code3 = e.code; }
+      ok('영상이 아니면 보내기 전에 거부', code3 === 'ERR_VALIDATION_FAILED');
+      ok('재시도 대상: 네트워크·시간 초과·서버 바쁨·5xx', ['ERR_NETWORK', 'ERR_TIMEOUT', 'ERR_BUSY', 'ERR_BAD_RESPONSE'].every((c) => U.isRetryableUploadError({ code: c })) && U.isRetryableUploadError({ code: 'X', status: 503 }) && !U.isRetryableUploadError({ code: 'ERR_UNAUTHORIZED' }) && !U.isRetryableUploadError({ code: 'ERR_VALIDATION_FAILED' }));
+    }
+    const uv = fs.readFileSync(path.join(ROOT, 'js', 'uploadVideo.js'), 'utf8');
+    ok('uploadVideo.js 코드 규칙: innerHTML 0건 · 주소·토큰 값 없음', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(uv) && !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}/.test(uv));
+    ok('uploadVideo.js 가 produceLogic 을 버전 쿼리로 부른다', /from '\.\/produceLogic\.js\?v=\d+[a-z]'/.test(uv));
+    const pvSrc = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
+    ok('모든 produceLogic·uploadVideo·edl import 의 버전이 같다', (() => { const v = new Set(); [pvSrc, uv, fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8')].forEach((src) => { (src.match(/\.js\?v=(\d+[a-z])/g) || []).forEach((m) => v.add(m)); }); return v.size === 1; })());
+    ok('③ 화면이 컷 목록을 계산·저장하고 ④ 오더에 cuts 로 싣는다', /buildEDL\(/.test(pvSrc) && /cutsForOrder\(state, state\.inputs\)/.test(pvSrc) && /cuts: cutRes\.ok \? cutRes\.cuts : undefined/.test(pvSrc) && /s\.cut_list = list/.test(pvSrc));
+    ok('서버가 컷을 접수하지 않았으면(옛 GAS) 경고가 남는다', /Number\(d\.cuts\) !== sentCuts/.test(pvSrc) && /if \(renderWarn\) showBanner/.test(pvSrc));
+    ok('컷이 잘못되면 오더 보내기 버튼이 막힌다', /if \(!sendable\) sendBtn\.setAttribute\('disabled', ''\)/.test(pvSrc));
+    ok('올리기는 상세 시트를 닫으면 멈춘다', /shouldCancel: \(\) => up\.cancel \|\| !uploadAlive\(\)/.test(pvSrc) && /wrap\.closest\('dialog'\)/.test(pvSrc));
+    ok('붙여 넣은 자막 원문은 저장하지 않는다(상태에 cut_list 만)', !/s\.cut_src|s\.srt_text|patch: \{ studio: \{[^}]*src/.test(pvSrc) && !/localStorage[^\n]*cutMem/.test(pvSrc));
     /* 코드 규칙 */
     const pv = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
     const pl = fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8');

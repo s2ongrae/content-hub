@@ -157,7 +157,7 @@ function doPost(e) {
     };
 
     // 읽기는 감사 로그를 남기지 않는다(쿼터·행 폭증 방지). 쓰기와 오류만 기록.
-    if (auth.spec.mode === 'WRITE') {
+    if (auth.spec.mode === 'WRITE' && !auth.spec.noAudit) {
       recordIdempotencyAndAudit_(ss, {
         action: ctx.action, brand: ctx.brand, contentId: data && data.content_id,
         idempotencyKey: ctx.idempotencyKey, clientId: ctx.clientId,
@@ -239,6 +239,10 @@ const M1_HANDLERS = {
   list_drive_media: handleListDriveMedia_,
   hub_order: handleHubOrder_,
   hub_order_status: handleHubOrderStatus_,
+  upload_video_chunk: handleUploadVideoChunk_,
+  upload_video_list: handleUploadVideoList_,
+  upload_video_fetch: handleUploadVideoFetch_,
+  upload_video_delete: handleUploadVideoDelete_,
   // 내 블로그 보기 (2026-11-19) — gas/Blog.gs
   blog_sync: handleBlogSync_,
   list_blog_stats: handleListBlogStats_,

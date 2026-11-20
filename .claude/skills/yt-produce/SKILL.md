@@ -55,6 +55,8 @@ ffmpeg -i in.mp4 -vf "crop=ih*9/16:ih,scale=1080:1920" ...
 ```
 크롭은 가로 폭의 약 70%를 버린다. 간판 전경·인물 전신처럼 버리면 안 되는 장면은 사람이 구도를 정한다(레터박스·블러 배경은 표1 금지).
 
+**허브 경로(2026-11-20)**: 이 §2 의 컷·9:16·음량은 허브 제작 탭이 오더(`content_render` + `cuts`)로 노트북에 시킨다 — 영상 올리기는 허브 ①, 컷 목록은 ③, 실행은 ④(`hub-agent/notebook-agent/lib/render.js`, `cut.py --remove --smart` → `fit`/`join` → `loudness` → `check`). 손으로 돌릴 때는 아래 명령을 쓴다.
+
 **2-3. 컷**: 정확한 컷은 재인코딩(`-ss … -to … -i` 뒤 libx264). `-c copy` 는 키프레임으로 밀려 어긋난다. 이어붙이기는 `concat` 목록. 무음 구간은 `-af silencedetect=n=-35dB:d=0.4` 로 찾고, 무엇을 자를지는 yt-edit 목록을 따른다.
 
 ## 3. SRT (표2 규격)

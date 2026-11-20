@@ -3,10 +3,11 @@
  *
  * 카드 하나를 ①재료 → ②기획 → ③컷 목록 → ④클린 마스터 → ⑤자막 파일 → ⑥검수·마무리 순서로 따라간다.
  *  · 표준은 docs/CONTENT_STANDARD_v3.md — AI 는 클린 마스터(컷·9:16·음량)와 SRT 까지, 자막 번인·TTS·BGM·커버는 사람이 캡컷에서.
+ *  · ① 은 영상을 구글 드라이브(비공개 폴더)에 올린다(js/uploadVideo.js → gas/Upload.gs). 노트북이 렌더할 때 받아 간다.
+ *  · ③ 은 타임코드 대본에서 컷 목록(무음·추임새·재시도)을 계산해 켜고 끌 수 있게 하고, ④ 오더에 cuts 로 실어 노트북이 실제로 자른다.
  *  · ④ 는 노트북에 영상 렌더 오더(hub_order · content_render)를 보낸다. 승인(15분) 뒤에만 실행된다.
  *    보낸 뒤에는 hub_order_status(읽기 전용)로 15초마다 진행 상태를 가져와 보여 준다(종료 상태·화면 이탈·탭 숨김이면 멈춤).
  *  · ⑤ 자막 파일(Whisper)은 아직 없다 — '준비 중'으로만 표시하고 누를 수 있는 버튼은 만들지 않는다.
- *  · 영상이 노트북 inbox 로 들어오는 방법은 아직 정해지지 않았다 → 이 화면은 파일을 올리지 않는다(안내만).
  *
  * 저장: Drive payload 의 최상위 키 `studio` 한 개. update_content 의 patch 로 저장한다(작성본 탭과 같은 경로,
  *   Contents 37칸·GAS 변경 없음). 저장이 실패하면 그 기기 localStorage 에 남겨 두고 다음에 다시 저장한다.
@@ -15,11 +16,14 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
+import { buildEDL } from './yt/edl.js?v=20261120a';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120a';
 import {
-  STEPS, PROFILES, MAX_INPUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
+  STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, compareStandard, stepStatus, orderStatusLabel,
-  isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS
-} from './produceLogic.js?v=20261119y';
+  isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
+  cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes
+} from './produceLogic.js?v=20261120a';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -42,6 +46,7 @@ export function produceSection(ctx) {
     if (raw) { state = normalizeState(JSON.parse(raw)); unsaved = true; }
   } catch (e) { lsDel(lsKey); }
 
+  let renderWarn = null;      // 오더를 보낸 직후의 경고(다시 그려도 남도록 여기 둔다)
   let version = detail.version;
   let openStep = null;
   let saveTimer = null;
@@ -266,6 +271,112 @@ export function produceSection(ctx) {
     else fallback();
   };
 
+  /* ── ① 영상 올리기(구글 드라이브) ── */
+  const up = { busy: false, cancel: false };
+  const uploadAlive = () => {
+    if (!wrap.isConnected) return false;
+    const dlg = wrap.closest('dialog');
+    return !(dlg && !dlg.open);                     // 상세 시트를 닫으면 올리기를 멈춘다
+  };
+
+  function uploadPanel(addInput) {
+    const fileIn = h('input', { type: 'file', accept: '.mp4,.mov,.m4v,video/mp4,video/quicktime', class: 'pr-file', 'aria-label': '올릴 영상 고르기' });
+    fileIn.multiple = true;
+    const barIn = h('div', { class: 'pr-bar-in', style: 'width:0%' });
+    const bar = h('div', { class: 'pr-bar', role: 'img', 'aria-label': '올리는 중', style: 'display:none' }, barIn);
+    const line = h('div', { class: 'pr-upline', role: 'status', 'aria-live': 'polite' });
+    const listHost = h('div', { class: 'pr-uplist' });
+    const cancelBtn = h('button', { class: 'btn sm', type: 'button', text: '멈추기', style: 'display:none', onclick: () => { up.cancel = true; line.textContent = '멈추는 중…'; } });
+    const setLine = (text, kind) => { line.textContent = text; line.className = 'pr-upline' + (kind ? ' ' + kind : ''); };
+    const syncBusy = () => {
+      if (up.busy) fileIn.setAttribute('disabled', ''); else fileIn.removeAttribute('disabled');
+      cancelBtn.style.display = up.busy ? '' : 'none';
+      bar.style.display = up.busy ? '' : 'none';
+    };
+
+    function errText(err) {
+      const code = err && err.code;
+      if (isNotDeployedCode(code)) return '서버(GAS)에 올리기 기능이 아직 없어요. Upload.gs 를 추가하고 새 버전으로 배포하면 켜져요.';
+      if (code === 'ERR_NO_CONFIG') return '연결 설정이 없어요. ⚙︎ 에서 GAS 주소와 토큰을 넣어 주세요.';
+      if (code === 'ERR_UNAUTHORIZED') return '토큰이 맞지 않아요. ⚙︎ 에서 다시 넣어 주세요.';
+      if (code === 'ERR_PAYLOAD_TOO_LARGE') return '서버가 조각을 너무 크다고 거절했어요. GAS 를 새 버전으로 배포했는지 확인해 주세요.';
+      return (err && err.message) || '알 수 없는 오류';
+    }
+
+    async function refreshList() {
+      if (!uploadAlive()) return;
+      listHost.replaceChildren(h('p', { class: 'hint', text: '올라온 영상을 확인하는 중…' }));
+      let items;
+      try { items = await listUploads(api, contentId); }
+      catch (err) { if (uploadAlive()) listHost.replaceChildren(h('p', { class: 'pr-err', text: '목록을 가져오지 못했어요 — ' + errText(err) })); return; }
+      if (!uploadAlive()) return;
+      if (!items.length) { listHost.replaceChildren(h('p', { class: 'hint', text: '아직 이 카드로 올린 영상이 없어요.' })); return; }
+      const rows = items.map((it) => {
+        const used = state.inputs.indexOf(it.name) >= 0;
+        const stateText = it.complete ? '올라옴' : '덜 올라옴(' + it.parts_found + '/' + it.parts + '조각)';
+        const useBtn = h('button', { class: 'btn sm', type: 'button', text: used ? '쓰는 중' : '이 영상 쓰기', onclick: () => { addInput(it.name); refreshList(); } });
+        if (used || !it.complete) useBtn.setAttribute('disabled', '');
+        const delBtn = h('button', {
+          class: 'btn sm', type: 'button', text: '지우기',
+          onclick: async () => {
+            if (!window.confirm(it.name + ' 을(를) 구글 드라이브에서 지울까요? (휴지통으로 가요)')) return;
+            try { await deleteUpload(api, contentId, it.name); toast('지웠어요', 'ok'); } catch (err) { toast('지우지 못했어요 — ' + errText(err), 'err'); }
+            refreshList();
+          }
+        });
+        return h('div', { class: 'pr-uprow' },
+          h('div', { class: 'pr-upinfo' }, h('strong', { text: it.name }), h('span', { class: 'pr-sub', text: formatBytes(it.size) + ' · ' + stateText })),
+          h('div', { class: 'pr-row' }, useBtn, delBtn));
+      });
+      listHost.replaceChildren(...rows);
+    }
+
+    fileIn.addEventListener('change', async () => {
+      const files = Array.from(fileIn.files || []);
+      fileIn.value = '';
+      if (!files.length || up.busy) return;
+      up.busy = true; up.cancel = false; syncBusy();
+      let okCount = 0;
+      for (const f of files) {
+        const chk = checkUploadFile({ name: f.name, size: f.size });
+        if (!chk.ok) { setLine(chk.errors[0], 'err'); continue; }
+        if (state.inputs.indexOf(chk.name) < 0 && state.inputs.length >= MAX_INPUTS) { setLine('영상은 ' + MAX_INPUTS + '개까지예요', 'err'); break; }
+        barIn.style.width = '0%';
+        setLine(chk.name + (chk.renamed ? ' (이름을 ' + chk.name + ' 로 바꿔 올려요)' : '') + ' — 올리는 중…', '');
+        try {
+          await uploadVideo({
+            api, contentId, file: f, name: chk.name,
+            shouldCancel: () => up.cancel || !uploadAlive(),
+            onProgress: (p) => {
+              barIn.style.width = Math.round((p.sent / p.total) * 100) + '%';
+              setLine(chk.name + ' — ' + p.index + '/' + p.parts + ' 조각 · ' + formatBytes(p.sent) + ' / ' + formatBytes(p.total), '');
+            }
+          });
+          addInput(chk.name);
+          okCount += 1;
+          if (uploadAlive()) setLine(chk.name + ' — 올렸어요', 'ok');
+        } catch (err) {
+          if (err && err.code === 'CANCELLED') { if (uploadAlive()) setLine('올리기를 멈췄어요. 올라간 일부 조각은 다음에 같은 이름으로 올리면 지워져요.', 'err'); break; }
+          if (uploadAlive()) setLine(chk.name + ' — 올리지 못했어요: ' + errText(err), 'err');
+          break;
+        }
+      }
+      up.busy = false; up.cancel = false;
+      if (uploadAlive()) { syncBusy(); if (okCount) toast(okCount + '개를 구글 드라이브에 올렸어요', 'ok'); refreshList(); }
+    });
+
+    syncBusy();
+    refreshList();
+    return h('div', { class: 'pr-up' },
+      h('div', { class: 'pr-label', text: '영상 올리기 (구글 드라이브)' }),
+      h('p', { class: 'hint', text: '골라서 올리면 구글 드라이브의 비공개 폴더에 저장돼요. 노트북이 ④에서 렌더할 때 알아서 받아 가요. 큰 영상은 몇 분 걸리니 이 창을 닫지 마세요. mov·mp4·m4v, 한 개 1.5GB까지.' }),
+      h('div', { class: 'pr-row' }, fileIn, cancelBtn),
+      bar, line,
+      h('div', { class: 'pr-row' }, h('button', { class: 'btn sm', type: 'button', text: '올라온 영상 새로고침', onclick: refreshList })),
+      listHost,
+      h('p', { class: 'hint', text: '노트북 설정(처음 한 번): 노트북의 .env 에 CONTENT_HUB_GAS_URL 과 CONTENT_HUB_API_TOKEN 이 있어야 받아 가요. 없으면 예전처럼 노트북의 inbox 폴더에 직접 넣어도 돼요.' }));
+  }
+
   /* ── ① 재료 ── */
   function bodyMaterial(box) {
     const ta = h('textarea', {
@@ -300,12 +411,19 @@ export function produceSection(ctx) {
       else { cropErr.textContent = ''; change((s) => { s.crop_x = n; }); }
     });
 
+    const addInput = (name) => {
+      if (state.inputs.indexOf(name) < 0 && state.inputs.length < MAX_INPUTS) change((s) => { s.inputs = s.inputs.concat([name]); });
+      ta.value = state.inputs.join('\n');
+      paintErr();
+    };
+
     box.append(
-      note('이 카드의 원본 영상 파일 이름을 적어 두는 칸이에요. 최대 ' + MAX_INPUTS + '개, mp4·mov·m4v. 폴더 경로는 적지 않아요.'),
+      uploadPanel(addInput),
+      note('아래 칸은 이 카드에서 쓸 영상 파일 이름이에요(위에서 올리면 자동으로 들어가요). 최대 ' + MAX_INPUTS + '개, mp4·mov·m4v. 폴더 경로는 적지 않아요.'),
       h('div', { class: 'pr-warnbox' },
-        h('strong', { text: '파일 넣는 곳: ' }),
+        h('strong', { text: '직접 넣을 때: ' }),
         h('code', { text: 'inbox/' + contentId + '/' }),
-        h('span', { text: ' (집 노트북). 영상을 이 화면에서 올리는 기능은 아직 없어요 — 먼저 그 폴더에 파일을 넣어 두세요.' })),
+        h('span', { text: ' (집 노트북). 구글 드라이브에 올리지 않고 노트북 폴더에 파일을 직접 넣었다면 그 이름을 아래에 적어요.' })),
       h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '영상 파일 이름' }), ta),
       errBox,
       h('div', { class: 'pr-two' },
@@ -325,45 +443,140 @@ export function produceSection(ctx) {
   }
 
   /* ── ③ 컷 목록 ── */
+  const cutMem = { src: '', floor: '0.6', srcLen: null };   // 붙여 넣은 자막은 이 화면에서만 들고 있다(서버·저장소에 남기지 않는다)
+  const CUT_LABEL = { DEAD: '무음', FILLER: '추임새', REPEAT: '재시도' };
   function bodyCuts(box) {
-    box.append(
-      note('자막(SRT)이나 타임코드 대본을 넣으면 무음·추임새·재시도 구간을 초 단위로 뽑아 줘요. 컷 목록은 "무엇을 자를지"까지만 정하고, 실제로 자르는 건 ④에서 해요.'),
-      h('div', { class: 'pr-row' }, goSeries('studio', '숏폼 공방 열기 (컷 편집 리스트)')),
+    const ta = h('textarea', {
+      class: 'pr-ta', rows: '6', spellcheck: 'false', autocomplete: 'off', 'aria-label': '타임코드 대본',
+      placeholder: '원본 영상의 자막(SRT)이나 "00:12 말" 형식 대본을 붙여 넣어요'
+    });
+    ta.value = cutMem.src;
+    ta.addEventListener('input', () => { cutMem.src = ta.value; });
+    const floor = h('input', { class: 'pr-in', type: 'text', inputmode: 'decimal', value: cutMem.floor, 'aria-label': '무음 기준(초)' });
+    const msg = h('div', { class: 'pr-err', role: 'alert' });
+    const sumHost = h('div', { class: 'pr-banner', role: 'status', 'aria-live': 'polite' });
+    const listHost = h('div', { class: 'pr-cutlist' });
+
+    function paintSummary() {
+      const sm = cutSummary(state.cut_list, cutMem.srcLen);
+      if (!state.cut_list.length) { sumHost.style.display = 'none'; return; }
+      sumHost.style.display = '';
+      sumHost.replaceChildren(h('strong', { text: '자를 곳 ' + sm.count + '곳 · 약 ' + sm.seconds.toFixed(1) + '초 ' }),
+        h('span', { text: sm.left !== null ? '→ 남는 길이 약 ' + sm.left.toFixed(1) + '초(규격 3~90초)' : '' }));
+    }
+
+    function paintCuts() {
+      paintSummary();
+      if (!state.cut_list.length) { listHost.replaceChildren(); return; }
+      const t = h('table', { class: 'pr-tbl' }, h('thead', null, h('tr', null,
+        h('th', { text: '자르기' }), h('th', { text: '종류' }), h('th', { text: '구간(초)' }), h('th', { text: '길이' }))));
+      const tb = h('tbody');
+      state.cut_list.forEach((c, i) => {
+        const cb = h('input', { type: 'checkbox', 'aria-label': (i + 1) + '번 구간 자르기' });
+        cb.checked = c.on !== false;
+        cb.addEventListener('change', () => { change((s) => { s.cut_list[i].on = cb.checked; }); paintSummary(); });
+        tb.appendChild(h('tr', null,
+          h('td', null, cb), h('td', { text: CUT_LABEL[c.type] || c.type }),
+          h('td', { text: c.from.toFixed(2) + ' → ' + c.to.toFixed(2) }), h('td', { text: (c.to - c.from).toFixed(2) })));
+      });
+      t.appendChild(tb);
+      listHost.replaceChildren(h('div', { class: 'pr-tbl-wrap' }, t));
+    }
+
+    const makeBtn = h('button', {
+      class: 'btn primary sm', type: 'button', text: '컷 목록 만들기',
+      onclick: () => {
+        msg.textContent = '';
+        cutMem.floor = floor.value;
+        const f = Number(String(floor.value).trim());
+        if (!Number.isFinite(f) || f < 0.2 || f > 3) { msg.textContent = '무음 기준은 0.2~3 사이 숫자(초)로 적어 주세요'; return; }
+        const res = buildEDL(ta.value, { floor: f });
+        if (!res.ok) { msg.textContent = res.error; return; }
+        let list = cutsFromEdl(res);
+        if (!list.length) { msg.textContent = '자를 곳을 찾지 못했어요(무음 기준을 줄이면 더 찾아요)'; return; }
+        if (list.length > MAX_CUTS) { msg.textContent = '자를 곳이 ' + list.length + '곳이라 앞 ' + MAX_CUTS + '곳만 담았어요'; list = list.slice(0, MAX_CUTS); }
+        cutMem.srcLen = res.stats ? Math.round((res.stats.result_seconds + res.stats.cut_seconds) * 100) / 100 : null;
+        change((s) => { s.cut_list = list; s.cuts = false; });
+        paintCuts();
+        paintList_checksOnly();
+      }
+    });
+    const clearBtn = h('button', {
+      class: 'btn sm', type: 'button', text: '목록 지우기',
+      onclick: () => { change((s) => { s.cut_list = []; s.cuts = false; }); cutMem.srcLen = null; msg.textContent = ''; paintCuts(); paintList_checksOnly(); }
+    });
+
+    const kids = [
+      note('원본 영상의 자막(SRT)이나 타임코드 대본을 넣으면 무음·추임새·재시도 구간을 초 단위로 뽑아 줘요. 끄고 싶은 구간은 체크를 풀어요. ④에서 노트북이 켜 둔 구간을 실제로 잘라요.'),
+      h('div', { class: 'pr-warnbox' }, h('strong', { text: '시간은 원본 영상 기준이에요. ' }),
+        h('span', { text: '이미 한 번 편집한 영상의 자막을 넣으면 엉뚱한 곳이 잘려요. 가장 위(①)에서 올린 원본의 자막을 쓰세요.' }))
+    ];
+    if (state.inputs.length > 1) {
+      const sel = h('select', { class: 'pr-sel', 'aria-label': '컷을 적용할 영상' },
+        h('option', { value: '', text: '어느 영상의 자막인가요?' }),
+        ...state.inputs.map((n) => h('option', { value: n, text: n })));
+      sel.value = state.inputs.indexOf(state.cut_input) >= 0 ? state.cut_input : '';
+      sel.addEventListener('change', () => { change((s) => { s.cut_input = sel.value; }); });
+      kids.push(h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '컷을 적용할 영상' }), sel),
+        note('영상이 여러 개면 컷은 고른 영상 하나에만 적용돼요. 다른 영상의 컷은 영상마다 따로 계산해야 해서 지금은 지원하지 않아요.'));
+    }
+    kids.push(
+      h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '타임코드 대본' }), ta),
+      h('div', { class: 'pr-two' },
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '무음 기준(초) — 이보다 길게 조용하면 자를 곳' }), floor),
+        h('div', { class: 'pr-row pr-end' }, makeBtn, clearBtn)),
+      msg, sumHost, listHost,
       check('자를 구간을 정했어요', state.cuts, (v) => change((s) => { s.cuts = v; }),
-        '④ 오더는 아직 컷 목록을 받지 않아요 — 컷은 캡컷에서 이 목록대로 직접 다듬어요'));
+        '체크한 구간만 ④ 오더에 실려요. 자를 곳이 없으면 이 칸만 체크해도 돼요(통째로 규격에 맞춰요)'));
+    box.append(...kids);
+    paintCuts();
   }
+
+  /** 단계 라벨만 갱신(입력 중인 칸을 지키려고 목록 전체를 다시 그리지 않는다) */
+  function paintList_checksOnly() { paintStates(); }
 
   /* ── ④ 클린 마스터 ── */
   function bodyRender(box) {
     stopPoll();
     statusHost = null;
-    const built = buildRenderPayload({ contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x });
+    const cutRes = cutsForOrder(state, state.inputs);
+    const built = buildRenderPayload({ contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x, cuts: cutRes.ok ? cutRes.cuts : undefined });
+    const sendable = built.ok && cutRes.ok;
     const p = PROFILES[state.profile];
+    const cutSm = cutSummary(state.cut_list.filter((c) => c.on !== false), cutMem.srcLen);
 
     box.append(
-      note('노트북이 영상을 9:16(1080×1920)·30fps로 맞추고 음량을 ' + p.lufs.toFixed(0) + ' LUFS로 평탄화한 클린 마스터를 만들어요. 자막 번인·TTS·효과음·로고는 넣지 않아요(표준 v3).'),
+      note('노트북이 ' + (cutRes.ok && cutRes.cuts.length ? '정해 둔 컷 ' + cutRes.cuts.length + '곳(약 ' + cutSm.seconds.toFixed(1) + '초)을 먼저 잘라내고, ' : '') + '영상을 9:16(1080×1920)·30fps로 맞추고 음량을 ' + p.lufs.toFixed(0) + ' LUFS로 평탄화한 클린 마스터를 만들어요. 자막 번인·TTS·효과음·로고는 아직 넣지 않아요.'),
       h('div', { class: 'pr-pipe' },
-        ...['정보 읽기', '이어붙이기', '9:16 맞춤', '음량 2회 측정', '규격 검수'].map((t, i) => h('span', { class: 'pr-pipe-i' }, h('b', { text: String(i + 1) }), t))));
+        ...['정보 읽기'].concat(cutRes.ok && cutRes.cuts.length ? ['컷 편집'] : [], ['이어붙이기', '9:16 맞춤', '음량 2회 측정', '규격 검수'])
+          .map((t, i) => h('span', { class: 'pr-pipe-i' }, h('b', { text: String(i + 1) }), t))));
 
     if (!built.ok) {
       box.appendChild(h('div', { class: 'pr-warnbox' },
         h('strong', { text: '① 재료부터 채워 주세요 — ' }),
         h('span', { text: built.errors[0] })));
+    } else if (!cutRes.ok) {
+      box.appendChild(h('div', { class: 'pr-warnbox' },
+        h('strong', { text: '③ 컷 목록을 확인해 주세요 — ' }),
+        h('span', { text: cutRes.error })));
     }
 
     /* 오더 보내기 */
     const sendBtn = h('button', { class: 'btn primary', type: 'button', text: '노트북에 렌더 오더 보내기' });
-    if (!built.ok) sendBtn.setAttribute('disabled', '');
+    if (!sendable) sendBtn.setAttribute('disabled', '');
     const banner = h('div', { class: 'pr-banner-host', role: 'status' });
     const showBanner = (kind, title, text) => {
       banner.replaceChildren(h('div', { class: 'pr-banner ' + kind }, h('strong', { text: title + ' ' }), h('span', { text })));
     };
 
+    if (renderWarn) showBanner('warn', renderWarn.title, renderWarn.text);
+
     sendBtn.addEventListener('click', async () => {
-      if (!built.ok) return;
+      if (!sendable) return;
       sendBtn.setAttribute('disabled', '');
       sendBtn.textContent = '보내는 중…';
       banner.replaceChildren();
+      renderWarn = null;
       try {
         const res = await api.post('hub_order', Object.assign({ type: 'content_render' }, built.payload));
         const d = (res && res.data) || {};
@@ -374,6 +587,10 @@ export function produceSection(ctx) {
             note: String(d.note || ''), report: null
           };
         });
+        const sentCuts = built.payload.cuts ? built.payload.cuts.length : 0;
+        if (sentCuts && Number(d.cuts) !== sentCuts) {
+          renderWarn = { title: '서버(GAS)가 컷을 아직 몰라요.', text: '컷 ' + sentCuts + '곳이 오더에 실리지 않았어요. 이대로 승인하면 자르지 않은 영상이 만들어져요 — 포털 오더함에서 거절하고, GAS 를 새 버전으로 배포한 뒤 다시 보내 주세요.' };
+        }
         toast('렌더 오더를 보냈어요', 'ok');
         poll.fails = 0; poll.halted = ''; poll.live = null;
         paintList();
@@ -396,16 +613,16 @@ export function produceSection(ctx) {
 
     const copyBtn = h('button', {
       class: 'btn sm', type: 'button', text: '오더 내용 복사',
-      onclick: () => copyText(built.ok ? JSON.stringify(Object.assign({ type: 'content_render' }, built.payload), null, 2) : '', '오더 내용을 복사했어요')
+      onclick: () => copyText(sendable ? JSON.stringify(Object.assign({ type: 'content_render' }, built.payload), null, 2) : '', '오더 내용을 복사했어요')
     });
-    if (!built.ok) copyBtn.setAttribute('disabled', '');
+    if (!sendable) copyBtn.setAttribute('disabled', '');
 
     box.append(
       h('div', { class: 'pr-row' }, sendBtn, copyBtn),
       note('위험 작업이라 승인 카드가 뜨고, 15분 안에 승인해야 실행돼요. 승인은 포털 오더함에서 하고, 진행 상태는 이 화면이 15초마다 알려 줘요.'),
       banner);
 
-    if (built.ok) {
+    if (sendable) {
       box.appendChild(h('details', { class: 'pr-det' },
         h('summary', { text: '보낼 내용 보기' }),
         h('pre', { class: 'pr-pre', text: JSON.stringify(built.payload, null, 2) })));
