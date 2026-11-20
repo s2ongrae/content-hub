@@ -159,6 +159,50 @@ function handleUploadVideoFetch_(ss, payload) {
   return { content_id: contentId, name: name, index: index, parts: parts, bytes: bytes.length, data: Utilities.base64Encode(bytes) };
 }
 
+/* ------------------------------------------------------------------ *
+ * 자산(짧은 글) — 자막 초안·확정 자막·결과 보고 (2026-11-20)
+ *  노트북이 만든 결과(자막 초안 SRT·렌더 보고)를 허브 화면이 읽고, 사람이 확정한 자막을 노트북이 읽어 간다.
+ *  큐가 돌려주는 결과는 짧게 잘려 있어서(수백 자) 자막·검수표는 이 경로로 주고받는다.
+ *  저장: 드라이브 ContentHubOS_Uploads/<content_id>/<kind>.txt (같은 이름은 덮어씀). 글만, 200KB 까지.
+ * ------------------------------------------------------------------ */
+const ASSET_KINDS = ['srt_draft', 'srt_final', 'report_clean', 'report_transcribe', 'report_finish'];
+const ASSET_MAX_BYTES = 200000;
+
+function assetKind_(payload) {
+  const k = String((payload && payload.kind) || '');
+  if (ASSET_KINDS.indexOf(k) === -1) throw uploadBad_('kind 는 ' + ASSET_KINDS.join(' · ') + ' 중 하나여야 합니다.', { kind: k.slice(0, 30) });
+  return k;
+}
+
+function handleAssetPut_(ss, payload) {
+  const contentId = uploadContentId_(payload);
+  const kind = assetKind_(payload);
+  const text = payload.text === undefined || payload.text === null ? '' : String(payload.text);
+  const bytes = Utilities.newBlob(text).getBytes().length;
+  if (bytes > ASSET_MAX_BYTES) throw createAppError_('ERR_PAYLOAD_TOO_LARGE', '글이 너무 깁니다(최대 ' + ASSET_MAX_BYTES + '바이트).', { bytes: bytes });
+  const folder = uploadFolder_(contentId, true);
+  const name = kind + '.txt';
+  const old = folder.getFilesByName(name);
+  while (old.hasNext()) { try { old.next().setTrashed(true); } catch (err) { /* 이미 지워짐 */ } }
+  folder.createFile(name, text, 'text/plain');
+  return { content_id: contentId, kind: kind, bytes: bytes };
+}
+
+function handleAssetGet_(ss, payload) {
+  const contentId = uploadContentId_(payload);
+  const kind = assetKind_(payload);
+  const folder = uploadFolder_(contentId, false);
+  if (!folder) return { content_id: contentId, kind: kind, exists: false };
+  const it = folder.getFilesByName(kind + '.txt');
+  let best = null;
+  while (it.hasNext()) {
+    const f = it.next();
+    if (!best || f.getLastUpdated().getTime() > best.getLastUpdated().getTime()) best = f;
+  }
+  if (!best) return { content_id: contentId, kind: kind, exists: false };
+  return { content_id: contentId, kind: kind, exists: true, text: best.getBlob().getDataAsString(), updated_at: formatKstIso_(best.getLastUpdated()) };
+}
+
 function handleUploadVideoDelete_(ss, payload) {
   const contentId = uploadContentId_(payload);
   const name = uploadName_(payload);

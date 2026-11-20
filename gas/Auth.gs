@@ -46,6 +46,8 @@ const ACTION_WHITELIST = {
   //   조각마다 감사 행을 남기면 시트가 수백 줄 불어난다 → noAudit(오류는 그대로 기록). 외부(드라이브) 호출이라 라우터 락 없음.
   upload_video_chunk:   { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true, noAudit: true },
   upload_video_delete:  { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  asset_put:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true, noAudit: true },   // 자막·결과 보고(짧은 글) 저장
+  asset_get:            { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   upload_video_list:    { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   upload_video_fetch:   { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   // 내 블로그 보기 (2026-11-19) — gas/Blog.gs. 네이버 공개 데이터를 모은다(외부 호출 → 라우터 락 없음, 시트 쓰기만 자체 락)

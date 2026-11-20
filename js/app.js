@@ -19,7 +19,7 @@ import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './
 import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
-import { produceSection } from './produceView.js?v=20261120d';
+import { produceSection } from './produceView.js?v=20261120e';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 

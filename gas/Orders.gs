@@ -217,8 +217,13 @@ function hubRenderCues_(raw, label, withTone) {
   return out;
 }
 
+const RENDER_STAGES = ['transcribe', 'finish'];
+const RENDER_BGM_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|wav|m4a|aac)$/i;
+
 function isRealRenderOrder_(type, payload) {
-  return type === 'content_render' && !!payload && Array.isArray(payload.inputs);
+  if (type !== 'content_render' || !payload) return false;
+  // stage 가 적혀 있으면(모르는 값이어도) 진짜 렌더 경로로 보내 검증에서 거절한다 — 옛 claude_prompt 경로로 새지 않게
+  return Array.isArray(payload.inputs) || String(payload.stage || '') !== '';
 }
 
 /** 렌더 오더 payload 를 검사해 큐에 보낼 모양(고정 키 5개 이하)으로 돌려준다. 어긋나면 ERR_VALIDATION_FAILED. */
@@ -228,6 +233,33 @@ function hubRenderPayload_(payload) {
   if (!RENDER_CONTENT_ID_RE.test(contentId)) throw bad('content_id 는 영문·숫자·_·- 40자 이내여야 합니다.');
   const brand = String(payload.brand || '');
   if (RENDER_BRANDS.indexOf(brand) === -1) throw bad('brand 가 올바르지 않습니다.');
+  // 2·3단계(자막 초안·마무리)는 클린 마스터를 이어받으므로 원본 이름이 없다 — 옵션만 통과시킨다(모르는 필드는 버린다)
+  const stage = String(payload.stage || '');
+  if (stage) {
+    if (RENDER_STAGES.indexOf(stage) === -1) throw bad('stage 는 transcribe 또는 finish 여야 합니다.');
+    const so = { content_id: contentId, brand: brand, stage: stage };
+    if (stage === 'finish') {
+      so.burn = payload.burn === undefined ? true : payload.burn === true;
+      so.ai_notice = payload.ai_notice === true;
+      if (payload.bgm !== undefined && payload.bgm !== null && payload.bgm !== '') {
+        const b = payload.bgm && typeof payload.bgm === 'object' ? payload.bgm : {};
+        const bn = String(b.name || '');
+        if (!RENDER_BGM_RE.test(bn) || bn.indexOf('..') !== -1) throw bad('bgm.name 은 BGM 파일 이름(mp3·wav·m4a·aac)만 넣을 수 있습니다.');
+        so.bgm = { name: bn };
+        if (b.volume_db !== undefined && b.volume_db !== null && b.volume_db !== '') {
+          const vv = Number(b.volume_db);
+          if (!isFinite(vv) || vv < -40 || vv > 0) throw bad('bgm.volume_db 는 -40~0 사이 숫자여야 합니다.');
+          so.bgm.volume_db = vv;
+        }
+      }
+      if (payload.cover !== undefined && payload.cover !== null && payload.cover !== '') {
+        const ct = Number(payload.cover && payload.cover.t);
+        if (!isFinite(ct) || ct < 0 || ct > 3600) throw bad('cover.t 는 0~3600 사이 초 단위 숫자여야 합니다.');
+        so.cover = { t: Math.round(ct * 100) / 100 };
+      }
+    }
+    return so;
+  }
   const inputs = payload.inputs;
   if (!inputs.length || inputs.length > RENDER_MAX_INPUTS) throw bad('inputs 는 1~' + RENDER_MAX_INPUTS + '개여야 합니다.');
   const names = [];

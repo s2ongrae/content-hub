@@ -349,7 +349,9 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('규격 대조 FAIL 0 이면 렌더 완료', L.stepStatus(stDone, 'daejeon_youth').render === true);
     const stBadRep = L.normalizeState({ inputs: ['a.mp4'], render: { report: L.parseReport(Object.assign({}, goodRep, { lufs: -9 })).report } });
     ok('FAIL 이 있으면 렌더 미완료', L.stepStatus(stBadRep, 'daejeon_youth').render === false);
-    ok('SRT 단계는 언제나 미완료(준비 중)', L.STEPS.find((x) => x.key === 'srt').soon === true && L.stepStatus(stDone, 'daejeon_youth').srt === false);
+    ok('자막 단계는 확정하거나 "자막 없이 진행"을 눌러야 완료(오더만 보내서는 안 된다)', L.STEPS.find((x) => x.key === 'srt').soon === undefined && L.stepStatus(stDone, 'daejeon_youth').srt === false
+      && L.stepStatus(L.normalizeState({ srt: { confirmed: true } }), 'daejeon_youth').srt === true && L.stepStatus(L.normalizeState({ srt: { skipped: true } }), 'daejeon_youth').srt === true
+      && L.stepStatus(L.normalizeState({ order_tr: { order_id: 'Q-1', status: 'DONE' } }), 'daejeon_youth').srt === false);
     const allReview = {}; L.reviewSteps('daejeon_youth').forEach((r) => { allReview[r.id] = true; });
     ok('캡컷 7단계 모두 체크하면 마무리 완료', L.stepStatus(L.normalizeState({ review: allReview }), 'daejeon_youth').finish === true);
     ok('손상된 저장값을 믿지 않는다', same(L.normalizeState({ inputs: 'x', profile: 'zz', review: { zz: true }, render: 5 }), L.defaultState()));
@@ -433,18 +435,81 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('uploadVideo.js 가 produceLogic 을 버전 쿼리로 부른다', /from '\.\/produceLogic\.js\?v=\d+[a-z]'/.test(uv));
     const pvSrc = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
     ok('모든 produceLogic·uploadVideo·edl import 의 버전이 같다', (() => { const v = new Set(); [pvSrc, uv, fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8')].forEach((src) => { (src.match(/\.js\?v=(\d+[a-z])/g) || []).forEach((m) => v.add(m)); }); return v.size === 1; })());
-    ok('③ 화면이 컷 목록을 계산·저장하고 ④ 오더에 cuts 로 싣는다', /buildEDL\(/.test(pvSrc) && /cutsForOrder\(state, state\.inputs\)/.test(pvSrc) && /cuts: cutRes\.ok \? cutRes\.cuts : undefined/.test(pvSrc) && /s\.cut_list = list/.test(pvSrc));
-    ok('서버가 컷을 접수하지 않았으면(옛 GAS) 경고가 남는다', /Number\(d\.cuts\) !== sentCuts/.test(pvSrc) && /if \(renderWarn\) showBanner/.test(pvSrc));
-    ok('컷이 잘못되면 오더 보내기 버튼이 막힌다', /if \(!sendable\) sendBtn\.setAttribute\('disabled', ''\)/.test(pvSrc));
+    ok('③ 화면이 컷 목록을 계산·저장하고 ④ 오더에 cuts 로 싣는다', /buildEDL\(/.test(pvSrc) && /cutsForOrder\(state, state\.inputs\)/.test(pvSrc) && /cuts: cr\.ok \? cr\.cuts : undefined/.test(pvSrc) && /s\.cut_list = list/.test(pvSrc));
+    ok('서버가 컷을 접수하지 않았으면(옛 GAS) 경고가 남는다', /Number\(d\.cuts\) !== sentCuts/.test(pvSrc) && /if \(key === 'render' && renderWarn\) showBanner/.test(pvSrc));
+    ok('컷이 잘못되면 오더 보내기 버튼이 막힌다', /isSendable\(cur\)/.test(pvSrc) && /sendBtn\.setAttribute\('disabled', ''\)/.test(pvSrc));
     ok('올리기는 상세 시트를 닫으면 멈춘다', /shouldCancel: \(\) => up\.cancel \|\| !uploadAlive\(\)/.test(pvSrc) && /wrap\.closest\('dialog'\)/.test(pvSrc));
     ok('붙여 넣은 자막 원문은 저장하지 않는다(상태에 cut_list 만)', !/s\.cut_src|s\.srt_text|patch: \{ studio: \{[^}]*src/.test(pvSrc) && !/localStorage[^\n]*cutMem/.test(pvSrc));
+    /* ── 자막(SRT) 규칙 — 노트북 lib/srt.js 와 같은 값 표 ── */
+    const R = await import('file://' + path.join(ROOT, 'js', 'srtRules.js'));
+    const Cq = (a, b, t) => ({ start: a, end: b, text: t, lines: t.split('\n') });
+    const codesOf = (cues, brand) => R.checkSrt(cues, brand || 'daejeon_youth').map((i) => i.level + ':' + i.code);
+    ok('규격 상수: 12/11자 · 2줄 · 1.0~3.5초 · 0.06초', R.CPL.daejeon_youth === 12 && R.CPL.ppiyak_kimmary === 11 && R.MAX_LINES === 2 && R.MIN_DUR === 1 && R.MAX_DUR === 3.5 && R.MIN_GAP === 0.06 && R.cplOf('x') === 12);
+    ok('정상 자막은 문제 없음', codesOf([Cq(1, 2.5, '안녕하세요'), Cq(2.6, 4, '두 번째\n자막')]).length === 0);
+    ok('3줄 FAIL · 줄당 글자 초과 WARN(12/11) · 짧음·김 WARN', codesOf([Cq(1, 2.5, '가\n나\n다')]).includes('FAIL:lines') && codesOf([Cq(1, 2.5, '열세글자가넘는한줄입니다요')]).includes('WARN:cpl') && codesOf([Cq(1, 2.5, '열두글자짜리한줄입니다요')], 'ppiyak_kimmary').includes('WARN:cpl') && !codesOf([Cq(1, 2.5, '열두글자짜리한줄입니다요')]).includes('WARN:cpl') && codesOf([Cq(1, 1.5, '짧음')]).includes('WARN:short') && codesOf([Cq(1, 5, '길다')]).includes('WARN:long'));
+    ok('간격 WARN · 겹침 FAIL · 시간 역전 FAIL · 빈 내용 FAIL', codesOf([Cq(1, 2, '가'), Cq(2.03, 3.5, '나')]).includes('WARN:gap') && codesOf([Cq(1, 2.5, '가'), Cq(2, 3.5, '나')]).includes('FAIL:overlap') && codesOf([Cq(3, 2, '역전')]).includes('FAIL:time_order') && codesOf([Cq(1, 2.5, '  ')]).includes('FAIL:empty'));
+    ok('ASS 태그·카라오케·화자 표기 FAIL · 문장 끝 마침표 WARN', codesOf([Cq(1, 2.5, '{\\an8}위')]).includes('FAIL:ass_tag') && codesOf([Cq(1, 2.5, '{\\k20}노래')]).includes('FAIL:ass_tag') && codesOf([Cq(1, 2.5, '[성래] 안녕하세요')]).includes('FAIL:speaker') && codesOf([Cq(1, 2.5, '끝났어요.')]).includes('WARN:period'));
+    const sp = R.parseSrt('\uFEFF1\r\n00:00:01,000 --> 00:00:02,500\r\n안녕\r\n\r\n2\r\n00:00:03,000 --> 00:00:04,000\r\n둘째\r\n셋째');
+    ok('SRT 읽기: BOM·CRLF 허용 · 줄 나눔 유지', sp.cues.length === 2 && sp.errors.length === 0 && sp.cues[1].lines.length === 2 && sp.cues[0].start === 1 && sp.cues[0].end === 2.5);
+    const spBad = R.parseSrt('1\n시간 없음\n본문\n\n2\n00:00:01,000 --> 00:00:02,000\n정상');
+    ok('깨진 블록은 건너뛰고 위치·이유를 알린다', spBad.cues.length === 1 && spBad.errors.length === 1 && spBad.errors[0].block === 1 && R.parseSrt('').cues.length === 0 && R.parseSrt(null).cues.length === 0);
+    ok('analyzeSrt: 막힌 문제 수(fail)에 형식 오류가 합쳐진다 · 알림(warn)은 따로', R.analyzeSrt('1\n시간 없음\n본문', 'daejeon_youth').fail === 1 && R.analyzeSrt('1\n00:00:01,000 --> 00:00:01,400\n짧음\n', 'daejeon_youth').warn >= 1 && R.analyzeSrt('1\n00:00:01,000 --> 00:00:01,400\n짧음\n', 'daejeon_youth').fail === 0);
+    ok('textHash: 줄바꿈·앞뒤 공백 차이는 같은 글, 글이 바뀌면 다르다', R.textHash('a\r\nb ') === R.textHash('a\nb') && R.textHash('a') !== R.textHash('b') && typeof R.textHash(null) === 'string');
+    const shared = [[[Cq(1, 2.5, '가\n나\n다')], 'FAIL:lines'], [[Cq(1, 2.5, '끝났어요.')], 'WARN:period'], [[Cq(1, 1.5, '짧음')], 'WARN:short'], [[Cq(1, 2.5, '{\\an8}위')], 'FAIL:ass_tag']];
+    ok('노트북 srt.js 와 같은 규칙 표(코드값이 서로 같다) — 한쪽만 바꾸지 않는다', fs.existsSync(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'srt.js')) ? (() => {
+      const N = require(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'srt.js'));
+      return shared.every(([cues, code]) => R.checkSrt(cues, 'daejeon_youth').map((i) => i.level + ':' + i.code).includes(code) && N.checkSrt(cues, 'daejeon_youth').map((i) => i.level + ':' + i.code).includes(code));
+    })() : true);
+
+    /* ── 2·3단계 오더(payload) ── */
+    const stBase = { contentId: 'KM-1', brand: 'ppiyak_kimmary' };
+    ok('자막 초안 오더: content_id·brand·stage 뿐', same(L.buildStagePayload('transcribe', Object.assign({ state: L.defaultState() }, stBase)), { ok: true, payload: { content_id: 'KM-1', brand: 'ppiyak_kimmary', stage: 'transcribe' } }));
+    const confirmed = L.normalizeState({ srt: { confirmed: true, hash: 'h', cues: 4 }, make: { bgm: '잔잔한 곡.mp3', bgm_db: -20, cover_t: 2.5, ai_notice: true } });
+    ok('마무리 오더: 자막 굽기·AI 안내·BGM·볼륨·커버가 실린다', same(L.buildStagePayload('finish', Object.assign({ state: confirmed }, stBase)), { ok: true, payload: { content_id: 'KM-1', brand: 'ppiyak_kimmary', stage: 'finish', burn: true, ai_notice: true, bgm: { name: '잔잔한 곡.mp3', volume_db: -20 }, cover: { t: 2.5 } } }));
+    ok('자막을 확정하지 않았으면 마무리 오더가 막힌다(자막 굽기 켜진 채)', L.buildStagePayload('finish', Object.assign({ state: L.defaultState() }, stBase)).ok === false);
+    const skipped = L.normalizeState({ srt: { skipped: true } });
+    ok('"자막 없이 진행"이면 자막·AI 안내를 끄고 보낼 수 있다', same(L.buildStagePayload('finish', Object.assign({ state: skipped }, stBase)).payload, { content_id: 'KM-1', brand: 'ppiyak_kimmary', stage: 'finish', burn: false, ai_notice: false, cover: { t: 1 } }));
+    ok('BGM 이름은 경로·확장자 검사 · 볼륨 -40~0 · 커버 0~3600', ['../x.mp3', 'a/b.mp3', 'a.exe', '.hid.mp3'].every((n) => !L.buildStagePayload('finish', Object.assign({ state: L.normalizeState({ srt: { skipped: true }, make: { bgm: n } }) }, stBase)).ok)
+      && L.buildStagePayload('finish', Object.assign({ state: L.normalizeState({ srt: { skipped: true }, make: { bgm: 'a.mp3', bgm_db: 5 } }) }, stBase)).ok === false
+      && L.normalizeState({ make: { cover_t: 9999 } }).make.cover_t === 1);
+    ok('모르는 단계·잘못된 id·brand 거절', !L.buildStagePayload('hack', Object.assign({ state: L.defaultState() }, stBase)).ok && !L.buildStagePayload('transcribe', { contentId: '../x', brand: 'ppiyak_kimmary', state: L.defaultState() }).ok && !L.buildStagePayload('transcribe', { contentId: 'KM-1', brand: 'x', state: L.defaultState() }).ok);
+    ok('저장값 정리: srt·make·오더 칸이 손상돼도 기본값으로', same(L.normalizeState({ srt: 5, make: 'x', order_tr: 7, order_fin: [], fin_report: 3 }).srt, L.defaultSrt()) && same(L.normalizeState({ make: 5 }).make, L.defaultMake()) && L.normalizeState({ order_tr: 7 }).order_tr === null);
+    ok('오더 칸은 따로 저장된다(렌더·자막 초안·마무리)', (st => st.render.order_id === 'Q-R' && st.order_tr.order_id === 'Q-T' && st.order_fin.order_id === 'Q-F' && st.order_tr.report === undefined)(L.normalizeState({ render: { order_id: 'Q-R' }, order_tr: { order_id: 'Q-T' }, order_fin: { order_id: 'Q-F' } })));
+    ok('단계 → 오더 칸 이름', L.ORDER_KEY_OF_STEP.render === 'render' && L.ORDER_KEY_OF_STEP.srt === 'order_tr' && L.ORDER_KEY_OF_STEP.make === 'order_fin');
+
+    /* ── 최종본 규격(표3 ⑥: -14±0.5 · TP -1.5) ── */
+    const finOk = { out: 'X_final.mp4', width: 1080, height: 1920, fps: 30, duration: 20, lufs: -14.1, tp: -1.8, checks: [{ id: 'codec', status: 'PASS', msg: 'h264' }] };
+    ok('최종본 규격 상수: -14.0±0.5 LUFS · TP -1.5', L.FINAL_STANDARD.lufs === -14 && L.FINAL_STANDARD.tol === 0.5 && L.FINAL_STANDARD.tpMax === -1.5);
+    ok('최종본 대조: 전부 PASS', L.compareStandard(finOk, 'final').every((r) => r.status === 'PASS'));
+    ok('최종본: -16 LUFS 는 FAIL(클린 마스터 규격이 아니다) · TP -1.4 는 FAIL · -1.5 는 PASS', L.compareStandard(Object.assign({}, finOk, { lufs: -16 }), 'final').find((r) => r.id === 'lufs').status === 'FAIL' && L.compareStandard(Object.assign({}, finOk, { tp: -1.4 }), 'final').find((r) => r.id === 'tp').status === 'FAIL' && L.compareStandard(Object.assign({}, finOk, { tp: -1.5 }), 'final').find((r) => r.id === 'tp').status === 'PASS');
+    ok('① 의 음량 선택 목록에 최종본이 섞이지 않는다', Object.keys(L.PROFILES).join(',') === 'captions,bgm');
+    const finState = L.normalizeState({ fin_report: L.parseReport(JSON.stringify(finOk)).report });
+    ok('마무리 단계 완료 = 최종본 규격 대조 FAIL 0', L.stepStatus(finState, 'ppiyak_kimmary').make === true && L.stepStatus(L.normalizeState({ fin_report: L.parseReport(JSON.stringify(Object.assign({}, finOk, { lufs: -18 }))).report }), 'ppiyak_kimmary').make === false && L.stepStatus(L.defaultState(), 'ppiyak_kimmary').make === false);
+    const pr2 = L.parseReport(JSON.stringify(Object.assign({}, finOk, { cover: 'X_cover.jpg', out_dir: 'C:\\out\\X', ai_notice: true, burn: { cues: 5, font: 'NanumGothic', font_preferred_missing: true, font_preferred: 'Pretendard', warnings: ['2번 짧음'] }, bgm: { name: 'bed.mp3', volume_db: -24 }, limiter: { measured_lufs: -16.2, gain_db: 2.2, ceiling_db: -4.2 }, cuts: { applied: 2, removed_seconds: 3.5 } })));
+    ok('마무리 보고의 글꼴·BGM·커버·피크 다듬기·컷 정보를 지킨다', pr2.ok && pr2.report.cover === 'X_cover.jpg' && pr2.report.burn.cues === 5 && pr2.report.burn.font_preferred_missing === true && pr2.report.bgm.volume_db === -24 && pr2.report.limiter.ceiling_db === -4.2 && pr2.report.cuts.applied === 2 && pr2.report.ai_notice === true);
+    ok('사람 확인 7가지(아이디 r1~r7 그대로) — 허브가 한 일은 사람이 눈으로 확인한다', L.reviewSteps('daejeon_youth').map((x) => x.id).join(',') === 'r1,r2,r3,r4,r5,r6,r7' && /자막 글자 대조/.test(L.reviewSteps('ppiyak_kimmary')[1].title) && !/캡컷/.test(JSON.stringify(L.reviewSteps('ppiyak_kimmary'))));
+
+    /* ── ⑤⑥ 화면 코드 규칙 ── */
+    const sv = fs.readFileSync(path.join(ROOT, 'js', 'srtRules.js'), 'utf8');
+    ok('srtRules.js: innerHTML 0건 · 주소·토큰 값 없음', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(sv) && !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}/.test(sv));
+    ok('⑤ 자막: 영상과 대조했어요를 체크해야 확정 · 막힌 문제가 있으면 확정 불가', /const okToConfirm = a\.cues\.length > 0 && a\.fail === 0 && verify\.checked/.test(pvSrc) && /asset|putAsset\('srt_final'/.test(pvSrc));
+    ok('⑤ 자막: 확정한 뒤 글을 고치면 확정이 풀린다', /state\.srt\.hash !== textHash\(ta\.value\)/.test(pvSrc) && /s\.srt\.confirmed = false/.test(pvSrc));
+    ok('⑤ 자막: 자막 없이 진행할 수 있다(⑥ 에서 굽기를 끈다)', /s\.srt\.skipped = true; s\.srt\.confirmed = false; s\.make\.burn = false/.test(pvSrc));
+    ok('⑤ 자막: AI 안내 여부를 사람이 정한다', /AI 초안을 바탕으로 했어요/.test(pvSrc) && /ai: aiBox\.checked/.test(pvSrc));
+    ok('⑥ 마무리: 자막을 굽는 오더는 확정된 자막이 있어야 보낼 수 있다', /const okSrt = state\.srt\.confirmed === true \|\| state\.srt\.skipped \|\| !mm\.burn/.test(pvSrc) && /ready: cs\.render && okSrt/.test(pvSrc));
+    ok('결과(report)를 노트북이 올린 자산에서 자동으로 가져온다(④ 클린·⑥ 마무리)', /getAsset\('report_clean'\)/.test(pvSrc) && /getAsset\('report_finish'\)/.test(pvSrc) && /getAsset\('srt_draft'\)/.test(pvSrc));
+    ok('오더를 보내는 코드는 하나(orderBlock)로 ④⑤⑥ 이 같이 쓴다', (pvSrc.match(/api\.post\('hub_order'/g) || []).length === 1 && /orderBlock\('order_tr'/.test(pvSrc) && /orderBlock\('order_fin'/.test(pvSrc) && /orderBlock\('render'/.test(pvSrc));
+    ok('오더 내용은 입력이 바뀔 때마다·보내는 순간마다 다시 만든다(낡은 값이 실리지 않는다)', /compute: \(\) =>/.test(pvSrc) && /refresh\(\);\s*\/\/ 보내는 순간의 값으로 다시 만든다/.test(pvSrc) && /if \(poll\.refresh\) poll\.refresh\(\)/.test(pvSrc));
+    ok('오더가 DONE 이 되면 한 번만 결과를 가져온다(같은 오더로 되풀이하지 않는다)', /poll\.done\[poll\.key\] === o\.order_id/.test(pvSrc));
+    ok('produceView 가 srtRules·produceLogic 을 버전 쿼리로 부른다', /from '\.\/srtRules\.js\?v=\d+[a-z]'/.test(pvSrc));
+
     /* 코드 규칙 */
     const pv = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
     const pl = fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8');
     ok('innerHTML/outerHTML/insertAdjacentHTML/document.write 0건', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(pv + pl));
     ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(pv + pl));
     ok('payload studio 키 한 개만 저장(시트 칸을 늘리지 않는다)', /patch: \{ studio: state \}/.test(pv));
-    ok('SRT 단계에 누를 수 있는 버튼이 없다', !/h\('button'/.test(pv.split('function bodySrt')[1].split('function bodyFinish')[0]));
+    ok('단계 7개: 재료·기획·컷·클린 마스터·자막·마무리·사람 확인', L.STEPS.map((x) => x.key).join(',') === 'material,plan,cuts,render,srt,make,finish' && L.STEPS.length === 7);
     ok('app.js 가 제작 탭을 연결한다', /produceSection/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')));
 
     /* 오더 진행 상태 자동 표시 (hub_order_status 폴링) */
@@ -461,7 +526,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('승인 대기인데 기한을 모르면 지났다고 단정하지 않는다', D({ status: 'WAITING_APPROVAL' }).kind === 'info' && D({ status: 'WAITING_APPROVAL', approval_expires_at: '' }).kind === 'info');
     ok('실행 대기', D({ status: 'PENDING' }).title === '실행 대기');
     ok('실행 중: 경과 분', /시작한 지 4분/.test(D({ status: 'RUNNING', started_at: '2026-11-19T21:01:00+09:00' }).text), D({ status: 'RUNNING', started_at: '2026-11-19T21:01:00+09:00' }).text);
-    ok('완료: 초록 톤 + report 안내', D({ status: 'DONE', result: '렌더 완료 · x_clean.mp4' }).kind === 'ok' && /report/.test(D({ status: 'DONE' }).text) && /렌더 완료/.test(D({ status: 'DONE', result: '렌더 완료 · x_clean.mp4\n둘째 줄' }).text));
+    ok('완료: 초록 톤 + 결과 안내', D({ status: 'DONE', result: '렌더 완료 · x_clean.mp4' }).kind === 'ok' && /결과/.test(D({ status: 'DONE' }).text) && /렌더 완료/.test(D({ status: 'DONE', result: '렌더 완료 · x_clean.mp4\n둘째 줄' }).text));
     ok('실패: 에러 첫 줄', D({ status: 'FAILED', error: '세로 변환 단계 실패(exit 1)\n자세히' }).kind === 'err' && /세로 변환 단계 실패/.test(D({ status: 'FAILED', error: '세로 변환 단계 실패(exit 1)\n자세히' }).text));
     ok('만료·거절·확인필요는 경고 톤', ['EXPIRED', 'REJECTED', 'REVIEW_NEEDED', 'TIMEOUT_REVIEW'].every((c) => D({ status: c }).kind === 'warn'));
     ok('화면 문구에 큐 코드값이 그대로 나오지 않는다', ['WAITING_APPROVAL', 'PENDING', 'RUNNING', 'DONE', 'FAILED', 'REJECTED', 'EXPIRED', 'REVIEW_NEEDED', 'TIMEOUT_REVIEW'].every((c) => { const d = D({ status: c, approval_expires_at: '2026-11-19T21:15:03+09:00' }); return !/[A-Z]{4,}_?[A-Z]*/.test(d.title + d.text.replace(/report/g, '')); }));
@@ -469,7 +534,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
 
     ok('api.js 에 hubOrderStatus(읽기)가 있다', /async hubOrderStatus\(orderId\)[\s\S]*?post\('hub_order_status'/.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')));
     ok('api.js 재시도 규칙은 그대로(429/5xx 3회)', /RETRY_DELAYS/.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')) && !/hub_order_status[\s\S]{0,200}retry/i.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')));
-    ok('폴링은 숨은 탭에서 쉬고, 화면을 떠나면 멈춘다', /document\.hidden/.test(pv) && /visibilitychange/.test(pv) && /wrap\.isConnected/.test(pv) && /openStep !== 'render'/.test(pv));
+    ok('폴링은 숨은 탭에서 쉬고, 화면을 떠나면 멈춘다', /document\.hidden/.test(pv) && /visibilitychange/.test(pv) && /wrap\.isConnected/.test(pv) && /ORDER_KEY_OF_STEP\[openStep\] !== poll\.key/.test(pv));
     ok('상세 시트를 닫으면(DOM 이 남아도) 폴링이 멈춘다', /wrap\.closest\('dialog'\)/.test(pv) && /!dlg\.open/.test(pv));
     ok('종료 상태가 되면 다음 폴링을 걸지 않는다', /if \(!isTerminalStatus\(d\.status\)\) schedulePoll\(POLL_INTERVAL_MS\)/.test(pv));
     ok('연속 실패 3회 뒤 멈추고 안내', /poll\.fails >= POLL_MAX_FAILS/.test(pv) && /상태를 가져오지 못했습니다/.test(pv));

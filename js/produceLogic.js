@@ -6,10 +6,11 @@
  *
  * 2026-11-20: ① 영상 올리기(구글 드라이브 조각 업로드의 계산)와 ③ 컷 목록 → ④ 오더의 cuts 를 더했다.
  * 2026-11-20(2): ④ 오더에 fit(프레이밍)을 더했다 — crop · blur · pad, 비우면 노트북이 원본 방향으로 정한다.
- * 하지 않는 것: SRT 생성(다음 단계). 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
+ * 2026-11-20(3): ⑤ 자막(AI 초안 → 사람 확정) · ⑥ 마무리(자막 굽기·BGM·커버) 단계와 그 오더(stage)를 더했다.
+ * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261120d';
+import { tcToSec } from './yt/edl.js?v=20261120e';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -38,6 +39,11 @@ export const PROFILES = {
   bgm: { label: 'BGM·효과음을 얹을 때', lufs: -16.0, tol: 0.5, tpMax: -2.0, tpTarget: -2.5 }
 };
 
+/** 최종본 규격 — 표3 ⑥: 최종 -14.0±0.5 LUFS · TP -1.5 이하. (PROFILES 는 클린 마스터용이라 ① 의 선택 목록에 쓰이므로 따로 둔다) */
+export const FINAL_STANDARD = { label: '최종본', lufs: -14.0, tol: 0.5, tpMax: -1.5, tpTarget: -1.8 };
+
+export const BGM_NAME_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|wav|m4a|aac)$/i;
+
 /** 트랙별 마무리 값 — 표3 ②④. 키는 brand 값 그대로(트랙 분기는 brand 하나로만). */
 export const BRAND_FINISH = {
   daejeon_youth: { font: 'Pretendard Bold', fontFallback: 'Noto Sans KR Bold', color: '#FF7A1A', cpl: 12 },
@@ -45,17 +51,20 @@ export const BRAND_FINISH = {
 };
 export function finishOf(brand) { return BRAND_FINISH[brand] || BRAND_FINISH.daejeon_youth; }
 
-/** 표3 — 캡컷 7단계(합격 기준은 문서 그대로 줄인 것). brand 로 달라지는 칸은 finishOf 로 채운다. */
+/**
+ * ⑦ 사람 확인 7가지 — 허브가 이미 만든 것(컷·9:16·음량·자막 굽기·BGM·커버)을 사람이 눈과 귀로 확인한다.
+ * 아이디 r1~r7 은 저장값 호환을 위해 그대로 둔다. brand 로 달라지는 칸은 finishOf 로 채운다.
+ */
 export function reviewSteps(brand) {
   const f = finishOf(brand);
   return [
-    { id: 'r1', title: '캔버스·내보내기', rule: '9:16(1080×1920) · 30fps · 12~15Mbps · 스마트 HDR 끄기' },
-    { id: 'r2', title: '폰트·스타일 일괄', rule: f.font + '(없으면 ' + f.fontFallback + ') · 크기 8~9 · 자간 -2 · 외곽선 #000000 9%' },
-    { id: 'r3', title: '안전영역 배치', rule: '훅 Y +620(크기 115%) · 본문 Y -420 · 좌우 100px 이상 · 하단 1420px 이내 · 상단 240px 이상 · 줄당 ' + f.cpl + '자·2줄' },
-    { id: 'r4', title: '강조어·페이드', rule: '자막당 강조어 1~2개만 ' + f.color + ' · 페이드는 첫·마지막 자막만 0.15초' },
-    { id: 'r5', title: 'AI 보조 안내', rule: 'AI 가 자막을 만들었으면 마지막 2초 우측 "AI 자막 보조" + 업로드 본문에 "자막: AI 보조"' },
-    { id: 'r6', title: 'BGM·효과음·최종 음량', rule: 'BGM 현장음 있으면 -24dB, 없으면 -16dB · 내보낸 뒤 loudnorm 실측 -14.0±0.5 LUFS / TP -1.5 이하' },
-    { id: 'r7', title: '커버 프레임·제목', rule: '정사각 1080×1080 안전 구도 · 피사체 중앙 · 눈 감음 0 · 제목 4단어 이내' }
+    { id: 'r1', title: '화면·소리 규격', rule: '⑥ 결과 표에 FAIL 이 없고, 1080×1920 · 30fps · 최종 -14.0±0.5 LUFS · 진짜 피크 -1.5 이하' },
+    { id: 'r2', title: '자막 글자 대조', rule: '상호·메뉴·가격·숫자를 영상과 대조했어요(AI 가 그럴듯하게 틀리는 곳). 확인 못 한 숫자는 [채우기]' },
+    { id: 'r3', title: '자막 위치·글꼴', rule: '글꼴 ' + f.font + '(없으면 ' + f.fontFallback + ') · 훅은 위쪽, 본문은 아래쪽 안전영역 · 줄당 ' + f.cpl + '자·2줄 · 가장자리에 안 잘림' },
+    { id: 'r4', title: '자막 흐름', rule: '말과 자막이 맞게 나오고, 한 줄 읽을 시간이 있어요(1.0초 이상). 강조할 말이 있으면 ' + f.color + ' 로 표시할지 정해요' },
+    { id: 'r5', title: 'AI 보조 안내', rule: 'AI 가 자막을 만들었다면 마지막 2초 우측 "AI 자막 보조"가 보여요 + 업로드 본문에 "자막: AI 보조" 한 줄' },
+    { id: 'r6', title: 'BGM·소리 균형', rule: '말소리가 BGM 에 묻히지 않아요(현장음 있으면 -24dB, 없으면 -16dB) · 끝 1초 페이드아웃 · 남의 음원을 쓰지 않았어요' },
+    { id: 'r7', title: '커버·제목', rule: '커버(1080×1080) 피사체 중앙 · 눈 감음 없음 · 제목 4단어 이내 · 커버 문구와 첫 자막의 숫자가 같아요' }
   ];
 }
 
@@ -65,12 +74,19 @@ export const STEPS = [
   { key: 'plan', no: 2, title: '기획' },
   { key: 'cuts', no: 3, title: '컷 목록' },
   { key: 'render', no: 4, title: '클린 마스터' },
-  { key: 'srt', no: 5, title: '자막 파일', soon: true },
-  { key: 'finish', no: 6, title: '검수·마무리' }
+  { key: 'srt', no: 5, title: '자막 (AI 초안 → 사람 확정)' },
+  { key: 'make', no: 6, title: '마무리 (자막 굽기·BGM·커버)' },
+  { key: 'finish', no: 7, title: '사람 확인' }
 ];
 
+/** 오더를 보내는 단계 → 상태에 저장하는 오더 칸 이름(진행 상태 표시·폴링이 쓴다). */
+export const ORDER_KEY_OF_STEP = { render: 'render', srt: 'order_tr', make: 'order_fin' };
+
+export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', bgm_db: '', cover_t: 1 }; }
+export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
+
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -97,19 +113,37 @@ export function normalizeState(raw) {
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
-  if (raw.render && typeof raw.render === 'object') {
-    const r = raw.render;
-    s.render = {
-      order_id: String(r.order_id || '').slice(0, 60),
-      status: String(r.status || '').slice(0, 30),
-      sent_at: String(r.sent_at || '').slice(0, 40),
-      needs_approval: r.needs_approval === true,
-      approval_expires_at: String(r.approval_expires_at || '').slice(0, 40),
-      note: String(r.note || '').slice(0, 200),
-      report: (r.report && typeof r.report === 'object') ? r.report : null
-    };
+  s.render = normOrder(raw.render, true);
+  s.order_tr = normOrder(raw.order_tr, false);
+  s.order_fin = normOrder(raw.order_fin, false);
+  if (raw.fin_report && typeof raw.fin_report === 'object' && !Array.isArray(raw.fin_report)) s.fin_report = raw.fin_report;
+  if (raw.srt && typeof raw.srt === 'object') {
+    const r = raw.srt;
+    s.srt = { confirmed: r.confirmed === true, skipped: r.skipped === true, ai: r.ai !== false, hash: String(r.hash || '').slice(0, 40), cues: Math.max(0, Math.min(500, Math.floor(Number(r.cues)) || 0)), at: String(r.at || '').slice(0, 40) };
+    if (s.srt.confirmed) s.srt.skipped = false;
+  }
+  if (raw.make && typeof raw.make === 'object') {
+    const m = raw.make;
+    s.make = { burn: m.burn !== false, ai_notice: m.ai_notice !== false, bgm: String(m.bgm || '').slice(0, 80), bgm_db: '', cover_t: 1 };
+    if (m.bgm_db !== '' && m.bgm_db != null && Number.isFinite(Number(m.bgm_db))) s.make.bgm_db = Number(m.bgm_db);
+    if (Number.isFinite(Number(m.cover_t)) && Number(m.cover_t) >= 0 && Number(m.cover_t) <= 3600) s.make.cover_t = Number(m.cover_t);
   }
   return s;
+}
+
+/** 저장된 오더 칸의 모양을 다시 맞춘다(손상·옛 버전 방어). withReport 는 ④ 의 규격 대조 결과를 함께 지킨다. */
+function normOrder(r, withReport) {
+  if (!r || typeof r !== 'object') return null;
+  const o = {
+    order_id: String(r.order_id || '').slice(0, 60),
+    status: String(r.status || '').slice(0, 30),
+    sent_at: String(r.sent_at || '').slice(0, 40),
+    needs_approval: r.needs_approval === true,
+    approval_expires_at: String(r.approval_expires_at || '').slice(0, 40),
+    note: String(r.note || '').slice(0, 200)
+  };
+  if (withReport) o.report = (r.report && typeof r.report === 'object') ? r.report : null;
+  return o;
 }
 
 /** 입력 칸(줄바꿈·쉼표로 나눈 파일 이름) → { names, errors }. 경로·확장자·개수를 여기서 막는다. */
@@ -301,6 +335,42 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   return { ok: true, payload, notes: { cues: cap.cues.length, narration: nar.cues.length, source: payload.payload_source || 'inline', burn: willBurn } };
 }
 
+/**
+ * 2·3단계 오더 payload — 계약: content_render + stage. 원본 이름 없이 클린 마스터를 이어받는다.
+ *  transcribe : { content_id, brand, stage }
+ *  finish     : { content_id, brand, stage, burn, ai_notice, bgm?{name,volume_db?}, cover?{t} }
+ * state.srt·state.make 를 읽는다. 자막을 굽는다고 했는데 확정된 자막이 없으면 오류.
+ */
+export function buildStagePayload(stage, { contentId, brand, state }) {
+  const errors = [];
+  if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
+  if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
+  if (stage !== 'transcribe' && stage !== 'finish') errors.push('단계를 알 수 없어요');
+  const st = normalizeState(state);
+  const payload = { content_id: String(contentId || ''), brand, stage };
+  if (stage === 'finish') {
+    const m = st.make;
+    const canBurn = st.srt.confirmed === true;
+    payload.burn = m.burn && canBurn;
+    if (m.burn && !canBurn && !st.srt.skipped) errors.push('자막을 굽으려면 ⑤에서 자막을 확정하거나, "자막 없이 진행"을 눌러 주세요');
+    payload.ai_notice = payload.burn && m.ai_notice === true;
+    const name = String(m.bgm || '').trim();
+    if (name) {
+      if (!BGM_NAME_RE.test(name) || name.indexOf('..') >= 0) errors.push('BGM 파일 이름은 mp3·wav·m4a·aac 이름만 적어 주세요(폴더 경로 불가)');
+      else {
+        payload.bgm = { name };
+        if (m.bgm_db !== '') {
+          if (!(m.bgm_db >= -40 && m.bgm_db <= 0)) errors.push('BGM 볼륨은 -40~0 사이 숫자예요');
+          else payload.bgm.volume_db = m.bgm_db;
+        }
+      }
+    }
+    if (!(m.cover_t >= 0 && m.cover_t <= 3600)) errors.push('커버 시점은 0~3600초 사이 숫자예요');
+    else payload.cover = { t: Math.round(m.cover_t * 100) / 100 };
+  }
+  return errors.length ? { ok: false, errors } : { ok: true, payload };
+}
+
 /** 큐 상태 코드 → 화면 문구(코드값은 화면에 그대로 보이지 않는다). 모르는 값은 '확인 필요'로. */
 const ORDER_STATUS_KO = {
   WAITING_APPROVAL: '승인 대기', PENDING: '실행 대기', RUNNING: '실행 중', DONE: '완료', FAILED: '실패',
@@ -370,7 +440,7 @@ export function describeOrder(live, nowMs) {
       return { kind: 'info', title: '실행 중', text: '노트북에서 만들고 있어요' + (m !== null ? ' · 시작한 지 ' + m + '분' : '') + '. 영상 길이에 따라 몇 분 걸려요.' };
     }
     case 'DONE':
-      return { kind: 'ok', title: '완료', text: (first(l.result) ? first(l.result) + ' ' : '') + '결과 표(규격 대조)는 아래에 report 를 붙여 넣어 보세요.' };
+      return { kind: 'ok', title: '완료', text: (first(l.result) ? first(l.result) + ' ' : '') + '결과가 아래에 나와요(안 나오면 [다시 가져오기]나 포털 오더함 결과를 붙여 넣어 주세요).' };
     case 'FAILED':
       return { kind: 'err', title: '실패', text: (first(l.error) || first(l.result) || '노트북에서 실패했어요.') + ' — 원인은 포털 오더함에서 확인해 주세요.' };
     case 'REJECTED':
@@ -406,12 +476,21 @@ export function parseReport(input) {
     if (CHECK_STATUS.indexOf(st) < 0) return { ok: false, error: 'checks 의 status 는 PASS·WARN·FAIL 이어야 해요' };
     out.checks.push({ id: String((c && c.id) || '').slice(0, 40), status: st, msg: String((c && c.msg) || '').slice(0, 200) });
   }
+  // 마무리(finish) 보고의 추가 정보 — 화면이 글꼴·BGM·커버·자막 경고를 그대로 보여 준다(짧게 줄여 저장)
+  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  if (r.cover) out.cover = str(r.cover, 80);
+  if (r.out_dir) out.out_dir = str(r.out_dir, 200);
+  if (r.ai_notice !== undefined) out.ai_notice = r.ai_notice === true;
+  if (r.burn && typeof r.burn === 'object') out.burn = { cues: Number(r.burn.cues) || 0, font: str(r.burn.font, 60), font_preferred_missing: r.burn.font_preferred_missing === true, font_preferred: str(r.burn.font_preferred, 60), warnings: (Array.isArray(r.burn.warnings) ? r.burn.warnings : []).slice(0, 10).map((x) => str(x, 100)) };
+  if (r.bgm && typeof r.bgm === 'object') out.bgm = { name: str(r.bgm.name, 80), volume_db: Number(r.bgm.volume_db) };
+  if (r.limiter && typeof r.limiter === 'object') out.limiter = { measured_lufs: Number(r.limiter.measured_lufs), gain_db: Number(r.limiter.gain_db), ceiling_db: Number(r.limiter.ceiling_db) };
+  if (r.cuts && typeof r.cuts === 'object') out.cuts = { applied: Number(r.cuts.applied) || 0, removed_seconds: Number(r.cuts.removed_seconds) || 0 };
   return { ok: true, report: out };
 }
 
 /** 표1 과 대조 — 노트북이 잰 값을 화면이 한 번 더 규격에 맞춰 본다(값이 없으면 '확인 못 함'). */
 export function compareStandard(report, profile) {
-  const p = PROFILES[profile] || PROFILES.captions;
+  const p = profile === 'final' ? FINAL_STANDARD : (PROFILES[profile] || PROFILES.captions);
   const rows = [];
   const add = (id, label, status, msg) => rows.push({ id, label, status, msg });
   const has = (v) => v !== null && v !== undefined && Number.isFinite(v);
@@ -437,13 +516,19 @@ export function stepStatus(state, brand) {
     const rows = compareStandard(rep, s.profile);
     renderDone = rows.every((r) => r.status !== 'FAIL') && rep.checks.every((c) => c.status !== 'FAIL');
   }
+  let makeDone = false;
+  const fr = s.fin_report;
+  if (fr && Array.isArray(fr.checks)) {
+    makeDone = compareStandard(fr, 'final').every((r) => r.status !== 'FAIL') && fr.checks.every((c) => c.status !== 'FAIL');
+  }
   const reviewDone = reviewSteps(brand).every((x) => s.review[x.id] === true);
   return {
     material: parsed.names.length > 0 && parsed.errors.length === 0,
     plan: s.plan,
     cuts: s.cuts,
     render: renderDone,
-    srt: false,
+    srt: s.srt.confirmed === true || s.srt.skipped === true,
+    make: makeDone,
     finish: reviewDone
   };
 }

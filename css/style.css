@@ -1421,3 +1421,9 @@ a.cmp-card:hover { border-color: var(--accent); }
 .pr-end { align-items: flex-end; }
 .pr-cutlist { display: grid; }
 .pr-tbl input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); }
+
+/* 제작 탭 — 자막 검수 (2026-11-20) */
+.pr-srt { font-family: var(--mono); font-size: 13px; min-height: 180px; }
+.pr-srt-ana { display: grid; gap: 6px; }
+.pr-issues { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: var(--tx-2); }
+.pr-issues .pr-i-fail { color: var(--danger); font-weight: 600; }

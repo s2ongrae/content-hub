@@ -372,6 +372,30 @@ const nCap = A.env.fetched.length;
 ].forEach(([name, pl]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, pl, { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
 ok('거부된 자막 오더는 큐를 부르지 않았다', A.env.fetched.length === nCap);
 
+console.log('\n[8b-3] 영상 렌더 2·3단계 오더(stage) — 클린 마스터를 이어받는다(원본 이름 없음)');
+A.env.setFetchReply(okReply);
+const stBase = { type: 'content_render', content_id: 'KM-20261120-001', brand: 'ppiyak_kimmary' };
+const sentOf = () => A.env.fetched[A.env.fetched.length - 1].body;
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, stBase, { stage: 'transcribe', inputs: ['x.mp4'], junk: 1 }), { brand: 'ppiyak_kimmary' });
+ok('자막 초안 오더 접수 · 큐 타입은 content_render', o.ok && sentOf().type === 'content_render', o);
+eq('payload 는 content_id·brand·stage 뿐(원본 이름·모르는 필드는 버린다)', JSON.stringify(sentOf().payload), JSON.stringify({ content_id: 'KM-20261120-001', brand: 'ppiyak_kimmary', stage: 'transcribe' }));
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, stBase, { stage: 'finish', burn: true, ai_notice: true, bgm: { name: '잔잔한 곡.mp3', volume_db: -22 }, cover: { t: 2.345 }, evil: 'x' }), { brand: 'ppiyak_kimmary' });
+ok('마무리 오더 접수', o.ok, o);
+eq('마무리 payload: 옵션만 · 커버 시각은 소수 2자리', JSON.stringify(sentOf().payload), JSON.stringify({ content_id: 'KM-20261120-001', brand: 'ppiyak_kimmary', stage: 'finish', burn: true, ai_notice: true, bgm: { name: '잔잔한 곡.mp3', volume_db: -22 }, cover: { t: 2.35 } }));
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, stBase, { stage: 'finish' }), { brand: 'ppiyak_kimmary' });
+eq('마무리 기본값: 자막 굽기 켬 · AI 안내 끔 · BGM·커버 없음', JSON.stringify(sentOf().payload), JSON.stringify({ content_id: 'KM-20261120-001', brand: 'ppiyak_kimmary', stage: 'finish', burn: true, ai_notice: false }));
+const nSt = A.env.fetched.length;
+[
+  ['모르는 stage', { stage: 'hack' }],
+  ['BGM 경로', { stage: 'finish', bgm: { name: '../x.mp3' } }],
+  ['BGM 확장자', { stage: 'finish', bgm: { name: 'x.exe' } }],
+  ['BGM 볼륨 범위 밖', { stage: 'finish', bgm: { name: 'x.mp3', volume_db: 3 } }],
+  ['커버 시각 범위 밖', { stage: 'finish', cover: { t: 5000 } }],
+  ['커버 시각 숫자 아님', { stage: 'finish', cover: { t: 'a' } }],
+  ['content_id 경로', { stage: 'transcribe', content_id: '../x' }],
+  ['brand 틀림', { stage: 'transcribe', brand: 'x' }]
+].forEach(([name, patch]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, stBase, patch), { brand: 'ppiyak_kimmary' }).code, 'ERR_VALIDATION_FAILED'));
+ok('거부된 단계 오더는 큐를 부르지 않았다', A.env.fetched.length === nSt);
 
 console.log('\n[8c] 렌더 오더 입력 검증 — 큐를 부르기 전에 막는다');
 const n0 = A.env.fetched.length;
@@ -1101,7 +1125,8 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     getId() { return this.id; }
     getName() { return this.name; }
     getSize() { return this.bytes.length; }
-    getBlob() { return { getBytes: () => this.bytes.slice() }; }
+    getBlob() { return { getBytes: () => this.bytes.slice(), getDataAsString: () => Buffer.from(this.bytes).toString('utf8') }; }
+    getLastUpdated() { return this.updated || (this.updated = new Date()); }
     setTrashed(v) { this.trashed = !!v; return this; }
   }
   const iter = (arr) => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
@@ -1114,7 +1139,7 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     getFilesByName(n) { return iter(this.live().filter(f => f.name === n)); }
     getFoldersByName(n) { return iter(this.folders.filter(f => f.name === n)); }
     createFolder(n) { const f = new DFolder(n); this.folders.push(f); return f; }
-    createFile(blob) { const f = new DFile(blob.name, blob.bytes); this.files.push(f); return f; }
+    createFile(a, content) { const f = typeof a === 'string' ? new DFile(a, Buffer.from(String(content), 'utf8')) : new DFile(a.name, a.bytes); this.files.push(f); return f; }
     setSharing(a, p) { this.shared = a + '/' + p; return this; }
   }
   const U = loadGas();
@@ -1221,6 +1246,33 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
   U.env.props.set('API_SECRET_TOKEN', 'test-secret-token-0123456789abcdef');
   const authOf = (action, token) => callHandler(U.ctx, 'authenticateRequest_', null, { action, auth_token: token, client_id: 'up-test' }, { allowAllBrand: true });
   ['upload_video_chunk', 'upload_video_list', 'upload_video_fetch', 'upload_video_delete'].forEach((a) => {
+    eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
+    ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
+  });
+  /* ── 자산(자막·결과 보고) ── */
+  const put = (p) => callHandler(U.ctx, 'handleAssetPut_', null, p);
+  const get = (p) => callHandler(U.ctx, 'handleAssetGet_', null, p);
+  ok('asset_put·asset_get 가 화이트리스트·핸들러에 있다(put 은 쓰기·감사 행 없음, get 은 읽기)', wl.asset_put.mode === 'WRITE' && wl.asset_put.noAudit === true && wl.asset_put.longRunning === true && wl.asset_get.mode === 'READ' && typeof ev(U.ctx, 'M1_HANDLERS').asset_put === 'function' && typeof ev(U.ctx, 'M1_HANDLERS').asset_get === 'function');
+  eq('아직 없는 자산은 exists=false(폴더도 만들지 않는다)', JSON.stringify(get({ content_id: 'C-ASSET', kind: 'srt_final' }).data), JSON.stringify({ content_id: 'C-ASSET', kind: 'srt_final', exists: false }));
+  const srtText = '1\n00:00:01,000 --> 00:00:02,500\n안녕하세요\n';
+  const pr = put({ content_id: 'C-ASSET', kind: 'srt_draft', text: srtText });
+  ok('자막 초안 저장', pr.ok && pr.data.kind === 'srt_draft' && pr.data.bytes === Buffer.byteLength(srtText), pr);
+  const gr = get({ content_id: 'C-ASSET', kind: 'srt_draft' });
+  ok('읽으면 글자 그대로(한글 포함)·수정 시각이 있다', gr.ok && gr.data.exists === true && gr.data.text === srtText && /^2026-|^20\d\d-/.test(gr.data.updated_at), gr);
+  put({ content_id: 'C-ASSET', kind: 'srt_draft', text: '두 번째 내용' });
+  const assetFolder = root.folders[0].folders.find((f) => f.name === 'C-ASSET');
+  ok('같은 종류를 다시 저장하면 덮어쓴다(파일이 하나)', get({ content_id: 'C-ASSET', kind: 'srt_draft' }).data.text === '두 번째 내용' && assetFolder.live().filter((f) => f.name === 'srt_draft.txt').length === 1);
+  put({ content_id: 'C-ASSET', kind: 'srt_final', text: '확정본' });
+  put({ content_id: 'C-ASSET', kind: 'report_finish', text: '{"a":1}' });
+  ok('종류마다 따로 저장된다', get({ content_id: 'C-ASSET', kind: 'srt_final' }).data.text === '확정본' && get({ content_id: 'C-ASSET', kind: 'report_finish' }).data.text === '{"a":1}' && get({ content_id: 'C-ASSET', kind: 'srt_draft' }).data.text === '두 번째 내용');
+  ok('빈 글도 저장할 수 있다(말소리 없음 → 빈 초안)', put({ content_id: 'C-ASSET', kind: 'srt_draft', text: '' }).ok && get({ content_id: 'C-ASSET', kind: 'srt_draft' }).data.text === '');
+  eq('허용 밖 kind 거부', put({ content_id: 'C-ASSET', kind: 'evil', text: 'x' }).code, 'ERR_VALIDATION_FAILED');
+  eq('경로 같은 kind 거부', put({ content_id: 'C-ASSET', kind: '../x', text: 'x' }).code, 'ERR_VALIDATION_FAILED');
+  eq('이상한 content_id 거부', put({ content_id: '../x', kind: 'srt_draft', text: 'x' }).code, 'ERR_VALIDATION_FAILED');
+  eq('200KB 넘으면 거부', put({ content_id: 'C-ASSET', kind: 'srt_draft', text: 'a'.repeat(200001) }).code, 'ERR_PAYLOAD_TOO_LARGE');
+  ok('200KB 이하는 통과', put({ content_id: 'C-ASSET', kind: 'srt_draft', text: 'a'.repeat(200000) }).ok);
+  ok('자산 파일은 영상 조각 목록에 섞이지 않는다', list('C-ASSET').data.items.length === 0);
+  ['asset_put', 'asset_get'].forEach((a) => {
     eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
     ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
   });

@@ -18,14 +18,16 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261120d';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120d';
+import { buildEDL } from './yt/edl.js?v=20261120e';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120e';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
-  cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes
-} from './produceLogic.js?v=20261120d';
+  cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
+  buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE
+} from './produceLogic.js?v=20261120e';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261120e';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -57,9 +59,8 @@ export function produceSection(ctx) {
   let openStep = null;
   let saveTimer = null;
 
-  /* ── 오더 진행 상태 폴링 (④) ── */
-  const poll = { timer: null, fails: 0, live: null, halted: '', busy: false, vis: false };
-  let statusHost = null;
+  /* ── 오더 진행 상태(④⑤⑥ 공통) ── */
+  const poll = { timer: null, fails: 0, live: null, halted: '', busy: false, vis: false, key: null, statusHost: null, onDone: null, refresh: null, done: {} };
   let chain = Promise.resolve();
   const saveLine = h('span', { class: 'pr-save', 'aria-live': 'polite', text: '' });
 
@@ -120,6 +121,7 @@ export function produceSection(ctx) {
     scheduleSave();
     paintHead();
     paintStates();   // 목록을 다시 그리지 않는다 — 입력 중인 칸의 커서를 지키려고 라벨만 갱신
+    if (poll.refresh) poll.refresh();   // 보낼 오더 내용·보내기 버튼을 새 값으로(입력할 때마다 낡지 않게)
   }
 
   /* 서버에 못 올린 변경이 남은 채 열렸다면 바로 다시 올려 본다 */
@@ -133,7 +135,7 @@ export function produceSection(ctx) {
     head.replaceChildren(
       h('div', { class: 'pr-prog' },
         h('strong', { text: doable.length + '단계 중 ' + done + '단계 완료' }),
-        h('span', { class: 'pr-sub', text: '자막 파일(SRT)은 준비 중이라 세지 않아요' })),
+        h('span', { class: 'pr-sub', text: '허브가 만들고, 사람이 확인해요' })),
       h('div', { class: 'pr-bar', role: 'img', 'aria-label': done + ' / ' + doable.length },
         h('div', { class: 'pr-bar-in', style: 'width:' + Math.round((done / doable.length) * 100) + '%' })),
       saveLine);
@@ -152,6 +154,8 @@ export function produceSection(ctx) {
 
   /* ── 단계 목록 ── */
   function paintList() {
+    stopPoll();
+    poll.refresh = null;
     const st = stepStatus(state, brand);
     list.replaceChildren();
     STEPS.forEach((s) => {
@@ -174,16 +178,18 @@ export function produceSection(ctx) {
     });
   }
 
-  /* ── 오더 진행 상태 폴링 ── */
+  /* ── 오더 진행 상태 폴링 (④ 클린 마스터 · ⑤ 자막 초안 · ⑥ 마무리 공통) ── */
+  function orderOf(key) { return key ? state[key] : null; }
   function stopPoll() { if (poll.timer) { clearTimeout(poll.timer); poll.timer = null; } }
   function schedulePoll(ms) { stopPoll(); poll.timer = setTimeout(runPoll, ms); }
-  /** ④ 가 펼쳐져 있고 이 화면이 아직 붙어 있고 보낸 오더가 있을 때만 의미가 있다. */
+  /** 오더를 보내는 단계가 펼쳐져 있고 이 화면이 아직 붙어 있고 보낸 오더가 있을 때만 의미가 있다. */
   function pollAlive() {
-    if (!wrap.isConnected || openStep !== 'render' || !(state.render && state.render.order_id)) return false;
+    const o = orderOf(poll.key);
+    if (!wrap.isConnected || !poll.key || ORDER_KEY_OF_STEP[openStep] !== poll.key || !(o && o.order_id)) return false;
     const dlg = wrap.closest('dialog');                // 상세 시트를 닫으면 DOM 은 남아 있어도 '화면을 떠난 것'으로 본다
     return !(dlg && !dlg.open);
   }
-  function currentStatus() { return (poll.live && poll.live.status) || (state.render && state.render.status) || ''; }
+  function currentStatus() { const o = orderOf(poll.key) || {}; return (poll.live && poll.live.status) || o.status || ''; }
 
   async function fetchOrderStatus(id) {
     if (typeof api.hubOrderStatus === 'function') return api.hubOrderStatus(id);
@@ -196,16 +202,22 @@ export function produceSection(ctx) {
     if (!document.hidden && pollAlive() && !poll.timer && !poll.busy && !poll.halted && !isTerminalStatus(currentStatus())) runPoll();
   }
 
+  /** 오더가 DONE 이 되면(또는 이미 DONE 인 채 열리면) 그 단계의 결과를 한 번 가져온다. 실패하면 단계 안의 [다시 가져오기]로 한다. */
+  function maybeDone() {
+    const o = orderOf(poll.key);
+    if (!o || !o.order_id || String(currentStatus()).toUpperCase() !== 'DONE') return;
+    if (poll.done[poll.key] === o.order_id) return;
+    poll.done[poll.key] = o.order_id;
+    if (poll.onDone) poll.onDone();
+  }
+
   function paintOrderStatus() {
-    if (!statusHost) return;
-    const r = state.render || {};
+    if (!poll.statusHost) return;
+    const r = orderOf(poll.key) || {};
     const live = poll.live || { status: r.status, approval_expires_at: r.approval_expires_at, created_at: r.sent_at, started_at: '', result: '', error: '' };
     const d = describeOrder(live, Date.now());
     const rows = [h('div', { class: 'pr-banner' + (d.kind === 'warn' || d.kind === 'err' ? ' ' + d.kind : '') },
       h('strong', { text: d.title + ' ' }), h('span', { text: d.text }))];
-    if (String(live.status).toUpperCase() === 'DONE') {
-      rows.push(h('p', { class: 'hint', text: '큐가 돌려주는 결과는 짧게 잘려 있어서 규격 대조 표를 만들 수 없어요. 포털 오더함의 결과(report)를 아래에 붙여 넣어 주세요.' }));
-    }
     if (poll.halted) rows.push(h('p', { class: 'hint', text: poll.halted }));
     if (!isTerminalStatus(live.status) || poll.halted) {
       rows.push(h('div', { class: 'pr-row' }, h('button', {
@@ -213,7 +225,7 @@ export function produceSection(ctx) {
         onclick: () => { poll.fails = 0; poll.halted = ''; runPoll(); }
       })));
     }
-    statusHost.replaceChildren(...rows);
+    poll.statusHost.replaceChildren(...rows);
   }
 
   async function runPoll() {
@@ -221,14 +233,16 @@ export function produceSection(ctx) {
     if (poll.busy || !pollAlive()) return;
     if (document.hidden) return;                       // 숨겨진 탭은 쉰다 — 다시 보이면 onVisible 이 이어서 한다
     poll.busy = true;
-    const orderId = state.render.order_id;
+    const key = poll.key;
+    const orderId = state[key].order_id;
     try {
       const d = await fetchOrderStatus(orderId);
-      if (!pollAlive() || state.render.order_id !== orderId) return;   // 기다리는 동안 화면을 떠났거나 다른 오더로 바뀜
+      if (!pollAlive() || state[key].order_id !== orderId) return;   // 기다리는 동안 화면을 떠났거나 다른 오더로 바뀜
       poll.fails = 0; poll.halted = ''; poll.live = d;
-      if (d.status && d.status !== state.render.status) change((s) => { s.render.status = d.status; });
+      if (d.status && d.status !== state[key].status) change((s) => { s[key].status = d.status; });
       paintOrderStatus();
       if (!isTerminalStatus(d.status)) schedulePoll(POLL_INTERVAL_MS);
+      maybeDone();
     } catch (err) {
       const code = err && err.code;
       if (isNotDeployedCode(code)) {
@@ -248,34 +262,125 @@ export function produceSection(ctx) {
     }
   }
 
-  /* ── 공통 조각 ── */
-  const note = (text) => h('p', { class: 'hint', text });
-  const check = (label, checked, onChange, sub) => {
-    const cb = h('input', { type: 'checkbox' });
-    cb.checked = !!checked;
-    cb.addEventListener('change', () => onChange(cb.checked));
-    return h('label', { class: 'pr-check' }, cb,
-      h('span', null, h('span', { class: 'pr-check-t', text: label }), sub ? h('span', { class: 'pr-check-s', text: sub }) : null));
-  };
-  const goSeries = (tab, label) => h('button', {
-    class: 'btn sm', type: 'button', text: label,
-    onclick: () => { openSeriesTab(tab); if (onNavigate) onNavigate('#/series'); else location.hash = '#/series'; }
-  });
-  const copyText = (text, okMsg) => {
-    const done = () => toast(okMsg, 'ok');
-    const fallback = () => {
-      const ta = h('textarea', { readonly: true, style: 'position:fixed;opacity:0' });
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-      ta.remove();
-      if (ok) done(); else toast('복사가 막혔어요 — 길게 눌러 직접 복사해 주세요', 'err');
+  /* ── 허브 자산(자막·결과 보고)을 드라이브에서 읽고 쓰기 — gas/Upload.gs asset_get·asset_put ── */
+  async function getAsset(kind) {
+    const res = await api.post('asset_get', { content_id: contentId, kind });
+    return (res && res.data) || {};
+  }
+  async function putAsset(kind, text) {
+    const res = await api.post('asset_put', { content_id: contentId, kind, text });
+    return (res && res.data) || {};
+  }
+  function assetErrText(err) {
+    const code = err && err.code;
+    if (isNotDeployedCode(code)) return '서버(GAS)에 자막·결과 저장 기능이 아직 없어요. 새 버전으로 배포하면 켜져요.';
+    if (code === 'ERR_NO_CONFIG') return '연결 설정이 없어요. ⚙︎ 에서 GAS 주소와 토큰을 넣어 주세요.';
+    return (err && err.message) || '알 수 없는 오류';
+  }
+
+  /* ── 오더 보내기 + 진행 상태 (④ ⑤ ⑥ 공통) ──
+   *  opts: { sendText, compute(): { built(payload 만든 결과), ready(선행 조건), blockedText }, onDone, afterSend(d, payload) }
+   *  compute 는 입력이 바뀔 때마다·보내는 순간마다 다시 부른다 — 화면에서 값을 고쳐도 보내는 내용이 낡지 않게.
+   *  반환: 단계 본문에 붙일 노드 배열 */
+  const ORDER_LABEL = { render: '렌더', order_tr: '자막 초안', order_fin: '마무리' };
+  function orderBlock(key, opts) {
+    stopPoll();
+    poll.key = key;
+    poll.statusHost = null;
+    poll.onDone = opts.onDone || null;
+    let cur = opts.compute();
+    const isSendable = (c) => !!(c && c.ready && c.built && c.built.ok);
+
+    const sendBtn = h('button', { class: 'btn primary', type: 'button', text: opts.sendText });
+    const copyBtn = h('button', { class: 'btn sm', type: 'button', text: '오더 내용 복사' });
+    const banner = h('div', { class: 'pr-banner-host', role: 'status' });
+    const warnHost = h('div', { class: 'pr-warn-host' });
+    const preEl = h('pre', { class: 'pr-pre', text: '' });
+    const showBanner = (kind, title, text) => {
+      banner.replaceChildren(h('div', { class: 'pr-banner ' + kind }, h('strong', { text: title + ' ' }), h('span', { text })));
     };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
-    else fallback();
-  };
+    if (key === 'render' && renderWarn) showBanner('warn', renderWarn.title, renderWarn.text);
+
+    function refresh() {
+      cur = opts.compute();
+      const ok = isSendable(cur);
+      if (ok) { sendBtn.removeAttribute('disabled'); copyBtn.removeAttribute('disabled'); } else { sendBtn.setAttribute('disabled', ''); copyBtn.setAttribute('disabled', ''); }
+      if (!cur.ready && cur.blockedText) warnHost.replaceChildren(h('div', { class: 'pr-warnbox' }, h('strong', { text: '먼저 — ' }), h('span', { text: cur.blockedText })));
+      else if (cur.built && !cur.built.ok) warnHost.replaceChildren(h('div', { class: 'pr-warnbox' }, h('strong', { text: '확인해 주세요 — ' }), h('span', { text: cur.built.errors[0] })));
+      else warnHost.replaceChildren();
+      preEl.textContent = ok ? JSON.stringify(cur.built.payload, null, 2) : '';
+    }
+    poll.refresh = refresh;
+    refresh();
+
+    sendBtn.addEventListener('click', async () => {
+      refresh();                                   // 보내는 순간의 값으로 다시 만든다
+      if (!isSendable(cur)) return;
+      const payload = cur.built.payload;
+      sendBtn.setAttribute('disabled', '');
+      sendBtn.textContent = '보내는 중…';
+      banner.replaceChildren();
+      if (key === 'render') renderWarn = null;
+      try {
+        const res = await api.post('hub_order', Object.assign({ type: 'content_render' }, payload));
+        const d = (res && res.data) || {};
+        change((s) => {
+          s[key] = {
+            order_id: String(d.order_id || ''), status: String(d.status || ''), sent_at: new Date().toISOString(),
+            needs_approval: d.needs_approval === true, approval_expires_at: String(d.approval_expires_at || ''),
+            note: String(d.note || '')
+          };
+          if (key === 'render') s.render.report = null;
+        });
+        delete poll.done[key];
+        if (opts.afterSend) opts.afterSend(d, payload);
+        toast(ORDER_LABEL[key] + ' 오더를 보냈어요', 'ok');
+        poll.fails = 0; poll.halted = ''; poll.live = null;
+        paintList();
+      } catch (err) {
+        const code = err && err.code;
+        if (code === 'ERR_QUEUE_TYPE_UNKNOWN') {
+          showBanner('warn', '노트북 큐가 아직 영상 렌더를 몰라요.',
+            '큐(Apps Script) 새 버전 배포가 먼저 필요해요. 오더는 만들어지지 않았어요. 배포 뒤 다시 눌러 주세요.');
+        } else if (code === 'ERR_VALIDATION_FAILED' || code === 'bad_request') {
+          showBanner('err', '입력을 확인해 주세요.', (err && err.message) || '');
+        } else if (code === 'ERR_NO_CONFIG') {
+          showBanner('err', '연결이 안 돼 있어요.', 'GAS 주소·토큰을 먼저 설정해 주세요.');
+        } else {
+          showBanner('err', '오더를 보내지 못했어요.', ((err && err.message) || '알 수 없는 오류') + ' — 잠시 뒤 다시 눌러 주세요.');
+        }
+        sendBtn.textContent = opts.sendText;
+        refresh();
+      }
+    });
+    copyBtn.addEventListener('click', () => { refresh(); copyText(isSendable(cur) ? JSON.stringify(Object.assign({ type: 'content_render' }, cur.built.payload), null, 2) : '', '오더 내용을 복사했어요'); });
+
+    const nodes = [
+      warnHost,
+      h('div', { class: 'pr-row' }, sendBtn, copyBtn),
+      note('위험 작업이라 승인 카드가 뜨고, 15분 안에 승인해야 실행돼요. 승인은 포털 오더함에서 하고, 진행 상태는 이 화면이 15초마다 알려 줘요.'),
+      banner,
+      h('details', { class: 'pr-det' }, h('summary', { text: '보낼 내용 보기' }), preEl)
+    ];
+
+    const r = state[key];
+    if (r && r.order_id) {
+      nodes.push(h('dl', { class: 'kv pr-kv' },
+        h('dt', { text: '오더 번호' }), h('dd', { text: r.order_id }),
+        h('dt', { text: '접수 상태' }), h('dd', { text: orderStatusLabel(r.status) + (r.needs_approval && String(r.status).toUpperCase() === 'WAITING_APPROVAL' ? ' · 포털 오더함에서 승인해 주세요' : '') }),
+        h('dt', { text: '보낸 때' }), h('dd', { text: r.sent_at ? new Date(r.sent_at).toLocaleString('ko-KR') : '-' }),
+        r.approval_expires_at ? h('dt', { text: '승인 기한' }) : null,
+        r.approval_expires_at ? h('dd', { text: new Date(r.approval_expires_at).toLocaleString('ko-KR') }) : null));
+      if (r.note && !r.needs_approval) nodes.push(note(r.note));
+      poll.statusHost = h('div', { class: 'pr-live', role: 'status', 'aria-live': 'polite' });
+      nodes.push(poll.statusHost);
+      paintOrderStatus();
+      if (!poll.vis) { document.addEventListener('visibilitychange', onVisible); poll.vis = true; }
+      if (!isTerminalStatus(currentStatus()) && !poll.halted) schedulePoll(400);   // 열자마자 한 번 확인하고, 이후 15초 간격
+      else maybeDone();
+    }
+    return nodes;
+  }
 
   /* ── ① 영상 올리기(구글 드라이브) ── */
   const up = { busy: false, cancel: false };
@@ -543,21 +648,23 @@ export function produceSection(ctx) {
 
   /* ── ④ 클린 마스터 ── */
   function bodyRender(box) {
-    stopPoll();
-    statusHost = null;
     const cutRes = cutsForOrder(state, state.inputs);
     // 완제품 옵션 — 카드에 저장된 자막·내레이션을 오더에 실어 노트북이 번인·TTS·덕킹까지 마친다.
     const capRes = normalizeCues(cardCaptions, '자막');
     const narRes = normalizeCues(cardNarration, '내레이션', { tones: ['hype', 'calm'] });
-    const built = buildRenderPayload({
-      contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x,
-      cuts: cutRes.ok ? cutRes.cuts : undefined,
-      captions: capRes.cues.length ? capRes.cues : undefined,
-      narration: state.narrate ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
-      burnSubtitles: state.burn, subStyle: state.sub_style,
-      narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined
-    });
-    const sendable = built.ok && cutRes.ok;
+    const buildNow = () => {
+      const cr = cutsForOrder(state, state.inputs);
+      const b = buildRenderPayload({
+        contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x,
+        cuts: cr.ok ? cr.cuts : undefined,
+        captions: capRes.cues.length ? capRes.cues : undefined,
+        narration: state.narrate ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
+        burnSubtitles: state.burn, subStyle: state.sub_style,
+        narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined
+      });
+      return { cr, b };
+    };
+    const built = buildNow().b;
     const p = PROFILES[state.profile];
     const cutSm = cutSummary(state.cut_list.filter((c) => c.on !== false), cutMem.srcLen);
     const capN = capRes.cues.length;
@@ -593,104 +700,39 @@ export function produceSection(ctx) {
         ? h('span', { class: 'pr-check-s', text: '카드 자막·내레이션에 문제가 있어요: ' + (capRes.errors[0] || narRes.errors[0]) })
         : null));
 
-    if (!built.ok) {
-      box.appendChild(h('div', { class: 'pr-warnbox' },
-        h('strong', { text: '① 재료부터 채워 주세요 — ' }),
-        h('span', { text: built.errors[0] })));
-    } else if (!cutRes.ok) {
-      box.appendChild(h('div', { class: 'pr-warnbox' },
-        h('strong', { text: '③ 컷 목록을 확인해 주세요 — ' }),
-        h('span', { text: cutRes.error })));
-    }
-
-    /* 오더 보내기 */
-    const sendBtn = h('button', { class: 'btn primary', type: 'button', text: '노트북에 렌더 오더 보내기' });
-    if (!sendable) sendBtn.setAttribute('disabled', '');
-    const banner = h('div', { class: 'pr-banner-host', role: 'status' });
-    const showBanner = (kind, title, text) => {
-      banner.replaceChildren(h('div', { class: 'pr-banner ' + kind }, h('strong', { text: title + ' ' }), h('span', { text })));
-    };
-
-    if (renderWarn) showBanner('warn', renderWarn.title, renderWarn.text);
-
-    sendBtn.addEventListener('click', async () => {
-      if (!sendable) return;
-      sendBtn.setAttribute('disabled', '');
-      sendBtn.textContent = '보내는 중…';
-      banner.replaceChildren();
-      renderWarn = null;
-      try {
-        const res = await api.post('hub_order', Object.assign({ type: 'content_render' }, built.payload));
-        const d = (res && res.data) || {};
-        change((s) => {
-          s.render = {
-            order_id: String(d.order_id || ''), status: String(d.status || ''), sent_at: new Date().toISOString(),
-            needs_approval: d.needs_approval === true, approval_expires_at: String(d.approval_expires_at || ''),
-            note: String(d.note || ''), report: null
-          };
-        });
-        const sentCuts = built.payload.cuts ? built.payload.cuts.length : 0;
+    box.append(...orderBlock('render', {
+      sendText: '노트북에 렌더 오더 보내기',
+      compute: () => {
+        const { cr, b } = buildNow();
+        let blocked = '';
+        if (!b.ok) blocked = '① 재료부터 채워 주세요 — ' + b.errors[0];
+        else if (!cr.ok) blocked = '③ 컷 목록을 확인해 주세요 — ' + cr.error;
+        return { built: b, ready: b.ok && cr.ok, blockedText: blocked };
+      },
+      afterSend: (d, payload) => {
+        const sentCuts = payload.cuts ? payload.cuts.length : 0;
         if (sentCuts && Number(d.cuts) !== sentCuts) {
           renderWarn = { title: '서버(GAS)가 컷을 아직 몰라요.', text: '컷 ' + sentCuts + '곳이 오더에 실리지 않았어요. 이대로 승인하면 자르지 않은 영상이 만들어져요 — 포털 오더함에서 거절하고, GAS 를 새 버전으로 배포한 뒤 다시 보내 주세요.' };
         } else if (!drive && capN > 0 && Number(d.captions) !== capN) {
           renderWarn = { title: '서버(GAS)가 자막을 아직 몰라요.', text: '자막 ' + capN + '큐가 오더에 실리지 않았어요. 이대로 승인하면 자막 없는 클린 마스터만 나와요 — 포털 오더함에서 거절하고, GAS 를 새 버전으로 배포한 뒤 다시 보내 주세요.' };
         }
-        toast('렌더 오더를 보냈어요', 'ok');
-        poll.fails = 0; poll.halted = ''; poll.live = null;
-        paintList();
-      } catch (err) {
-        const code = err && err.code;
-        if (code === 'ERR_QUEUE_TYPE_UNKNOWN') {
-          showBanner('warn', '노트북 큐가 아직 영상 렌더를 몰라요.',
-            '큐(Apps Script) 새 버전 배포가 먼저 필요해요. 오더는 만들어지지 않았어요. 배포 뒤 다시 눌러 주세요.');
-        } else if (code === 'ERR_VALIDATION_FAILED') {
-          showBanner('err', '입력을 확인해 주세요.', (err && err.message) || '');
-        } else if (code === 'ERR_NO_CONFIG') {
-          showBanner('err', '연결이 안 돼 있어요.', 'GAS 주소·토큰을 먼저 설정해 주세요.');
-        } else {
-          showBanner('err', '오더를 보내지 못했어요.', ((err && err.message) || '알 수 없는 오류') + ' — 잠시 뒤 다시 눌러 주세요.');
-        }
-        sendBtn.removeAttribute('disabled');
-        sendBtn.textContent = '노트북에 렌더 오더 보내기';
+      },
+      onDone: async () => {
+        // 노트북이 올려 둔 결과(report)를 가져와 규격 대조 표를 자동으로 채운다(붙여넣기는 실패했을 때를 위한 대비)
+        try {
+          const a = await getAsset('report_clean');
+          if (!a.exists) return;
+          const parsed = parseReport(a.text);
+          if (!parsed.ok || !wrap.isConnected) return;
+          change((s) => { s.render = Object.assign({ order_id: '', status: '', sent_at: '', needs_approval: false, approval_expires_at: '', note: '' }, s.render || {}, { report: parsed.report }); });
+          if (openStep === 'render') paintList();
+        } catch (err) { if (wrap.isConnected) toast('결과를 자동으로 가져오지 못했어요 — ' + assetErrText(err) + ' 아래에 붙여 넣어도 돼요', 'err'); }
       }
-    });
+    }));
 
-    const copyBtn = h('button', {
-      class: 'btn sm', type: 'button', text: '오더 내용 복사',
-      onclick: () => copyText(sendable ? JSON.stringify(Object.assign({ type: 'content_render' }, built.payload), null, 2) : '', '오더 내용을 복사했어요')
-    });
-    if (!sendable) copyBtn.setAttribute('disabled', '');
-
-    box.append(
-      h('div', { class: 'pr-row' }, sendBtn, copyBtn),
-      note('위험 작업이라 승인 카드가 뜨고, 15분 안에 승인해야 실행돼요. 승인은 포털 오더함에서 하고, 진행 상태는 이 화면이 15초마다 알려 줘요.'),
-      banner);
-
-    if (sendable) {
-      box.appendChild(h('details', { class: 'pr-det' },
-        h('summary', { text: '보낼 내용 보기' }),
-        h('pre', { class: 'pr-pre', text: JSON.stringify(built.payload, null, 2) })));
-    }
-
-    /* 보낸 오더 */
     const r = state.render;
-    if (r && r.order_id) {
-      box.appendChild(h('dl', { class: 'kv pr-kv' },
-        h('dt', { text: '오더 번호' }), h('dd', { text: r.order_id }),
-        h('dt', { text: '접수 상태' }), h('dd', { text: orderStatusLabel(r.status) + (r.needs_approval && String(r.status).toUpperCase() === 'WAITING_APPROVAL' ? ' · 포털 오더함에서 승인해 주세요' : '') }),
-        h('dt', { text: '보낸 때' }), h('dd', { text: r.sent_at ? new Date(r.sent_at).toLocaleString('ko-KR') : '-' }),
-        r.approval_expires_at ? h('dt', { text: '승인 기한' }) : null,
-        r.approval_expires_at ? h('dd', { text: new Date(r.approval_expires_at).toLocaleString('ko-KR') }) : null));
-      if (r.note && !r.needs_approval) box.appendChild(note(r.note));
-      statusHost = h('div', { class: 'pr-live', role: 'status', 'aria-live': 'polite' });
-      box.appendChild(statusHost);
-      paintOrderStatus();
-      if (!poll.vis) { document.addEventListener('visibilitychange', onVisible); poll.vis = true; }
-      if (!isTerminalStatus(currentStatus()) && !poll.halted) schedulePoll(400);   // 열자마자 한 번 확인하고, 이후 15초 간격
-    }
-
-    /* 결과 붙여넣기 → 표 */
-    const rep = h('textarea', { class: 'pr-ta', rows: '4', spellcheck: 'false', placeholder: '포털 오더함의 결과(report.json)를 붙여 넣어요', 'aria-label': '렌더 결과 report' });
+    /* 결과 붙여넣기 → 표 (자동으로 안 왔을 때 대비) */
+    const rep = h('textarea', { class: 'pr-ta', rows: '4', spellcheck: 'false', placeholder: '(자동으로 안 보이면) 포털 오더함의 결과(report.json)를 붙여 넣어요', 'aria-label': '렌더 결과 report' });
     const repErr = h('div', { class: 'pr-err', role: 'alert' });
     const repBtn = h('button', { class: 'btn sm', type: 'button', text: '결과 표로 보기' });
     repBtn.addEventListener('click', () => {
@@ -700,10 +742,11 @@ export function produceSection(ctx) {
       change((s) => { s.render = Object.assign({ order_id: '', status: '', sent_at: '', needs_approval: false, approval_expires_at: '', note: '' }, s.render || {}, { report: parsed.report }); });
       paintList();
     });
-    box.append(
-      h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '렌더 결과' }), rep),
-      repErr,
-      h('div', { class: 'pr-row' }, repBtn));
+    if (!(r && r.report)) {
+      box.append(
+        h('details', { class: 'pr-det' }, h('summary', { text: '결과를 직접 붙여 넣기' }),
+          h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '렌더 결과' }), rep), repErr, h('div', { class: 'pr-row' }, repBtn)));
+    }
 
     if (r && r.report) {
       const std = compareStandard(r.report, state.profile);
@@ -713,6 +756,7 @@ export function produceSection(ctx) {
         box.appendChild(h('h4', { class: 'pr-h4', text: '노트북 검수 항목' }));
         box.appendChild(resultTable(r.report.checks.map((x) => ({ name: x.id || '-', status: x.status, msg: x.msg }))));
       }
+      if (r.report.cuts && r.report.cuts.applied) box.appendChild(note('컷 ' + r.report.cuts.applied + '곳 · ' + r.report.cuts.removed_seconds + '초를 잘랐어요.'));
       if (r.report.out) box.appendChild(note('결과 파일: ' + r.report.out + ' (노트북 out/' + contentId + '/)'));
     }
   }
@@ -728,28 +772,268 @@ export function produceSection(ctx) {
     return h('div', { class: 'pr-tbl-wrap' }, t);
   }
 
-  /* ── ⑤ 자막 파일 ── */
-  function bodySrt(box) {
-    const f = finishOf(brand);
-    box.append(
-      h('p', { class: 'pr-soon', text: '다음 단계(준비 중) — 말소리를 글자로 바꿔 자막 파일(SRT)을 만드는 기능은 아직 연결되지 않았어요.' }),
-      note('표준 v3 표2 규격: UTF-8(BOM 없음)·LF · 한 줄 ' + f.cpl + '자(공백 포함), 최대 2줄 · 1.0~3.5초 · 사이 간격 0.06초 이상 · ASS 태그·화자 표기·카라오케 금지.'),
-      note('그때까지는 캡컷의 자동 자막을 쓰거나 직접 입력하고, 상호·메뉴·가격은 꼭 눈으로 대조해요. AI 가 자막을 만들었다면 ⑥ 5단계의 안내 문구를 넣어요.'));
+  /* ── ⑤ 자막 — AI 초안 → 사람 확정 ──
+   *  Whisper 는 무음에서 문구를 지어내고 상호·메뉴·가격을 그럴듯하게 틀린다. 그래서 초안은 '초안'일 뿐이고,
+   *  사람이 영상과 대조해 고친 뒤 [확정]을 눌러야 ⑥ 에서 굽는다. 규격 위반(FAIL)이 있으면 확정할 수 없다. */
+  const srtMem = { id: '', text: '', draftText: '', meta: null, loaded: false, busy: false, msg: '' };
+
+  async function loadSrt(preferDraft) {
+    srtMem.busy = true; srtMem.msg = '';
+    try {
+      let text = null, from = '';
+      if (!preferDraft) {
+        const f = await getAsset('srt_final');
+        if (f.exists && String(f.text || '').trim()) { text = f.text; from = '확정본'; }
+      }
+      const d = await getAsset('srt_draft');
+      if (d.exists) srtMem.draftText = String(d.text || '');
+      if (text === null && d.exists) { text = srtMem.draftText; from = 'AI 초안'; }
+      try { const m = await getAsset('report_transcribe'); srtMem.meta = m.exists ? JSON.parse(m.text) : null; } catch (e) { srtMem.meta = null; }
+      if (text !== null) { srtMem.text = text; srtMem.msg = from + '을 불러왔어요'; } else srtMem.msg = '아직 올라온 자막이 없어요 — 초안을 만들거나 직접 붙여 넣어요';
+      srtMem.loaded = true;
+    } catch (err) { srtMem.msg = '불러오지 못했어요 — ' + assetErrText(err); }
+    srtMem.busy = false;
   }
 
-  /* ── ⑥ 검수·마무리 ── */
+  function bodySrt(box) {
+    const st = stepStatus(state, brand);
+    const cpl = finishOf(brand).cpl;
+    if (srtMem.id !== contentId) { srtMem.id = contentId; srtMem.text = ''; srtMem.draftText = ''; srtMem.meta = null; srtMem.loaded = false; srtMem.msg = ''; }
+
+    box.append(
+      note('④ 클린 마스터의 말소리를 노트북이 Whisper 로 글자로 바꿔 자막 초안(SRT)을 만들어요. 표2 규격(한 줄 ' + cpl + '자·2줄·1.0~3.5초)에 맞춰 끊고, 말이 없는 구간에서 지어낸 문구는 빼서 따로 알려 줘요.'),
+      h('div', { class: 'pr-warnbox' }, h('strong', { text: 'AI 초안은 틀려요. ' }),
+        h('span', { text: '상호·메뉴·가격·숫자는 그럴듯하게 틀리는 대표 구간이에요. 영상을 보며 고친 뒤에만 확정할 수 있어요.' })));
+    box.append(...orderBlock('order_tr', {
+      sendText: '자막 초안 만들기(노트북)',
+      compute: () => ({ built: buildStagePayload('transcribe', { contentId, brand, state }), ready: stepStatus(state, brand).render, blockedText: '④ 클린 마스터를 먼저 완료해 주세요(초안은 그 영상의 말소리로 만들어요).' }),
+      onDone: async () => {
+        await loadSrt(true);
+        if (wrap.isConnected && openStep === 'srt') paintList();
+      }
+    }));
+
+    /* ── 편집기 ── */
+    const ta = h('textarea', { class: 'pr-ta pr-srt', rows: '12', spellcheck: 'false', autocomplete: 'off', 'aria-label': '자막 SRT 편집', placeholder: '1\n00:00:01,000 --> 00:00:02,500\n안녕하세요\n\n(초안을 불러오거나 직접 붙여 넣어요)' });
+    ta.value = srtMem.text;
+    const msgLine = h('p', { class: 'hint', 'aria-live': 'polite', text: srtMem.msg });
+    const anaHost = h('div', { class: 'pr-srt-ana', role: 'status', 'aria-live': 'polite' });
+    const verify = h('input', { type: 'checkbox' });
+    const aiBox = h('input', { type: 'checkbox' });
+    aiBox.checked = state.srt.ai !== false;
+    const confirmBtn = h('button', { class: 'btn primary', type: 'button', text: '이 자막으로 확정' });
+    const confirmMsg = h('div', { class: 'pr-err', role: 'alert' });
+
+    function analysis() { return analyzeSrt(ta.value, brand); }
+    function paintAna() {
+      const a = analysis();
+      const rows = [];
+      if (!String(ta.value).trim()) rows.push(h('p', { class: 'hint', text: '자막이 비어 있어요.' }));
+      else {
+        rows.push(h('div', { class: 'pr-banner' + (a.fail ? ' err' : (a.warn ? ' warn' : '')) },
+          h('strong', { text: '자막 ' + a.cues.length + '개 · ' }),
+          h('span', { text: a.fail ? '막힌 문제 ' + a.fail + '건(고쳐야 확정 가능)' : (a.warn ? '알림 ' + a.warn + '건(확정은 가능)' : '규격 문제 없음') })));
+        const lines = a.errors.slice(0, 5).map((e) => h('li', { text: e.block + '번째 덩어리: ' + e.msg }))
+          .concat(a.issues.slice(0, 12).map((i) => h('li', { class: i.level === 'FAIL' ? 'pr-i-fail' : '', text: i.cue + '번 · ' + (i.level === 'FAIL' ? '막힘 · ' : '알림 · ') + i.msg })));
+        if (lines.length) rows.push(h('ul', { class: 'pr-issues' }, ...lines));
+        if (a.issues.length + a.errors.length > 17) rows.push(note('…그 밖에 ' + (a.issues.length + a.errors.length - 17) + '건 더 있어요.'));
+      }
+      anaHost.replaceChildren(...rows);
+      const okToConfirm = a.cues.length > 0 && a.fail === 0 && verify.checked;
+      if (okToConfirm) confirmBtn.removeAttribute('disabled'); else confirmBtn.setAttribute('disabled', '');
+      const confirmed = state.srt.confirmed && state.srt.hash === textHash(ta.value);
+      confirmBtn.textContent = confirmed ? '확정됨 ✓ (다시 확정)' : '이 자막으로 확정';
+      return a;
+    }
+
+    ta.addEventListener('input', () => {
+      srtMem.text = ta.value;
+      if (state.srt.confirmed && state.srt.hash !== textHash(ta.value)) {
+        change((s) => { s.srt.confirmed = false; });
+        confirmMsg.textContent = '고친 내용이 아직 확정되지 않았어요. 다시 [확정]을 눌러 주세요.';
+      }
+      paintAna();
+    });
+    verify.addEventListener('change', paintAna);
+
+    confirmBtn.addEventListener('click', async () => {
+      confirmMsg.textContent = '';
+      const a = paintAna();
+      if (!(a.cues.length > 0 && a.fail === 0 && verify.checked)) return;
+      confirmBtn.setAttribute('disabled', '');
+      confirmBtn.textContent = '저장 중…';
+      try {
+        const text = String(ta.value).replace(/\r\n?/g, '\n').trim() + '\n';
+        await putAsset('srt_final', text);
+        change((s) => { s.srt = { confirmed: true, skipped: false, ai: aiBox.checked, hash: textHash(ta.value), cues: a.cues.length, at: new Date().toISOString() }; });
+        toast('자막을 확정했어요(' + a.cues.length + '개)', 'ok');
+        paintAna();
+      } catch (err) {
+        confirmMsg.textContent = '확정한 자막을 저장하지 못했어요 — ' + assetErrText(err);
+        paintAna();
+      }
+    });
+
+    const loadBtn = h('button', { class: 'btn sm', type: 'button', text: '허브에서 불러오기', onclick: async () => {
+      loadBtn.setAttribute('disabled', '');
+      await loadSrt(false);
+      if (wrap.isConnected && openStep === 'srt') paintList();
+    } });
+    const draftBtn = h('button', { class: 'btn sm', type: 'button', text: 'AI 초안으로 되돌리기', onclick: () => {
+      if (!srtMem.draftText) { toast('불러온 AI 초안이 없어요', 'err'); return; }
+      if (String(ta.value).trim() && !window.confirm('지금 고친 내용이 사라져요. AI 초안으로 되돌릴까요?')) return;
+      ta.value = srtMem.draftText; srtMem.text = ta.value; paintAna();
+    } });
+    const skipBtn = h('button', { class: 'btn sm', type: 'button', text: state.srt.skipped ? '자막 넣기로 되돌리기' : '자막 없이 진행', onclick: () => {
+      if (state.srt.skipped) { change((s) => { s.srt.skipped = false; }); paintList(); return; }
+      change((s) => { s.srt.skipped = true; s.srt.confirmed = false; s.make.burn = false; });
+      toast('자막 없이 진행해요 — ⑥ 에서 자막을 굽지 않아요', 'ok');
+      paintList();
+    } });
+
+    if (!srtMem.loaded && !srtMem.busy) {
+      srtMem.busy = true;
+      loadSrt(false).then(() => {
+        if (!wrap.isConnected || openStep !== 'srt') return;
+        if (!String(ta.value).trim() && srtMem.text) { ta.value = srtMem.text; msgLine.textContent = srtMem.msg; paintAna(); }
+        else msgLine.textContent = srtMem.msg;
+      });
+    }
+
+    const meta = srtMem.meta;
+    const metaNodes = [];
+    if (meta) {
+      if (meta.speech_detected === false) metaNodes.push(h('div', { class: 'pr-warnbox' }, h('strong', { text: '말소리를 찾지 못했어요. ' }), h('span', { text: '없는 말을 지어내지 않았어요. 직접 자막을 넣거나 "자막 없이 진행"을 누르세요.' })));
+      if (Array.isArray(meta.removed) && meta.removed.length) {
+        metaNodes.push(h('details', { class: 'pr-det' }, h('summary', { text: '빼 둔 문구 ' + meta.removed.length + '개 (무음에서 지어낸 것으로 의심)' }),
+          h('ul', { class: 'pr-issues' }, ...meta.removed.slice(0, 10).map((x) => h('li', { text: x.start + '~' + x.end + '초 · "' + x.text + '" — ' + x.reason })))));
+      }
+      if (Array.isArray(meta.notes) && meta.notes.length) metaNodes.push(note(meta.notes.slice(0, 3).join(' · ')));
+    }
+
+    box.append(
+      h('div', { class: 'pr-row' }, loadBtn, draftBtn, skipBtn),
+      msgLine,
+      ...metaNodes,
+      h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '자막(SRT) — 영상을 보며 고쳐요' }), ta),
+      anaHost,
+      check('상호·메뉴·가격·숫자를 영상과 대조해 고쳤어요', false, () => {}, '확인하지 못한 숫자는 [채우기]로 두고, 지어낸 가격·시간·웨이팅은 쓰지 않아요'),
+      h('label', { class: 'pr-check' }, aiBox, h('span', null, h('span', { class: 'pr-check-t', text: 'AI 초안을 바탕으로 했어요 — 마지막 2초에 "AI 자막 보조" 안내를 넣어요' }),
+        h('span', { class: 'pr-check-s', text: '네이버 클립은 AI 보조 사용 사실을 영상 안에 알려야 해요. 자막을 전부 직접 썼다면 끄세요.' }))),
+      h('div', { class: 'pr-row' }, confirmBtn),
+      confirmMsg,
+      state.srt.skipped ? h('div', { class: 'pr-banner' }, h('strong', { text: '자막 없이 진행 중 ' }), h('span', { text: '⑥ 에서 자막을 굽지 않아요.' })) : null);
+    // 확인 체크박스는 check() 가 만든 label 안의 input — 위 verify 와 이어 준다
+    const vInput = box.querySelectorAll('.pr-check input')[0];
+    if (vInput) { vInput.addEventListener('change', () => { verify.checked = vInput.checked; paintAna(); }); }
+    paintAna();
+  }
+
+
+  /* ── ⑥ 마무리 — 자막 굽기 · BGM · 커버 ── */
+  function bodyMake(box) {
+    const m = state.make;
+    box.append(
+      note('확정한 자막을 표3 안전영역(훅은 위쪽, 본문은 아래쪽)에 맞춰 영상에 굽고, BGM을 깔고, 최종 음량을 -14 LUFS 로 맞춘 뒤, 커버(1080×1080)를 뽑아요. 노트북이 만들고, 결과 파일은 노트북의 out 폴더에 생겨요.'),
+      h('div', { class: 'pr-pipe' },
+        ...['자막 굽기', 'BGM 깔기', '피크 다듬기', '최종 음량 -14', '규격 검수', '커버 뽑기'].map((t, i) => h('span', { class: 'pr-pipe-i' }, h('b', { text: String(i + 1) }), t))));
+
+    const canBurn = state.srt.confirmed === true;
+    const burnBox = check('자막 굽기', m.burn && canBurn, (v) => { change((s) => { s.make.burn = v; }); paintList(); },
+      canBurn ? '⑤ 에서 확정한 자막 ' + state.srt.cues + '개를 굽는다' : (state.srt.skipped ? '자막 없이 진행 중이라 굽지 않아요' : '⑤ 에서 자막을 확정하면 켤 수 있어요'));
+    if (!canBurn) burnBox.querySelector('input').setAttribute('disabled', '');
+    const aiBox = check('마지막 2초 "AI 자막 보조" 안내', m.ai_notice && canBurn, (v) => { change((s) => { s.make.ai_notice = v; }); },
+      'AI 가 만든 초안을 바탕으로 한 자막이면 켜 둬요(표4)');
+    if (!canBurn) aiBox.querySelector('input').setAttribute('disabled', '');
+
+    const bgm = h('input', { class: 'pr-in', type: 'text', placeholder: '비우면 BGM 없이 (예: 잔잔한곡.mp3)', 'aria-label': 'BGM 파일 이름', value: m.bgm, maxlength: '80' });
+    const bgmErr = h('div', { class: 'pr-err', role: 'alert' });
+    bgm.addEventListener('input', () => {
+      const v = bgm.value.trim();
+      if (v && (!BGM_NAME_RE.test(v) || v.indexOf('..') >= 0)) bgmErr.textContent = 'mp3·wav·m4a·aac 파일 이름만 적어요(폴더 경로 불가)';
+      else { bgmErr.textContent = ''; change((s) => { s.make.bgm = v; }); }
+    });
+    const vol = h('select', { class: 'pr-sel', 'aria-label': 'BGM 볼륨' },
+      h('option', { value: '', text: '자동 — 말소리 있으면 -24dB, 없으면 -16dB' }),
+      ...[-16, -20, -24, -28].map((d) => h('option', { value: String(d), text: d + ' dB' })));
+    vol.value = m.bgm_db === '' ? '' : String(m.bgm_db);
+    vol.addEventListener('change', () => change((s) => { s.make.bgm_db = vol.value === '' ? '' : Number(vol.value); }));
+    const cover = h('input', { class: 'pr-in', type: 'text', inputmode: 'decimal', 'aria-label': '커버 시점(초)', value: String(m.cover_t) });
+    const coverErr = h('div', { class: 'pr-err', role: 'alert' });
+    cover.addEventListener('input', () => {
+      const n = Number(String(cover.value).trim());
+      if (!Number.isFinite(n) || n < 0 || n > 3600) coverErr.textContent = '0~3600 사이 숫자(초)로 적어 주세요';
+      else { coverErr.textContent = ''; change((s) => { s.make.cover_t = n; }); }
+    });
+
+    box.append(
+      burnBox, aiBox,
+      h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: 'BGM 파일 이름 (노트북의 render\\bgm 폴더에 넣어 둔 것)' }), bgm),
+      bgmErr,
+      note('내가 쓸 수 있는 음원만 넣어요. 남의 음원·저작권이 있는 곡은 쓰지 않아요. 곡이 짧으면 반복하고, 말소리가 나올 때는 자동으로 작아져요.'),
+      h('div', { class: 'pr-two' },
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: 'BGM 볼륨' }), vol),
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '커버로 쓸 장면 시점(초)' }), cover)),
+      coverErr);
+
+    box.append(...orderBlock('order_fin', {
+      sendText: '노트북에 마무리 오더 보내기',
+      compute: () => {
+        const cs = stepStatus(state, brand);
+        const mm = state.make;
+        const okSrt = state.srt.confirmed === true || state.srt.skipped || !mm.burn;
+        return {
+          built: buildStagePayload('finish', { contentId, brand, state }),
+          ready: cs.render && okSrt,
+          blockedText: cs.render ? '⑤ 에서 자막을 확정하거나 "자막 없이 진행"을 눌러 주세요.' : '④ 클린 마스터를 먼저 완료해 주세요.'
+        };
+      },
+      onDone: async () => {
+        try {
+          const a = await getAsset('report_finish');
+          if (!a.exists) return;
+          const parsed = parseReport(a.text);
+          if (!parsed.ok || !wrap.isConnected) return;
+          change((s) => { s.fin_report = parsed.report; });
+          if (openStep === 'make') paintList();
+        } catch (err) { if (wrap.isConnected) toast('결과를 자동으로 가져오지 못했어요 — ' + assetErrText(err), 'err'); }
+      }
+    }));
+
+    const fr = state.fin_report;
+    if (fr) {
+      box.appendChild(h('h4', { class: 'pr-h4', text: '최종본 규격 대조 (표준 v3 표3 ⑥ — 화면이 다시 계산)' }));
+      box.appendChild(resultTable(compareStandard(fr, 'final').map((x) => ({ name: x.label, status: x.status, msg: x.msg }))));
+      if (fr.checks.length) {
+        box.appendChild(h('h4', { class: 'pr-h4', text: '노트북 검수 항목' }));
+        box.appendChild(resultTable(fr.checks.map((x) => ({ name: x.id || '-', status: x.status, msg: x.msg }))));
+      }
+      const info = [];
+      if (fr.burn) info.push('자막 ' + fr.burn.cues + '개 · 글꼴 ' + fr.burn.font);
+      if (fr.burn && fr.burn.font_preferred_missing) info.push('⚠ 트랙 지정 글꼴(' + (fr.burn.font_preferred || '') + ')이 노트북에 없어 ' + fr.burn.font + ' 로 대신했어요 — 글꼴을 설치하면 정해진 글꼴로 나와요');
+      if (fr.burn && fr.burn.warnings && fr.burn.warnings.length) info.push('자막 알림 ' + fr.burn.warnings.length + '건: ' + fr.burn.warnings.slice(0, 3).join(' / '));
+      if (fr.bgm) info.push('BGM ' + fr.bgm.name + ' · ' + fr.bgm.volume_db + 'dB · 말소리에 맞춰 자동으로 낮춤 · 끝 1초 페이드아웃');
+      if (fr.limiter) info.push('피크 다듬기: ' + fr.limiter.measured_lufs + ' LUFS → -14 로 올리려고 순간 피크를 ' + fr.limiter.ceiling_db + ' dB 아래로 눌렀어요');
+      if (fr.ai_notice) info.push('마지막 2초 "AI 자막 보조" 안내 포함');
+      info.forEach((t) => box.appendChild(note(t)));
+      if (fr.out) box.appendChild(h('div', { class: 'pr-warnbox' }, h('strong', { text: '결과 파일: ' }), h('code', { text: (fr.out_dir || ('out/' + contentId)) + '\\' + fr.out }),
+        fr.cover ? h('span', { text: ' · 커버 ' + fr.cover }) : null));
+    }
+  }
+
+  /* ── ⑦ 사람 확인 ── */
   function bodyFinish(box) {
     const f = finishOf(brand);
     box.append(
-      note('캡컷에서 약 2분. 폰트·자막 스타일·안전영역·BGM·커버는 사람이 정해요(표준 v3 표3). 끝낸 단계를 눌러 표시해 두세요.'));
+      note('허브가 컷·9:16·음량·자막 굽기·BGM·커버까지 만들었어요. 마지막은 사람이 눈과 귀로 확인해요. 확인한 항목을 눌러 표시해 두세요.'));
     reviewSteps(brand).forEach((rs, i) => {
       box.appendChild(check((i + 1) + '. ' + rs.title, state.review[rs.id] === true, (v) => change((s) => { s.review[rs.id] = v; }), rs.rule));
     });
     box.appendChild(h('p', { class: 'pr-brand', text: '이 카드의 트랙 값 — 글꼴 ' + f.font + ' · 강조색 ' + f.color + ' · 줄당 ' + f.cpl + '자' }));
-    box.appendChild(note('발행(업로드·고정댓글·링크 삽입)은 사람이 해요. 이 화면은 어떤 것도 올리지 않아요.'));
+    box.appendChild(note('발행(업로드·고정댓글·링크 삽입)은 사람이 해요. 이 화면은 어떤 것도 올리지 않아요. 효과음·TTS 내레이션은 아직 허브가 하지 않아요(AI 비율 가드).'));
   }
 
-  const BODIES = { material: bodyMaterial, plan: bodyPlan, cuts: bodyCuts, render: bodyRender, srt: bodySrt, finish: bodyFinish };
+  const BODIES = { material: bodyMaterial, plan: bodyPlan, cuts: bodyCuts, render: bodyRender, srt: bodySrt, make: bodyMake, finish: bodyFinish };
 
   /* 처음엔 아직 안 끝난 첫 단계를 펼쳐 둔다 */
   const st0 = stepStatus(state, brand);
