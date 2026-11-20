@@ -584,7 +584,7 @@ export function produceSection(ctx) {
         narN ? '카드 내레이션 ' + narN + '큐 (톤 hype/calm) · 현장음 -15dB 덕킹' : (capN ? '내레이션 대본이 없어 자막 문장을 차분하게 읽어요' : '자막도 내레이션도 없어 켜도 효과가 없어요')),
       h('div', { class: 'pr-two' },
         h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '자막 크기 기준' }),
-          h('select', { class: 'pr-input', onchange: (e) => change((s) => { s.sub_style = e.target.value; }) },
+          h('select', { class: 'pr-sel', 'aria-label': '자막 크기 기준', onchange: (e) => change((s) => { s.sub_style = e.target.value; }) },
             ...SUB_STYLES.map((v) => h('option', { value: v, selected: state.sub_style === v ? '' : null, text: v === 'auto' ? '자동(180초 기준)' : (v === 'shorts' ? '숏폼(68px·12자)' : '긴 영상(56px·16자)') }))))),
       h('span', { class: 'pr-check-s', text: drive
         ? '큐가 ' + MAX_CUES_INLINE + '개를 넘어 카드 payload 에서 읽어요(같은 결과).'
