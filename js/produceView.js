@@ -16,14 +16,14 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261120a';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120a';
+import { buildEDL } from './yt/edl.js?v=20261120b';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120b';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, compareStandard, stepStatus, orderStatusLabel,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes
-} from './produceLogic.js?v=20261120a';
+} from './produceLogic.js?v=20261120b';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;

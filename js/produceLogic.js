@@ -5,10 +5,11 @@
  * 노트북 content_render 오더 계약 v1 과 같은 규칙으로 입력을 검사한다(노트북·GAS 가 각자 한 번 더 검사한다).
  *
  * 2026-11-20: ① 영상 올리기(구글 드라이브 조각 업로드의 계산)와 ③ 컷 목록 → ④ 오더의 cuts 를 더했다.
+ * 2026-11-20(2): ④ 오더에 fit(프레이밍)을 더했다 — crop · blur · pad, 비우면 노트북이 원본 방향으로 정한다.
  * 하지 않는 것: SRT 생성(다음 단계). 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261120a';
+import { tcToSec } from './yt/edl.js?v=20261120b';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -16,6 +17,7 @@ export const EXT_RE = /\.(mp4|mov|m4v)$/i;
 export const MAX_INPUTS = 8;
 export const MAX_CUTS = 150;                 // 노트북·GAS 와 같은 값(큐 payload 4000자 한도)
 export const MAX_CUT_SPAN_S = 3600;
+export const FITS = ['crop', 'blur', 'pad'];  // 프레이밍 — 노트북 lib/render.js · GAS RENDER_FITS 와 같은 값
 
 /* ── 영상 올리기(구글 드라이브) — GAS gas/Upload.gs 와 같은 값 ── */
 export const UPLOAD_PART_BYTES = 2 * 1024 * 1024;
@@ -201,7 +203,7 @@ export function formatBytes(n) {
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -216,6 +218,11 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
     const n = Number(cropX);
     if (!Number.isFinite(n) || n < 0 || n > 1) errors.push('crop_x 는 0~1 사이 숫자예요(0=왼쪽, 0.5=가운데, 1=오른쪽)');
     else payload.crop_x = n;
+  }
+  if (fit !== undefined && fit !== null && fit !== '') {
+    const f = String(fit).trim().toLowerCase();
+    if (FITS.indexOf(f) < 0) errors.push('프레이밍(fit)은 ' + FITS.join(' · ') + ' 중 하나여야 해요');
+    else payload.fit = f;
   }
   if (cuts !== undefined && cuts !== null) {
     if (!Array.isArray(cuts)) errors.push('cuts 는 구간 목록이어야 해요');

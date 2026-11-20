@@ -297,6 +297,14 @@ ok('profile·crop_x 생략 가능', o.ok, o);
 const rs2 = A.env.fetched[A.env.fetched.length - 1];
 eq('profile 기본 captions', rs2.body.payload.profile, 'captions');
 ok('crop_x 를 만들어 넣지 않는다', !('crop_x' in rs2.body.payload));
+ok('fit 을 만들어 넣지 않는다(비우면 노트북이 원본 방향으로 정한다)', !('fit' in rs2.body.payload));
+
+console.log('\n[8b-2b] 프레이밍(fit) — crop · blur · pad 만 큐에 넘긴다');
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { fit: ' BLUR ' }), { brand: 'daejeon_youth' });
+ok('fit 이 있는 오더 접수', o.ok, o);
+eq('fit 은 소문자로 큐에 실린다', A.env.fetched[A.env.fetched.length - 1].body.payload.fit, 'blur');
+ok('fit 이 payload 키에 들어간다', Object.keys(A.env.fetched[A.env.fetched.length - 1].body.payload).indexOf('fit') >= 0);
+['auto', 'left', 'CROPX'].forEach((f) => eq('거부: fit=' + f, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { fit: f }), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
 
 console.log('\n[8b-2] 컷(잘라낼 구간) — 짧은 모양으로 큐에 보낸다');
 A.env.setFetchReply(okReply);

@@ -180,6 +180,7 @@ const RENDER_FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
 const RENDER_EXT_RE = /\.(mp4|mov|m4v)$/i;
 const RENDER_PROFILES = ['captions', 'bgm'];
 const RENDER_BRANDS = ['daejeon_youth', 'ppiyak_kimmary'];
+const RENDER_FITS = ['crop', 'blur', 'pad'];   // 프레이밍 — 비우면 노트북이 원본 방향으로 정한다
 const RENDER_MAX_INPUTS = 8;
 
 function isRealRenderOrder_(type, payload) {
@@ -206,6 +207,11 @@ function hubRenderPayload_(payload) {
   const profile = payload.profile === undefined || payload.profile === null || payload.profile === '' ? 'captions' : String(payload.profile);
   if (RENDER_PROFILES.indexOf(profile) === -1) throw bad('profile 은 captions 또는 bgm 이어야 합니다.');
   const out = { content_id: contentId, brand: brand, inputs: names, profile: profile };
+  if (payload.fit !== undefined && payload.fit !== null && payload.fit !== '') {
+    const fit = String(payload.fit).trim().toLowerCase();
+    if (RENDER_FITS.indexOf(fit) === -1) throw bad('fit 은 crop · blur · pad 중 하나여야 합니다.');
+    out.fit = fit;
+  }
   if (payload.crop_x !== undefined && payload.crop_x !== null && payload.crop_x !== '') {
     const c = Number(payload.crop_x);
     if (!isFinite(c) || c < 0 || c > 1) throw bad('crop_x 는 0~1 사이 숫자여야 합니다.');
