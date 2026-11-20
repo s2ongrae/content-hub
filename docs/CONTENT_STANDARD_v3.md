@@ -74,9 +74,10 @@ kind: note
 | 영상 올리기 | **됨(2026-11-20)** | 허브 제작 탭 ① → 구글 드라이브 비공개 폴더 `ContentHubOS_Uploads/<content_id>/`(2MB 조각, `gas/Upload.gs`). 노트북이 렌더 때 받아 간다 |
 | 컷편집 | **됨(2026-11-20)** | 허브 ③ 컷 목록(무음·추임새·재시도, 켜고 끄기) → ④ 오더 `cuts` → 노트북 `cut.py --remove --smart` 로 실제로 자른 뒤 9:16·음량 |
 | 자막 파일(SRT) | 다음 | Whisper 전사 → 규격 분할 → **허브 화면에서 사람이 문구 확인·수정**(무음에서 문구를 지어내는 문제 때문에 확인 단계가 필수) |
-| 자막 굽기 | 그다음 | 확인된 SRT 를 `caption.py` 로 굽는다. 마지막 2초 "AI 자막 보조"(표4)는 자동으로 넣는다 |
+| 자막 굽기 | **됨(2026-11-20)** | 카드 payload `production.captions`([{start,end,text}]) → 오더 `captions` → 노트북이 ASS 를 만들어 `caption.py --ass` 로 굽고 `{content_id}_final.mp4` 를 함께 남긴다. 클린 마스터는 그대로 보존(문구만 고칠 때 컷·SDR·프레이밍을 다시 돌리지 않는다) |
+| TTS 내레이션 | **됨(2026-11-20)** | 오더 `narration`([{start,end,text,tone:'hype'|'calm'}]) → 노트북이 `edge-tts`(무료·토큰 0)로 큐마다 목소리를 만들어 타임라인에 얹고, 그 구간만 현장음을 -15dB 덕킹한다(attack 50ms · release 300ms). TTS 가 실패하면 번인만 마치고 `report.tts_fallback_reason` 에 남긴다 |
 | BGM | 그다음 | 사용자 BGM 폴더에서 고른 곡을 `audio.py --music --duck`. 현장음 있으면 -24dB, 없으면 -16dB, 끝 1초 페이드아웃, 최종 -14 LUFS |
-| 효과음·TTS·커버 | 보류 | TTS 는 네이버 클립 AI 비율 가드 때문에 따로 판단. 커버는 프레임 선택 화면이 필요 |
+| 효과음·커버 | 보류 | 커버는 프레임 선택 화면이 필요 |
 
 - **그때까지 위 표의 '다음' 이후 항목은 이 문서 §1~4(캡컷 7단계)가 그대로 유효하다.** 한 단계가 허브로 넘어올 때 이 표를 고치고, 표3 에서 해당 단계를 뺀다.
 - 오더 계약: `content_render` payload 에 `cuts` 가 더해졌다(`[from,to]` 또는 `[from,to,파일번호]`, 초, 150개까지 — 큐 payload 4000자 한도). 노트북·GAS·허브가 각자 검사한다.

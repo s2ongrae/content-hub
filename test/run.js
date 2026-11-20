@@ -301,6 +301,25 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       && !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cropX: 2 }).ok
       && !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: [] }).ok);
 
+    /* 완제품 — 자막 번인·내레이션(2026-11-20) */
+    const capBase = { contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'] };
+    const capP = L.buildRenderPayload(Object.assign({}, capBase, { captions: [{ start: 0.2, end: 1.4, text: '오토바이 여러 대' }], subStyle: 'long' }));
+    ok('자막이 있으면 payload.captions + sub_style 로 실린다', capP.ok && capP.payload.captions.length === 1 && capP.payload.sub_style === 'long' && !('burn_subtitles' in capP.payload), capP);
+    ok('burnSubtitles:false 면 burn_subtitles:false', L.buildRenderPayload(Object.assign({}, capBase, { captions: [[0, 1, '가']], burnSubtitles: false })).payload.burn_subtitles === false);
+    ok('자막이 없으면 굽기 키도 안 붙는다(기존 오더 그대로)', !('burn_subtitles' in L.buildRenderPayload(capBase).payload));
+    const narP = L.buildRenderPayload(Object.assign({}, capBase, { captions: [[0, 2, '가']], narration: [[0, 2, '와! 대박', 'hype']] }));
+    ok('내레이션 큐와 톤이 실린다', narP.ok && narP.payload.narration[0][3] === 'hype', narP);
+    ok('내레이션 톤은 hype · calm 만', !L.buildRenderPayload(Object.assign({}, capBase, { narration: [[0, 2, '가', 'shout']] })).ok);
+    ok('자막 큐 검사: 빈 문장·끝<=시작·200자 초과 거부', ['', 'x'].every(() => !L.buildRenderPayload(Object.assign({}, capBase, { captions: [[0, 1, ' ']] })).ok)
+      && !L.buildRenderPayload(Object.assign({}, capBase, { captions: [[2, 1, '가']] })).ok
+      && !L.buildRenderPayload(Object.assign({}, capBase, { captions: [[0, 1, '가'.repeat(201)]] })).ok);
+    const many = Array.from({ length: 60 }, (_, i) => [i * 0.5, i * 0.5 + 0.4, '자' + i]);
+    const driveP = L.buildRenderPayload(Object.assign({}, capBase, { captions: many }));
+    ok('큐가 ' + L.MAX_CUES_INLINE + '개를 넘으면 payload_source:drive(인라인 제거)', driveP.ok && driveP.payload.payload_source === 'drive' && !('captions' in driveP.payload), driveP.payload);
+    ok('payload_source:drive 를 직접 지정할 수 있다', L.buildRenderPayload(Object.assign({}, capBase, { payloadSource: 'drive' })).payload.payload_source === 'drive');
+    ok('narrate:true 는 그대로 실린다(대본이 없으면 노트북이 자막을 읽는다)', L.buildRenderPayload(Object.assign({}, capBase, { narration: [[0, 2, '가']], narrate: true })).payload.narrate === true);
+    ok('normalizeCues 가 큐를 [start,end,text] 로 정리한다', L.normalizeCues([{ start: 0.234, end: 1.005, text: '  가  나 ' }], '자막').cues[0].join('|') === '0.23|1.01|가 나');
+
     /* 표준 v3 숫자 */
     ok('음량 프로필 = 표1 (자막만 -14/TP -1.8, BGM -16/TP -2.0)', L.PROFILES.captions.lufs === -14 && L.PROFILES.captions.tpMax === -1.8 && L.PROFILES.bgm.lufs === -16 && L.PROFILES.bgm.tpMax === -2.0);
     ok('오더 TP 목표는 한도보다 여유(실측: 목표=한도면 한도를 넘었다)', L.PROFILES.captions.tpTarget < L.PROFILES.captions.tpMax && L.PROFILES.bgm.tpTarget < L.PROFILES.bgm.tpMax);

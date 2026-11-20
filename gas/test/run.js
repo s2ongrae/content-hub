@@ -335,6 +335,43 @@ ok('거부된 컷 오더는 큐를 부르지 않았다', A.env.fetched.length ==
 o = callHandler(A.ctx, 'handleHubOrder_', null, goodRender, { brand: 'daejeon_youth' });
 eq('컷이 없으면 0개로 알려 준다', o.ok && o.data.cuts, 0);
 
+console.log('\n[8b-3] 완제품 옵션 — 자막 번인 · 내레이션을 큐에 넘긴다');
+const oneIn = Object.assign({}, goodRender, { inputs: ['a.mp4'] });
+A.env.setFetchReply(okReply);
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, oneIn, {
+  captions: [{ start: 0.234, end: 1.4, text: '오토바이 여러 대' }], sub_style: 'long'
+}), { brand: 'daejeon_youth' });
+ok('자막이 있는 렌더 오더 접수', o.ok, o);
+const rcap = A.env.fetched[A.env.fetched.length - 1].body.payload;
+eq('자막 큐는 [start,end,text] 로 줄여 보낸다', JSON.stringify(rcap.captions), JSON.stringify([[0.23, 1.4, '오토바이 여러 대']]));
+eq('sub_style 을 그대로 넘긴다', rcap.sub_style, 'long');
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, oneIn, {
+  captions: [[0, 2, '가']], narration: [[0, 2, '와! 대박', 'hype']], narrate: true, voice: 'ko-KR-SunHiNeural', burn_subtitles: false
+}), { brand: 'daejeon_youth' });
+const rnar = A.env.fetched[A.env.fetched.length - 1].body.payload;
+ok('내레이션 톤·보이스·narrate 를 넘긴다', o.ok && JSON.stringify(rnar.narration) === JSON.stringify([[0, 2, '와! 대박', 'hype']]) && rnar.voice === 'ko-KR-SunHiNeural' && rnar.narrate === true, rnar);
+eq('burn_subtitles:false 도 그대로 넘긴다', rnar.burn_subtitles, false);
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, oneIn, {
+  captions: Array.from({ length: 45 }, (_, i) => [i * 0.5, i * 0.5 + 0.4, '자' + i])
+}), { brand: 'daejeon_youth' });
+const rdrive = A.env.fetched[A.env.fetched.length - 1].body.payload;
+ok('큐가 40개를 넘으면 payload_source:drive 로만 보낸다(인라인 제거)', o.ok && rdrive.payload_source === 'drive' && !('captions' in rdrive), Object.keys(rdrive));
+ok('drive payload 는 4,000자 안에 들어간다', JSON.stringify(rdrive).length < 4000);
+const nCap = A.env.fetched.length;
+[
+  ['captions 배열 아님', Object.assign({}, oneIn, { captions: 'x' })],
+  ['자막 문장 빈 값', Object.assign({}, oneIn, { captions: [[0, 1, ' ']] })],
+  ['자막 끝<=시작', Object.assign({}, oneIn, { captions: [[2, 1, '가']] })],
+  ['자막 200자 초과', Object.assign({}, oneIn, { captions: [[0, 1, '가'.repeat(201)]] })],
+  ['내레이션 톤 틀림', Object.assign({}, oneIn, { narration: [[0, 2, '가', 'shout']] })],
+  ['sub_style 틀림', Object.assign({}, oneIn, { captions: [[0, 1, '가']], sub_style: 'big' })],
+  ['payload_source 틀림', Object.assign({}, oneIn, { payload_source: 'sheet' })],
+  ['voice 형식 틀림', Object.assign({}, oneIn, { voice: 'sunhi' })],
+  ['narrate 문자열', Object.assign({}, oneIn, { narrate: 'yes' })]
+].forEach(([name, pl]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, pl, { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+ok('거부된 자막 오더는 큐를 부르지 않았다', A.env.fetched.length === nCap);
+
+
 console.log('\n[8c] 렌더 오더 입력 검증 — 큐를 부르기 전에 막는다');
 const n0 = A.env.fetched.length;
 const badCases = [

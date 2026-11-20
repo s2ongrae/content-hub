@@ -2,7 +2,9 @@
  * js/produceView.js — 카드 상세 '제작' 탭 (제작 스텝퍼, 2026-11-19)
  *
  * 카드 하나를 ①재료 → ②기획 → ③컷 목록 → ④클린 마스터 → ⑤자막 파일 → ⑥검수·마무리 순서로 따라간다.
- *  · 표준은 docs/CONTENT_STANDARD_v3.md — AI 는 클린 마스터(컷·9:16·음량)와 SRT 까지, 자막 번인·TTS·BGM·커버는 사람이 캡컷에서.
+ *  · 표준은 docs/CONTENT_STANDARD_v3.md — AI 는 클린 마스터(컷·9:16·음량)까지, 자막 번인·TTS·BGM·커버는 사람이 캡컷에서.
+ *    2026-11-20부터는 카드 payload 의 production.captions/narration 이 있으면 ④ 오더에 실어 **완제품(_final.mp4)** 까지 만든다
+ *    (자막 번인 + TTS 내레이션 + 현장음 -15dB 덕킹 — docs/FINAL_RENDER_v1.md). 클린 마스터는 늘 함께 남는다.
  *  · ① 은 영상을 구글 드라이브(비공개 폴더)에 올린다(js/uploadVideo.js → gas/Upload.gs). 노트북이 렌더할 때 받아 간다.
  *  · ③ 은 타임코드 대본에서 컷 목록(무음·추임새·재시도)을 계산해 켜고 끌 수 있게 하고, ④ 오더에 cuts 로 실어 노트북이 실제로 자른다.
  *  · ④ 는 노트북에 영상 렌더 오더(hub_order · content_render)를 보낸다. 승인(15분) 뒤에만 실행된다.
@@ -20,7 +22,7 @@ import { buildEDL } from './yt/edl.js?v=20261120b';
 import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261120b';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
-  parseReport, compareStandard, stepStatus, orderStatusLabel,
+  parseReport, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes
 } from './produceLogic.js?v=20261120b';
@@ -40,6 +42,10 @@ export function produceSection(ctx) {
   /* ── 상태: 서버(payload.studio) 기준, 그 기기에 못 올린 변경이 남아 있으면 그것을 먼저 ── */
   const lsKey = LS_PREFIX + contentId;
   let state = normalizeState(detail.payload && detail.payload.studio);
+  // 완제품(2026-11-20): 카드 payload 의 production 에 저장된 자막·내레이션 대본을 읽는다(수정은 다른 화면 몫).
+  const production = (detail.payload && detail.payload.production) || {};
+  const cardCaptions = production.captions !== undefined ? production.captions : (detail.payload && detail.payload.captions);
+  const cardNarration = production.narration !== undefined ? production.narration : (detail.payload && detail.payload.narration);
   let unsaved = false;
   try {
     const raw = lsGet(lsKey);
@@ -540,16 +546,52 @@ export function produceSection(ctx) {
     stopPoll();
     statusHost = null;
     const cutRes = cutsForOrder(state, state.inputs);
-    const built = buildRenderPayload({ contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x, cuts: cutRes.ok ? cutRes.cuts : undefined });
+    // 완제품 옵션 — 카드에 저장된 자막·내레이션을 오더에 실어 노트북이 번인·TTS·덕킹까지 마친다.
+    const capRes = normalizeCues(cardCaptions, '자막');
+    const narRes = normalizeCues(cardNarration, '내레이션', { tones: ['hype', 'calm'] });
+    const built = buildRenderPayload({
+      contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x,
+      cuts: cutRes.ok ? cutRes.cuts : undefined,
+      captions: capRes.cues.length ? capRes.cues : undefined,
+      narration: state.narrate ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
+      burnSubtitles: state.burn, subStyle: state.sub_style,
+      narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined
+    });
     const sendable = built.ok && cutRes.ok;
     const p = PROFILES[state.profile];
     const cutSm = cutSummary(state.cut_list.filter((c) => c.on !== false), cutMem.srcLen);
+    const capN = capRes.cues.length;
+    const narN = narRes.cues.length;
+    const willBurn = state.burn && (capN > 0 || (built.ok && built.payload.payload_source === 'drive'));
+    const drive = built.ok && built.payload.payload_source === 'drive';
 
     box.append(
-      note('노트북이 ' + (cutRes.ok && cutRes.cuts.length ? '정해 둔 컷 ' + cutRes.cuts.length + '곳(약 ' + cutSm.seconds.toFixed(1) + '초)을 먼저 잘라내고, ' : '') + '영상을 9:16(1080×1920)·30fps로 맞추고 음량을 ' + p.lufs.toFixed(0) + ' LUFS로 평탄화한 클린 마스터를 만들어요. 자막 번인·TTS·효과음·로고는 아직 넣지 않아요.'),
+      note('노트북이 ' + (cutRes.ok && cutRes.cuts.length ? '정해 둔 컷 ' + cutRes.cuts.length + '곳(약 ' + cutSm.seconds.toFixed(1) + '초)을 먼저 잘라내고, ' : '') + '영상을 9:16(1080×1920)·30fps로 맞추고 음량을 ' + p.lufs.toFixed(0) + ' LUFS로 평탄화해요. ' +
+        (state.burn ? '카드에 저장된 자막을 구워 완제품(_final.mp4)까지 만들어요. ' : '자막은 굽지 않고 클린 마스터만 만들어요. ') +
+        (state.narrate ? '내레이션(TTS)은 그 구간만큼 현장음을 -15dB 덕킹해요.' : '내레이션은 넣지 않아요.')),
       h('div', { class: 'pr-pipe' },
-        ...['정보 읽기'].concat(cutRes.ok && cutRes.cuts.length ? ['컷 편집'] : [], ['이어붙이기', '9:16 맞춤', '음량 2회 측정', '규격 검수'])
+        ...['정보 읽기'].concat(cutRes.ok && cutRes.cuts.length ? ['컷 편집'] : [], ['이어붙이기', '9:16 맞춤'])
+          .concat(state.narrate ? ['내레이션', '음량 2회 측정'] : ['음량 2회 측정'])
+          .concat(state.burn ? ['자막 굽기', '규격 검수'] : ['규격 검수'])
           .map((t, i) => h('span', { class: 'pr-pipe-i' }, h('b', { text: String(i + 1) }), t))));
+
+    // 완제품 옵션 상자 — 몇 큐가 들어가는지·긴 영상이면 카드에서 읽는지 보여 준다
+    box.append(h('div', { class: 'pr-field' },
+      h('span', { class: 'pr-label', text: '완제품 옵션 (자막·내레이션)' }),
+      check('자막을 구워서 완제품으로', state.burn, (v) => change((s) => { s.burn = v; }),
+        capN ? '카드 자막 ' + capN + '큐 · 1080×1920 기준 · 하단 안전선 안 · 2줄까지' : '카드에 자막이 없어요 — 구울 것이 없습니다'),
+      check('내레이션(TTS) 넣기', state.narrate, (v) => change((s) => { s.narrate = v; }),
+        narN ? '카드 내레이션 ' + narN + '큐 (톤 hype/calm) · 현장음 -15dB 덕킹' : (capN ? '내레이션 대본이 없어 자막 문장을 차분하게 읽어요' : '자막도 내레이션도 없어 켜도 효과가 없어요')),
+      h('div', { class: 'pr-two' },
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '자막 크기 기준' }),
+          h('select', { class: 'pr-input', onchange: (e) => change((s) => { s.sub_style = e.target.value; }) },
+            ...SUB_STYLES.map((v) => h('option', { value: v, selected: state.sub_style === v ? '' : null, text: v === 'auto' ? '자동(180초 기준)' : (v === 'shorts' ? '숏폼(68px·12자)' : '긴 영상(56px·16자)') }))))),
+      h('span', { class: 'pr-check-s', text: drive
+        ? '큐가 ' + MAX_CUES_INLINE + '개를 넘어 카드 payload 에서 읽어요(같은 결과).'
+        : '카드 자막 ' + capN + '큐 · 내레이션 ' + narN + '큐 · 큐가 ' + MAX_CUES_INLINE + '개를 넘으면 카드에서 읽어요.' }),
+      (capRes.errors.length || narRes.errors.length)
+        ? h('span', { class: 'pr-check-s', text: '카드 자막·내레이션에 문제가 있어요: ' + (capRes.errors[0] || narRes.errors[0]) })
+        : null));
 
     if (!built.ok) {
       box.appendChild(h('div', { class: 'pr-warnbox' },

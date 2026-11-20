@@ -18,6 +18,13 @@ export const MAX_INPUTS = 8;
 export const MAX_CUTS = 150;                 // 노트북·GAS 와 같은 값(큐 payload 4000자 한도)
 export const MAX_CUT_SPAN_S = 3600;
 export const FITS = ['crop', 'blur', 'pad'];  // 프레이밍 — 노트북 lib/render.js · GAS RENDER_FITS 와 같은 값
+export const SUB_STYLES = ['auto', 'shorts', 'long'];   // 자막 스타일 — 180초 기준 자동
+/* 완제품(2026-11-20): 자막 번인·내레이션. 큐가 많으면 큐 payload(4,000자)를 넘으므로 40큐까지 인라인,
+   그보다 많으면 payload_source:'drive' 로 보내고 노트북이 카드 payload(production)에서 읽는다. */
+export const MAX_CUES_INLINE = 40;
+export const MAX_PAYLOAD_CHARS = 3800;
+export const MAX_CUES = 400;                  // 노트북 상한과 같은 값
+const MAX_CUE_TEXT = 200;
 
 /* ── 영상 올리기(구글 드라이브) — GAS gas/Upload.gs 와 같은 값 ── */
 export const UPLOAD_PART_BYTES = 2 * 1024 * 1024;
@@ -63,7 +70,7 @@ export const STEPS = [
 ];
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', review: {}, render: null };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -83,6 +90,10 @@ export function normalizeState(raw) {
     }).filter((c) => Number.isFinite(c.from) && Number.isFinite(c.to) && c.from >= 0 && c.to > c.from).slice(0, MAX_CUTS);
   }
   if (typeof raw.cut_input === 'string') s.cut_input = raw.cut_input.slice(0, 80);
+  s.burn = raw.burn !== false;                       // 자막이 있으면 기본으로 굽는다
+  s.narrate = raw.narrate === true;                  // 내레이션은 명시적으로 켜야 한다
+  s.sub_style = SUB_STYLES.indexOf(String(raw.sub_style || '')) >= 0 ? String(raw.sub_style) : 'auto';
+  s.voice = typeof raw.voice === 'string' && /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/.test(raw.voice) ? raw.voice : '';
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
@@ -202,8 +213,31 @@ export function formatBytes(n) {
   return (v / 1073741824).toFixed(2) + 'GB';
 }
 
-/** 오더 payload 만들기 — 계약 v1(+ cuts). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit }) {
+/** 자막·내레이션 큐 검사 — [{start,end,text}] 또는 [start,end,text,톤?]. 노트북과 같은 규칙(조금 느슨하게). */
+export function normalizeCues(raw, label, opts) {
+  const o = opts || {};
+  const errors = [];
+  const cues = [];
+  if (raw === undefined || raw === null || raw === '') return { cues, errors };
+  if (!Array.isArray(raw)) { errors.push(label + ' 는 큐 목록이어야 해요'); return { cues, errors }; }
+  if (raw.length > MAX_CUES) { errors.push(label + ' 는 ' + MAX_CUES + '큐까지예요(지금 ' + raw.length + '큐)'); return { cues, errors }; }
+  raw.forEach((c, i) => {
+    let start, end, text, extra;
+    if (Array.isArray(c)) { start = Number(c[0]); end = Number(c[1]); text = String(c[2] == null ? '' : c[2]); extra = c[3]; }
+    else if (c && typeof c === 'object') { start = Number(c.start); end = Number(c.end); text = String(c.text == null ? '' : c.text); extra = c.tone; }
+    else { errors.push(label + ' ' + (i + 1) + '번 큐 모양이 올바르지 않아요'); return; }
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) { errors.push(label + ' ' + (i + 1) + '번 큐의 시작·끝(초)이 올바르지 않아요'); return; }
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (!t) { errors.push(label + ' ' + (i + 1) + '번 큐의 문장이 비어 있어요'); return; }
+    if (t.length > MAX_CUE_TEXT) { errors.push(label + ' ' + (i + 1) + '번 큐의 문장이 너무 길어요(' + MAX_CUE_TEXT + '자까지)'); return; }
+    if (o.tones && extra !== undefined && extra !== null && extra !== '' && o.tones.indexOf(String(extra)) < 0) { errors.push(label + ' ' + (i + 1) + '번 큐의 톤은 ' + o.tones.join(' · ') + ' 중 하나여야 해요'); return; }
+    cues.push([Math.round(start * 100 + 1e-9) / 100, Math.round(end * 100 + 1e-9) / 100, t].concat(o.tones && extra ? [String(extra)] : []));
+  });
+  return { cues, errors };
+}
+
+/** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -236,7 +270,35 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
       if (cuts.length && !errors.length) payload.cuts = cuts;
     }
   }
-  return errors.length ? { ok: false, errors } : { ok: true, payload };
+  // ── 완제품 옵션(2026-11-20) — 자막 번인·내레이션 ──
+  const cap = normalizeCues(captions, '자막');
+  const nar = normalizeCues(narration, '내레이션', { tones: ['hype', 'calm'] });
+  errors.push(...cap.errors, ...nar.errors);
+  const wantSource = String(payloadSource || '').trim().toLowerCase();
+  if (wantSource && ['inline', 'drive'].indexOf(wantSource) < 0) errors.push('payload_source 는 inline · drive 중 하나여야 해요');
+  let source = wantSource === 'drive' ? 'drive' : 'inline';
+  let sub = String(subStyle || 'auto').trim().toLowerCase();
+  if (SUB_STYLES.indexOf(sub) < 0) { errors.push('자막 스타일은 ' + SUB_STYLES.join(' · ') + ' 중 하나여야 해요'); sub = 'auto'; }
+  const totalCues = cap.cues.length + nar.cues.length;
+  if (source === 'inline' && totalCues > MAX_CUES_INLINE) source = 'drive';   // 40큐가 넘으면 카드에서 읽는다
+  if (errors.length) return { ok: false, errors };
+  if (source === 'drive') payload.payload_source = 'drive';
+  else {
+    if (cap.cues.length) payload.captions = cap.cues;
+    if (nar.cues.length) payload.narration = nar.cues;
+  }
+  if (narrate === true) payload.narrate = true;
+  if (voice) payload.voice = String(voice);
+  const willBurn = burnSubtitles !== false && (cap.cues.length > 0 || source === 'drive');
+  if (!willBurn && burnSubtitles === false && (cap.cues.length > 0 || source === 'drive')) payload.burn_subtitles = false;
+  else if (willBurn && sub !== 'auto') payload.sub_style = sub;
+  if (JSON.stringify(payload).length > MAX_PAYLOAD_CHARS && source === 'inline') {
+    // 글자 수가 넘으면 인라인을 포기하고 카드에서 읽게 한다(문장을 자르지 않는다).
+    delete payload.captions;
+    delete payload.narration;
+    payload.payload_source = 'drive';
+  }
+  return { ok: true, payload, notes: { cues: cap.cues.length, narration: nar.cues.length, source: payload.payload_source || 'inline', burn: willBurn } };
 }
 
 /** 큐 상태 코드 → 화면 문구(코드값은 화면에 그대로 보이지 않는다). 모르는 값은 '확인 필요'로. */

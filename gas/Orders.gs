@@ -182,6 +182,40 @@ const RENDER_PROFILES = ['captions', 'bgm'];
 const RENDER_BRANDS = ['daejeon_youth', 'ppiyak_kimmary'];
 const RENDER_FITS = ['crop', 'blur', 'pad'];   // 프레이밍 — 비우면 노트북이 원본 방향으로 정한다
 const RENDER_MAX_INPUTS = 8;
+/* 완제품(2026-11-20): 자막 번인·내레이션. 큐 payload 4,000자 때문에 40큐까지 인라인,
+   그보다 많으면 payload_source:'drive' 로만 보내고 노트북이 카드 payload(production)에서 읽는다. */
+const RENDER_MAX_CUES = 400;
+const RENDER_MAX_CUE_TEXT = 200;
+const RENDER_CUES_INLINE = 40;
+const RENDER_MAX_PAYLOAD_CHARS = 3800;
+const RENDER_SUB_STYLES = ['auto', 'shorts', 'long'];
+const RENDER_VOICE_RE = /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/;
+
+/** 자막·내레이션 큐 검사 → 큐 payload 용 짧은 모양([start,end,text] · 내레이션은 [start,end,text,tone]). */
+function hubRenderCues_(raw, label, withTone) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  if (!Array.isArray(raw)) throw bad(label + ' 는 큐 목록(배열)이어야 합니다.');
+  if (raw.length > RENDER_MAX_CUES) throw bad(label + ' 는 ' + RENDER_MAX_CUES + '큐까지입니다(지금 ' + raw.length + '큐).');
+  const r2 = function (n) { return Math.round(n * 100) / 100; };
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    let start, end, text, tone = null;
+    if (Array.isArray(c)) { start = Number(c[0]); end = Number(c[1]); text = String(c[2] == null ? '' : c[2]); tone = c[3] == null ? null : String(c[3]); }
+    else if (c && typeof c === 'object') { start = Number(c.start); end = Number(c.end); text = String(c.text == null ? '' : c.text); tone = c.tone == null ? null : String(c.tone); }
+    else throw bad(label + '[' + i + '] 모양이 올바르지 않습니다.');
+    if (!isFinite(start) || !isFinite(end) || start < 0 || end <= start) throw bad(label + '[' + i + '] 의 시작·끝(초)이 올바르지 않습니다.');
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (!t) throw bad(label + '[' + i + '] 의 문장이 비어 있습니다.');
+    if (t.length > RENDER_MAX_CUE_TEXT) throw bad(label + '[' + i + '] 의 문장이 너무 깁니다(' + RENDER_MAX_CUE_TEXT + '자까지).');
+    if (withTone) {
+      if (tone !== null && tone !== '' && ['hype', 'calm'].indexOf(tone) === -1) throw bad(label + '[' + i + '] 의 톤은 hype · calm 중 하나여야 합니다.');
+      out.push([r2(start), r2(end), t].concat(tone ? [tone] : []));
+    } else out.push([r2(start), r2(end), t]);
+  }
+  return out;
+}
 
 function isRealRenderOrder_(type, payload) {
   return type === 'content_render' && !!payload && Array.isArray(payload.inputs);
@@ -219,6 +253,40 @@ function hubRenderPayload_(payload) {
   }
   const cuts = hubRenderCuts_(payload.cuts, names.length);
   if (cuts.length) out.cuts = cuts;
+  // ── 완제품 옵션 — 자막 번인·내레이션(2026-11-20) ──
+  const captions = hubRenderCues_(payload.captions, 'captions', false);
+  const narration = hubRenderCues_(payload.narration, 'narration', true);
+  let source = 'inline';
+  if (payload.payload_source !== undefined && payload.payload_source !== null && payload.payload_source !== '') {
+    source = String(payload.payload_source).trim().toLowerCase();
+    if (['inline', 'drive'].indexOf(source) === -1) throw bad('payload_source 는 inline · drive 중 하나여야 합니다.');
+  }
+  let subStyle = 'auto';
+  if (payload.sub_style !== undefined && payload.sub_style !== null && payload.sub_style !== '') {
+    subStyle = String(payload.sub_style).trim().toLowerCase();
+    if (RENDER_SUB_STYLES.indexOf(subStyle) === -1) throw bad('sub_style 은 ' + RENDER_SUB_STYLES.join(' · ') + ' 중 하나여야 합니다.');
+  }
+  if (payload.narrate !== undefined && payload.narrate !== null && payload.narrate !== '' && typeof payload.narrate !== 'boolean') throw bad('narrate 는 true·false 여야 합니다.');
+  if (payload.voice !== undefined && payload.voice !== null && payload.voice !== '') {
+    if (!RENDER_VOICE_RE.test(String(payload.voice))) throw bad('voice 는 edge-tts 보이스 이름(예: ko-KR-SunHiNeural)이어야 합니다.');
+    out.voice = String(payload.voice);
+  }
+  if (payload.burn_subtitles !== undefined && payload.burn_subtitles !== null && payload.burn_subtitles !== '' && typeof payload.burn_subtitles !== 'boolean') throw bad('burn_subtitles 는 true·false 여야 합니다.');
+  if (payload.burn_subtitles === false) out.burn_subtitles = false;
+  if (payload.narrate === true) out.narrate = true;
+  if (source === 'inline' && captions.length + narration.length > RENDER_CUES_INLINE) source = 'drive';
+  if (source === 'drive') out.payload_source = 'drive';
+  else {
+    if (captions.length) out.captions = captions;
+    if (narration.length) out.narration = narration;
+  }
+  if (out.burn_subtitles !== false && (captions.length || narration.length || source === 'drive') && subStyle !== 'auto') out.sub_style = subStyle;
+  if (JSON.stringify(out).length > RENDER_MAX_PAYLOAD_CHARS) {
+    // 큐 payload 한도 — 문장을 자르지 않고 카드에서 읽게 한다.
+    delete out.captions;
+    delete out.narration;
+    out.payload_source = 'drive';
+  }
   return out;
 }
 
