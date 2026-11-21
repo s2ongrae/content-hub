@@ -1141,8 +1141,9 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('Flow: 360p 4초 = 4크레딧(1/3 값)', AC.creditCost(4, '360p') === 4);
     ok('Flow: 모르는 해상도는 720p 로 본다', AC.creditCost(4, '1080p') === 12);
     const bud = AC.fitsBudget({ seconds: 5, count: 2 }, '720p');
-    ok('하루 50크레딧 예산: 720p 5초 2컷 = 30크레딧 · 남음 20', bud.total === 30 && bud.fits === true && bud.left === 20);
-    ok('예산을 넘으면 fits=false', AC.fitsBudget({ seconds: 10, count: 4 }, '720p').fits === false);
+    ok('월 250크레딧 예산: 720p 5초 2컷 = 30크레딧 · 남음 220', bud.total === 30 && bud.fits === true && bud.left === 220, bud);
+    ok('예산을 넘으면 fits=false(720p 10초 9컷 = 270)', AC.fitsBudget({ seconds: 10, count: 9 }, '720p').fits === false);
+    ok('무료 플랜 하루 50은 화면 안내용으로 남긴다', AC.FLOW.monthlyCredits === 250 && AC.FLOW.dailyCredits === 50);
 
     const f = AC.buildFlowPrompt({ preset: 'product_scene', subject: 'a ceramic cat bowl', seconds: 4, resolution: '720p' });
     ok('프롬프트에 소재가 들어간다', /a ceramic cat bowl/.test(f.prompt));
@@ -1160,13 +1161,18 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
 
     ok('삽입 상한: 30초 완제품 → 네이버 클립 6초 · 유튜브 9초', AC.maxInsertSeconds(30, 'naver_clip') === 6 && AC.maxInsertSeconds(30, 'youtube') === 9);
     ok('판정 5개', AC.JUDGE.length === 5);
+    // 워터마크 처리 — 2026-11-21 실측으로 1.18배 크롭 폐기, delogo(기본)+하단 크롭(대안)
+    ok('기본 크롭 모드는 delogo · 720p 실측 좌표', AC.INSERT.cropMode === 'delogo' && AC.cropFilter().indexOf('delogo=' + AC.INSERT.delogoExpr) === 0);
+    ok('delogo 좌표: x 0.7944 · y 0.8844 · w 0.0778 · h 0.0438', /x=iw\*0\.7944/.test(AC.cropFilter()) && /y=ih\*0\.8844/.test(AC.cropFilter()) && /h=ih\*0\.0438/.test(AC.cropFilter()));
+    ok('하단 크롭 대안: 720p 630×1120 과 같은 비율 · 1080×1920 · 30fps', /crop=iw\*0\.875:ih\*0\.875:iw\*0\.0625:0/.test(AC.cropFilter('bottom-crop')) && /scale=1080:1920/.test(AC.cropFilter()) && /fps=30/.test(AC.cropFilter()));
+    ok('1.18배 크롭 흔적이 없다', AC.cropFilter().indexOf('1.18') < 0 && !('cropZoom' in AC.INSERT));
 
     const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'ai_video_free.json'), 'utf8'));
-    ok('시드: Flow 하루 50크레딧 · 360p 1 · 720p 3', seed.flow.free_credits_per_day === 50 && seed.flow.models.omni_flash_1_2.credits_per_second['360p'] === 1 && seed.flow.models.omni_flash_1_2.credits_per_second['720p'] === 3);
+    ok('시드: PLUS 월 250 · 무료 플랜 하루 50 · 360p 1 · 720p 3', seed.flow.monthly_credits === 250 && seed.flow.free_plan_daily_credits === 50 && seed.flow.models.omni_flash_1_2.credits_per_second['360p'] === 1 && seed.flow.models.omni_flash_1_2.credits_per_second['720p'] === 3);
     ok('시드: 한국은 워터마크 지역', seed.flow.visible_watermark_regions.indexOf('KR') >= 0);
     ok('시드: ZeroGPU 무료 5분', seed.spaces.quota.free_minutes_per_day === 5);
     ok('시드: animate 모드 두 가지', Object.keys(seed.spaces.wan_animate.modes).length === 2 && !!seed.spaces.wan_animate.modes['Pose Retarget']);
-    ok('js/aiClip.js 상수와 시드가 같다(크레딧·크롭·삽입·상한)', AC.FLOW.creditsPerSecond['720p'] === seed.flow.models.omni_flash_1_2.credits_per_second['720p'] && AC.INSERT.cropZoom === seed.clip_spec.crop_zoom && AC.INSERT.maxSeconds === seed.clip_spec.insert_seconds.max && AC.INSERT.maxShareOfFinal === seed.clip_spec.max_share_of_final);
+    ok('js/aiClip.js 상수와 시드가 같다(크레딧·크롭 모드·삽입·상한)', AC.FLOW.creditsPerSecond['720p'] === seed.flow.models.omni_flash_1_2.credits_per_second['720p'] && AC.FLOW.monthlyCredits === seed.flow.monthly_credits && AC.INSERT.cropMode === seed.clip_spec.crop_mode && AC.INSERT.delogoExpr === seed.clip_spec.delogo_expr && AC.cropFilter('bottom-crop').indexOf(seed.clip_spec.fallback_crop_expr) === 0 && AC.INSERT.maxSeconds === seed.clip_spec.insert_seconds.max && AC.INSERT.maxShareOfFinal === seed.clip_spec.max_share_of_final);
     ok('시드 Space 이름이 실측 그대로', seed.spaces.wan_i2v.repo === 'zerogpu-aoti/wan2-2-fp8da-aoti-faster' && seed.spaces.wan_animate.repo === 'alexnasa/Wan2.2-Animate-ZEROGPU');
 
     const src = fs.readFileSync(path.join(ROOT, 'js', 'aiClip.js'), 'utf8');

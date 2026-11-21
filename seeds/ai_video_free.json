@@ -7,7 +7,11 @@
     "url": "https://labs.google/fx/tools/flow",
     "setting_note": "프롬프트 상자 오른쪽 위 Settings 에서 모델·해상도·길이·비율을 매번 확인한다(요금표는 바뀐다).",
     "free_credits_per_day": 50,
-    "credit_reset": "그날 첫 생성이 리셋 시점을 정한다. 남은 크레딧은 다음 날로 넘어가지 않는다.",
+    "tier": "PLUS",
+    "monthly_credits": 250,
+    "credit_reset_at": "2026-12-12 12:26 (KST)",
+    "free_plan_daily_credits": 50,
+    "credit_reset": "PLUS 계정은 월 단위(다음 달 같은 날 12:26). 무료 플랜은 그날 첫 생성이 리셋 시점을 정하고 남은 크레딧은 넘어가지 않는다.",
     "models": {
       "omni_flash_1_2": {
         "label": "Omni Flash 1.2",
@@ -20,7 +24,7 @@
     "aspect_ratios": ["9:16", "16:9"],
     "free_peak_block_kst": { "start": "23:00", "end": "02:00", "note": "UTC 14~17시. 무료 계정은 이 시간에 영상 생성이 막히고 이미지·에이전트만 된다." },
     "visible_watermark_regions": ["KR", "IN", "VN"],
-    "visible_watermark_note": "한국 계정은 Ultra 20x 가 아니면 Flow 결과물에 가시 워터마크가 자동으로 붙는다(끄는 설정 없음). 그래서 클립은 반드시 크롭해서 쓴다.",
+    "visible_watermark_note": "한국 계정은 Ultra 20x 가 아니면 Flow 결과물에 가시 워터마크가 자동으로 붙는다(끄는 설정 없음). 2026-11-21 첫 클립 실측: 우하단 Gemini 반짝이 48×48px, x 576~623 · y 1136~1183(여백 96px), 144프레임 전부 같은 자리. → delogo 로 그 자리만 메우거나 하단을 잘라낸다(clip_spec).",
     "api": false,
     "api_note": "소비자용 웹앱이라 API 가 없다. Flow 는 사람이 브라우저에서 손으로 뽑고, 파일은 내려받아 허브 ①영상 올리기로 넘긴다."
   },
@@ -52,11 +56,11 @@
     }
   },
   "credit_plan": {
-    "note": "하루 50크레딧의 기본 배분. 주력 컷은 720p로 뽑는다 — 360p는 1080 폭으로 늘리면 흐려져 상품 신뢰도를 깎는다(2026-11-21 제미니 합의). 360p는 실패 재시도용.",
+    "note": "PLUS 계정은 **월 250크레딧**(무료 플랜은 하루 50). 주력 컷은 720p로 뽑는다 — 360p는 1080 폭으로 늘리면 흐려져 상품 신뢰도를 깎는다(2026-11-21 제미니 합의). 360p는 실패 재시도용.",
     "product_short": { "label": "묘한살림 상품 숏폼 1편", "clips": 2, "seconds_each": 5, "resolution": "720p", "credits": 30, "insert": "열기 1컷 · 사용 장면 1컷(각 1.5~2.5초)" },
     "mary_short": { "label": "메리 짧은 영상 1편", "clips": 1, "seconds_each": 4, "resolution": "720p", "credits": 12, "insert": "춤 1~2초 + 표정 1초" },
     "reserve": { "credits": 8, "note": "다시 뽑기 몫. 실패·정책 차단은 크레딧이 1시간 안에 돌아오지만 재시도 몫은 남겨 둔다." },
-    "budget_check": "초 × 초당 크레딧 × 컷 수가 50을 넘으면 화면이 경고하고 360p로 내리도록 권한다.",
+    "budget_check": "초 × 초당 크레딧 × 컷 수가 월 250(무료 플랜은 50)을 넘으면 화면이 경고하고 360p로 내리도록 권한다.",
     "peak_rule": "KST 23~02시에는 Flow 무료 영상 생성이 막힌다. 이 시간대 오더는 다시 시도하지 말고 DEFERRED(다음 날로 미룸)로 두고 사람에게 알린다."
   },
   "prompts": {
@@ -98,13 +102,19 @@
     "우리 템플릿 자막 자리(상단 240px·하단 500px)를 피사체가 가리면 다시 뽑는다."
   ],
   "clip_spec": {
-    "note": "Flow 360p·워터마크 클립과 허깅페이스 클립을 1080x1920 완제품에 넣는 규격.",
-    "crop_zoom": 1.18,
-    "crop_note": "가시 워터마크(우하단)와 가장자리 흐림을 잘라내려고 1.18배 확대해 중앙을 쓴다. 첫 클립에서 워터마크가 남아 있으면 1.25까지 올린다(그만큼 화질이 깎이니 필요한 만큼만). 1.18배면 640x360 → 542x305 → 1080 폭으로 확대.",
+    "note": "Flow 360p·워터마크 클립과 허깅페이스 클립을 1080x1920 완제품에 넣는 규격. 2026-11-21 첫 클립 픽셀 실측으로 1.18배 크롭을 폐기했다(1080 출력에 84×81px로 남았다).",
+    "crop_mode": "delogo",
+    "crop_modes": ["delogo", "bottom-crop"],
+    "delogo_expr": "x=iw*0.7944:y=ih*0.8844:w=iw*0.0778:h=ih*0.0438",
+    "delogo_note": "우하단 반짝이 자리만 주변 픽셀로 메운다(720p 절대값 x572 y1132 56×56, 4px 여유). 프레임 전체를 유지하고 업스케일만 1.5배 — 배경이 단순한 컷에 가장 깨끗하다. 배경에 글자·무늬가 있으면 얼룩이 보일 수 있다.",
+    "fallback_crop": "630:1120:45:0",
+    "fallback_crop_expr": "crop=iw*0.875:ih*0.875:iw*0.0625:0",
+    "fallback_crop_note": "아래 160px(워터마크 y1136~1183)과 좌우 45px를 잘라낸다 — 실효 줌 1.143배(1.18배보다 덜 확대). delogo 얼룩이 보이는 상세 배경 컷의 안전한 대안.",
     "insert_seconds": { "min": 1.0, "max": 2.5 },
     "max_share_of_final": 0.2,
     "resolution_note": "360p 원본은 1080 폭으로 늘리면 흐려진다. 주력 컷은 720p로 뽑고(5초 15크레딧), 360p는 실패 재시도용으로만 쓴다.",
-    "ffmpeg": "crop=iw/1.18:ih/1.18:(iw-ow)/2:(ih-oh)/2,scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,unsharp=3:3:0.5:3:3:0.0,fps=30",
+    "ffmpeg": "delogo=x=iw*0.7944:y=ih*0.8844:w=iw*0.0778:h=ih*0.0438,scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,unsharp=3:3:0.5:3:3:0.0,fps=30",
+    "ffmpeg_bottom_crop": "crop=iw*0.875:ih*0.875:iw*0.0625:0,scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,unsharp=3:3:0.5:3:3:0.0,fps=30",
     "audio": "AI 클립은 소리를 버린다(-an). 내레이션·현장음은 렌더(content_render)가 붙인다."
   },
   "disclosure": {
@@ -115,7 +125,7 @@
   },
   "order": {
     "note": "오더(content_render)에 실을 때 쓰는 키. 시트 큐는 4,000자 제한이라 파일 이름과 초만 싣는다.",
-    "keys": ["ai_clips[].name", "ai_clips[].seconds", "ai_clips[].source", "ai_clips[].crop_zoom"],
+    "keys": ["ai_clips[].name", "ai_clips[].seconds", "ai_clips[].source", "ai_clips[].crop_mode"],
     "source_values": ["flow", "hf_wan_i2v", "hf_wan_animate"]
   }
 }

@@ -1,6 +1,6 @@
 // js/aiClip.js — 무료 AI 클립(구글 Flow·허깅페이스) 프롬프트 빌더 (2026-11-21)
 //
-// 왜 필요한가: 구글 Flow 는 하루 50크레딧, 허깅페이스 Space 는 ZeroGPU 하루 5분이 공짜다.
+// 왜 필요한가: 이 계정의 구글 Flow 는 PLUS 구독이라 월 250크레딧(무료 플랜은 하루 50), 허깅페이스 Space 는 ZeroGPU 하루 5분이 공짜다.
 //   둘 다 '영어 프롬프트 + 무자막' 규칙만 지키면 우리 숏폼에 쓸 짧은 컷이 나온다.
 //   다만 한글·자막은 거의 항상 깨지고, 한국 계정 Flow 결과물엔 워터마크가 붙는다.
 //   그래서 **AI 에서는 무자막 클립만 뽑고**, 자막·내레이션·템플릿은 노트북 렌더(content_render, 토큰 0)가 붙인다.
@@ -11,7 +11,9 @@
 'use strict';
 
 export const FLOW = {
-  dailyCredits: 50,
+  // 2026-11-21 첫 클립 실측: 이 계정은 PLUS(월 250크레딧, 12/12 12:26 초기화). 무료 플랜은 하루 50.
+  monthlyCredits: 250,
+  dailyCredits: 50,          // 무료 플랜 값 — 예산 계산은 monthlyCredits 를 쓴다
   minSeconds: 3,
   maxSecondsFree: 10,
   creditsPerSecond: { '360p': 1, '720p': 3 },
@@ -48,14 +50,25 @@ export const JUDGE = [
   '템플릿 자막 자리(상단 240px·하단 500px)를 피사체가 가리면 다시 뽑는다.'
 ];
 
-// 넣는 규격 — 360p·워터마크 클립은 1.25배 크롭해 1~2초만.
+// 넣는 규격 — 360p 클립이나 워터마크가 남은 클립은 delogo(기본) 또는 하단 크롭(대안).
+//   2026-11-21 첫 클립 픽셀 실측: 720p 우하단 반짝이 48×48px(x 576~623 · y 1136~1183). 1.18배 크롭은 못 지웠다.
 export const INSERT = {
-  cropZoom: 1.18,
+  cropMode: 'delogo',
+  delogoExpr: 'x=iw*0.7944:y=ih*0.8844:w=iw*0.0778:h=ih*0.0438',
+  bottomCropExpr: 'crop=iw*0.875:ih*0.875:iw*0.0625:0',
+  bottomCropPx: '630:1120:45:0',
   minSeconds: 1.0,
   maxSeconds: 2.5,
   maxShareOfFinal: 0.2,
   maxShareOfFinalYouTube: 0.3
 };
+/** 워터마크 처리 필터 한 줄 — delogo(기본, 프레임 유지) | bottom-crop(아래·좌우 잘라냄). */
+export function cropFilter(mode) {
+  const m = mode === 'bottom-crop' ? 'bottom-crop' : INSERT.cropMode;
+  const head = m === 'bottom-crop' ? INSERT.bottomCropExpr : 'delogo=' + INSERT.delogoExpr;
+  return head + ',scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,' +
+    'unsharp=3:3:0.5:3:3:0.0,fps=30';
+}
 
 // 장면 프리셋 — {소재} 자리에 사용자 입력이 들어간다.
 export const PRESETS = {
@@ -91,11 +104,11 @@ export function creditCost(seconds, resolution) {
   return Math.round(sec * rate);
 }
 
-/** 그날 남은 크레딧으로 이 묶음을 몇 번 뽑을 수 있나. */
+/** 이번 달 남은 크레딧으로 이 묶음을 몇 번 뽑을 수 있나(PLUS 월 250 기준). */
 export function fitsBudget(clips, resolution) {
   const each = creditCost(clips.seconds, resolution);
   const total = each * Math.max(1, Number(clips.count) || 1);
-  return { each, total, fits: total <= FLOW.dailyCredits, left: FLOW.dailyCredits - total };
+  return { each, total, fits: total <= FLOW.monthlyCredits, left: FLOW.monthlyCredits - total };
 }
 
 /**
@@ -124,7 +137,7 @@ export function buildFlowPrompt(input) {
   ];
   const notes = [];
   if (resolution === '360p') notes.push('360p 는 1080 폭으로 늘리면 흐려진다 — 꼭 필요한 재시도용으로만.');
-  if (creditCost(seconds, resolution) > FLOW.dailyCredits) notes.push('하루 50크레딧을 넘는다 — 길이나 해상도를 낮춰라.');
+  if (creditCost(seconds, resolution) > FLOW.monthlyCredits) notes.push('월 250크레딧을 넘는다 — 길이나 해상도를 낮춰라.');
   if (key === 'mary_action') notes.push('메리는 Flow Ingredients 에 메리 사진을 먼저 올리고, 아래 4단 프롬프트를 쓴다.');
   return {
     ok: true,
@@ -170,7 +183,7 @@ export function paintAiClip(host, ctx) {
   const { h, toast } = ctx;
   const wrap = h('div', { class: 'panel st-aiclip' },
     h('h3', null, '🪄 AI 클립 (구글 Flow · 허깅페이스, 무료)'),
-    h('p', { class: 'st-hint', text: 'Flow 는 하루 50크레딧, 허깅페이스는 ZeroGPU 하루 5분이 공짜입니다. 여기서 만든 영어 프롬프트를 Flow 에 붙여넣고, 나온 무자막 클립을 ①영상 올리기로 가져오세요.' }));
+    h('p', { class: 'st-hint', text: 'Flow 는 PLUS 월 250크레딧, 허깅페이스는 ZeroGPU 하루 5분이 공짜입니다. 여기서 만든 영어 프롬프트를 Flow 에 붙여넣고, 나온 무자막 클립을 ①영상 올리기로 가져오세요.' }));
 
   const presetSel = h('select', { class: 'input', 'aria-label': '장면 종류' });
   Object.keys(PRESETS).forEach((k) => presetSel.appendChild(h('option', { value: k, text: PRESETS[k].label })));
@@ -195,7 +208,7 @@ export function paintAiClip(host, ctx) {
       seconds: secondsSel.value, resolution: resSel.value
     });
     out.value = r.prompt;
-    meta.textContent = '이 클립 ' + r.credits + '크레딧 · 하루 50크레딧 중 (남는 만큼 다시 뽑기) · ' + r.aspect + ' ' + r.seconds + '초 · ' + r.resolution;
+    meta.textContent = '이 클립 ' + r.credits + '크레딧 · 월 250크레딧 중 (남는 만큼 다시 뽑기) · ' + r.aspect + ' ' + r.seconds + '초 · ' + r.resolution;
     notes.replaceChildren();
     r.notes.forEach((n) => notes.appendChild(h('p', { class: 'st-hint', text: '· ' + n })));
   };
@@ -259,7 +272,7 @@ export function paintAiClip(host, ctx) {
   JUDGE.forEach((j) => judge.appendChild(h('li', { text: j })));
   wrap.appendChild(h('details', null, h('summary', { class: 'st-hint', text: '다시 뽑기 판정 5개 (3초 점검)' }), judge));
 
-  wrap.appendChild(h('p', { class: 'st-hint', text: '넣는 규격: 1.18배 크롭으로 가장자리 워터마크를 잘라내고 1080×1920 에 1~2.5초만 넣습니다. AI 클립은 네이버 클립 기준 끝까지 20% 이하(유튜브는 30%), 소리는 버리고 렌더가 내레이션·자막을 붙입니다.' }));
+  wrap.appendChild(h('p', { class: 'st-hint', text: '넣는 규격: 우하단 워터마크 자리만 delogo 로 메우고(프레임 전체 유지) 1080×1920 에 1~2.5초만 넣습니다. 배경에 글자가 많아 얼룩이 보이면 하단 크롭(1.143배)으로 바꿉니다. AI 클립은 네이버 클립 기준 끝까지 20% 이하(유튜브는 30%), 소리는 버리고 렌더가 내레이션·자막을 붙입니다.' }));
 
   host.appendChild(wrap);
   refresh();

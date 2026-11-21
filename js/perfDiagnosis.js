@@ -474,12 +474,12 @@ function videoCard(h, ctx, v, basis, host) {
     const input = h('input', {
       type: 'number', inputmode: 'decimal', min: '0', step: '0.1', placeholder: '지속(초)',
       'aria-label': (v.title || v.external_id) + ' 평균 시청 지속 초',
-      style: 'width:86px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--tx);font-size:12px'
+      style: 'width:76px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--tx);font-size:12px'
     });
     const pctInput = h('input', {
       type: 'number', inputmode: 'decimal', min: '0', max: '100', step: '0.1', placeholder: '비율(%)',
       'aria-label': (v.title || v.external_id) + ' 평균 시청 비율 %',
-      style: 'width:86px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--tx);font-size:12px'
+      style: 'width:76px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--tx);font-size:12px'
     });
     const btn = h('button', { class: 'btn sm primary', type: 'button', text: '넣기' });
     btn.addEventListener('click', async () => {
@@ -517,7 +517,7 @@ function videoCard(h, ctx, v, basis, host) {
       }
     });
     card.appendChild(h('div', { style: 'display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap' },
-      h('span', { style: 'font-size:10.5px;color:var(--tx-3)', text: '길이 ' + v.duration_sec + '초 · 스튜디오 값' }),
+      h('span', { style: 'font-size:10.5px;color:var(--tx-3);white-space:nowrap', text: '길이 ' + v.duration_sec + '초' }),
       input, pctInput, btn));
   } else if (v.retention_pct == null && !v.content_id) {
     card.appendChild(h('p', { class: 'hint', style: 'margin-top:6px', text: '카드와 연결되지 않은 영상입니다 — tools/analytics/config.json 의 links 에 영상 ID를 넣으면 입력할 수 있습니다.' }));
