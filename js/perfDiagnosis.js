@@ -275,8 +275,9 @@ export function diagnoseVideos(videos, ctx) {
 
 /* ───────────── 화면 ───────────── */
 
-const metaCache = { at: 0, map: {}, loading: false };
+const metaCache = { at: 0, map: {}, loading: false, failedAt: 0 };
 const META_TTL_MS = 5 * 60 * 1000;
+const META_RETRY_MS = 30 * 1000;   // 실패하면 30초 뒤 다시 시도(성공 전 5분을 비우지 않게)
 const MAX_META_IDS = 200;
 
 /** 자동 수집 캐시가 '지금 불러오는 중'이면 끝날 때까지 조금 기다린다(다른 패널이 같이 부른다). */
@@ -288,9 +289,15 @@ async function readyAnalytics(api, brand) {
 
 async function loadMeta(api, videos) {
   if (!videos.length) return metaCache.map;
-  const fresh = Date.now() - metaCache.at < META_TTL_MS;
+  const failedRecently = metaCache.failedAt && (Date.now() - metaCache.failedAt) < META_RETRY_MS;
+  const fresh = Date.now() - metaCache.at < META_TTL_MS && !failedRecently;
   if (fresh) return metaCache.map;
-  if (metaCache.loading) return metaCache.map;
+  /* 다른 그리기가 이미 부르는 중이면 끝날 때까지 기다린다 — 빈 지도로 먼저 그리면 제목·길이가 빠진 카드가 남는다. */
+  if (metaCache.loading) {
+    const t0 = Date.now();
+    while (metaCache.loading && Date.now() - t0 < 8000) await new Promise((r) => setTimeout(r, 120));
+    return metaCache.map;
+  }
   metaCache.loading = true;
   try {
     const ids = videos.slice().sort((a, b) => num(b.views) - num(a.views)).slice(0, MAX_META_IDS).map((r) => r.external_id);
@@ -298,8 +305,9 @@ async function loadMeta(api, videos) {
     const list = (res && res.data && res.data.items) || [];
     list.forEach((m) => { if (m && m.external_id) metaCache.map[m.external_id] = m; });
     metaCache.at = Date.now();
+    metaCache.failedAt = 0;
   } catch (err) {
-    metaCache.at = Date.now();      // 서버가 아직 모르면 제목·길이 없이 그린다
+    metaCache.failedAt = Date.now();   // 제목·길이 없이 그리고, 다음 그리기에서 다시 시도
   } finally {
     metaCache.loading = false;
   }
@@ -433,7 +441,7 @@ function videoCard(h, ctx, v, basis, host) {
   const head = h('div', { style: 'display:flex;align-items:baseline;gap:6px;justify-content:space-between' },
     h('b', { style: 'font-size:12.5px;font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0', text: v.title || v.external_id }),
     h('span', { style: 'font-size:10.5px;color:var(--tx-3);white-space:nowrap;font-variant-numeric:tabular-nums',
-      text: [v.age_days != null ? 'D+' + v.age_days : '', v.duration_sec ? v.duration_sec + '초' : ''].filter(Boolean).join(' · ') || '방금' }));
+      text: [v.age_days != null ? 'D+' + v.age_days : '발행일 미상', v.duration_sec ? v.duration_sec + '초' : ''].filter(Boolean).join(' · ') }));
   card.appendChild(head);
 
   const tiles = h('div', { style: 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px' });

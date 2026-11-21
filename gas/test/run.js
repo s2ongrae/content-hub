@@ -934,6 +934,25 @@ ok('키가 틀리면 ERR_NO_NAVER_KEY · 비밀 안 샘', o.code === 'ERR_NO_NAV
     }, { brand: 'daejeon_youth' });
     ok('날짜로 저장된 행과도 중복을 거른다', again.ok && again.data.skipped === 1 && again.data.inserted === 0, again.data);
   }
+
+  /* 쇼츠 3지표 진단 카드가 넣는 값 — 평균 시청 지속(초)을 LATEST 한 줄로 받는다 (2026-11-21) */
+  console.log('\n[A3] 성과 숫자 입력 — 진단 카드의 평균 시청 지속');
+  {
+    const before = metrics.getLastRow();
+    const rec = callHandler(G.ctx, 'handleRecordMetrics_', ss2, {
+      items: [{ content_id: 'DY-1', channel: 'shorts', snapshot: 'LATEST', avg_dwell_sec: 18, measured_at: '2026-11-21' }]
+    }, { brand: 'daejeon_youth' });
+    ok('LATEST 시점도 저장된다', rec.ok && rec.data.count === 1, rec);
+    eq('Metrics 에 한 줄 추가', metrics.getLastRow() - before, 1);
+    const mh = metrics.rows[0];
+    const last = metrics.rows[metrics.rows.length - 1];
+    eq('시점은 LATEST', String(last[mh.indexOf('checkpoint')]), 'LATEST');
+    eq('평균 시청 지속 18초', Number(last[mh.indexOf('avg_dwell_sec')]), 18);
+    eq('브랜드는 요청에서 채운다', String(last[mh.indexOf('brand')]), 'daejeon_youth');
+    eq('조회는 비워도 0 (추정하지 않음)', Number(last[mh.indexOf('views')]), 0);
+    const lm = callHandler(G.ctx, 'handleListMetrics_', ss2, { brand: 'daejeon_youth', channel: 'shorts' }, {});
+    ok('list_metrics 로 다시 읽힌다', lm.ok && lm.data.rows.some((r) => r.avg_dwell_sec === 18 && r.snapshot === 'LATEST'), lm.data && lm.data.rows);
+  }
 })();
 
 
