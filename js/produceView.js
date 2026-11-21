@@ -19,17 +19,17 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121d';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121d';
+import { buildEDL } from './yt/edl.js?v=20261121e';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121e';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE
-} from './produceLogic.js?v=20261121d';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261121d';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261121d';
+} from './produceLogic.js?v=20261121e';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261121e';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261121e';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;

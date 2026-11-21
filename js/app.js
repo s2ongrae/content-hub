@@ -17,10 +17,10 @@ import { loadDaangnSeed } from './daangnView.js?v=20261119w';
 import { getAnalytics } from './analyticsView.js?v=20261119w';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119w';
 import { renderCreateView } from './create-view.js?v=20261118x';
-import { renderCreateStudio } from './createStudio.js?v=20261121d';
+import { renderCreateStudio } from './createStudio.js?v=20261121e';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
-import { produceSection } from './produceView.js?v=20261121d';
+import { produceSection } from './produceView.js?v=20261121e';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 

@@ -14,16 +14,17 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261121d';
-import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261121d';
+import { produceSection } from './produceView.js?v=20261121e';
+import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261121e';
 import {
   FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
   normalizeMaterials, emptyMaterials, materialSummary, hasMaterial, factsOf, autoOrderPhotos, photoRole,
   photoPlanFor, buildBlogKit, signKit, buildFeedCards, feedCaption, hashtagsOf, buildDraftRequest,
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
   errorText, orderLine, titleOptions, firstPrice, FEED_CARDS
-} from './studioLogic.js?v=20261121d';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261121d';
+} from './studioLogic.js?v=20261121e';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261121e';
+import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261121e';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';
@@ -688,6 +689,43 @@ function paintKit(out, ctx, kit, ui, draft) {
   box.appendChild(h('div', { class: 'row' },
     copyTextBtn(h, text, ctx.toast, '키트 복사'),
     downloadBtn(h, '블로그키트.md', text, ctx.toast)));
+
+  /* ── 톤 · 2줄 호흡 (제미니 확정안 A, 2026-11-21) ── */
+  const bodyText = (kit.blocks || []).map((b) => b.text).join('\n\n');
+  const rh = kit.rhythm || { stats: rhythmStats(bodyText), issues: lintRhythm(bodyText) };
+  const rhBox = h('div', null);
+  box.appendChild(h('h3', { text: '톤 · 2줄 호흡' }));
+  box.appendChild(h('p', { class: 'st-hint', text: '문단 하나 = 모바일 2줄(' + RHYTHM.blockMin + '~' + RHYTHM.blockTargetHi + '자, 상한 ' + RHYTHM.blockMax + '자) · 1줄 문단 ' + Math.round(RHYTHM.oneLineRatio * 100) + '% 이내' }));
+  box.appendChild(h('p', {
+    class: 'st-hint' + (rh.issues.length ? ' err' : ''),
+    text: rh.issues.length
+      ? '⚠ ' + rh.issues.map((x) => x.text).join(' · ')
+      : '✓ 문단 ' + rh.stats.blocks + '개 · 평균 ' + rh.stats.avg + '자 · 1줄 ' + Math.round(rh.stats.oneLineRatio * 100) + '% · 3줄 초과 0개'
+  }));
+  const presetRow = h('div', { class: 'st-chips' });
+  TONE_PRESETS.forEach((p) => {
+    const b = h('button', { class: 'st-chip', type: 'button', text: p.label, title: p.rule });
+    b.addEventListener('click', () => {
+      presetRow.querySelectorAll('.st-chip').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      ctx.toast(p.label + ' — ' + p.rule, '');
+    });
+    presetRow.appendChild(b);
+  });
+  box.appendChild(h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '톤' }), presetRow));
+  const fix = h('button', { class: 'btn', type: 'button', text: '🎯 2줄 호흡으로 정리 (무료)' });
+  fix.addEventListener('click', () => {
+    const r = applyBlogRhythm(bodyText);
+    rhBox.replaceChildren(
+      h('p', { class: 'st-hint', text: '정리 후 — 문단 ' + r.stats.blocks + '개 · 평균 ' + r.stats.avg + '자 · 1줄 ' + Math.round(r.stats.oneLineRatio * 100) + '% · 3줄 초과 ' + r.stats.overMax + '개' }),
+      h('pre', { class: 'st-pre' }, r.text),
+      h('div', { class: 'row' }, copyTextBtn(h, r.text, ctx.toast, '본문 복사'), downloadBtn(h, '본문_2줄호흡.md', r.text, ctx.toast)),
+      h('p', { class: 'st-hint', text: '⚠ 이 정리는 내가 쓴 문단까지 줄을 다시 나눕니다. 원문 해시는 위 키트 값 그대로이고, 마음에 안 들면 복사하지 않으면 됩니다.' })
+    );
+    ctx.toast('2줄 호흡으로 정리했습니다 — 복사해서 네이버에 붙이세요', 'ok');
+  });
+  box.appendChild(h('div', { class: 'row' }, fix));
+  box.appendChild(rhBox);
 
   box.appendChild(h('h3', { text: '네이버에 붙이는 순서' }));
   box.appendChild(h('ol', { class: 'st-steps' }, kit.paste_steps.map((s) => h('li', { text: s }))));

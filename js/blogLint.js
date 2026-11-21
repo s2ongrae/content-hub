@@ -43,8 +43,8 @@ const DEFAULT_RULES = [
   { id: 'first_screen', label: '첫 화면 정보', weight: 14, fix: '도입 3줄 뒤에 위치·영업·주차 정보 카드를 붙이세요.' },
   { id: 'body_len', label: '본문 분량', weight: 12, fix: '1,700~2,300자로 덜어내세요.' },
   { id: 'photo_density', label: '사진 밀도', weight: 14, fix: '사진 18~22장 · 장당 95~120자.' },
-  { id: 'line_rhythm', label: '문단 호흡', weight: 12, fix: '한 줄에 한 정보만, 평균 15~18자.' },
-  { id: 'short_lines', label: '짧은 줄', weight: 12, fix: '16자 이하 줄을 65개 이상으로.' },
+  { id: 'line_rhythm', label: '문단 호흡', weight: 12, fix: '문단 하나를 모바일 2줄(22~44자)로 끊으세요 — 20자 한 줄보다 "2줄 호흡"이 성래 님 실제 문체입니다.' },
+  { id: 'short_lines', label: '짧은 호흡', weight: 12, fix: '2줄(44자) 이하 문단을 60개 이상으로.' },
   { id: 'hashtags', label: '해시태그', weight: 12, fix: '8~14개 유지 + 핵심 3개 포함.' }
 ];
 
@@ -120,6 +120,9 @@ const INFO_PATTERNS = [
 
 const st = (state, value, note) => ({ state, value, note });
 
+const RHYTHM_WRAP = 20;        // 모바일 360px 한 줄 글자수
+const SHORT_BLOCK_MAX = 44;    // 2줄 이하 문단 = 짧은 호흡
+
 /* ───────────── 판정 ───────────── */
 
 function judgeTitleFront(m, t, lexicon) {
@@ -179,17 +182,21 @@ function judgeLineRhythm(m, t) {
   const lines = proseLines(m.body);
   if (!lines.length) return st('warn', '—', '본문을 넣어 주세요');
   const total = lines.reduce((s, l) => s + chars(l), 0);
-  const avg = Math.round((total / lines.length) * 10) / 10;
-  if (avg <= t.avg_line_max) return st('pass', avg + '자', '평균 ' + avg + '자 · ' + lines.length + '줄');
-  return st('warn', avg + '자', '평균 목표 15~18자 — 한 줄에 한 정보만');
+  /* 문단 호흡 v5(2026-11-21): 한 문단이 모바일에서 몇 줄로 보이는지(20자/줄)로 환산한다.
+     32~44자 문단 = 2줄 — 성래 님 발행글 실측(평균 33~42자)과 제미니 확정안 A. */
+  const wrap = lines.reduce((s, l) => s + Math.max(1, Math.ceil(chars(l) / RHYTHM_WRAP)), 0);
+  const avg = Math.round((total / wrap) * 10) / 10;
+  if (avg <= t.avg_line_max) return st('pass', avg + '자', '모바일 줄 환산 평균 ' + avg + '자 · 문단 ' + lines.length + '개');
+  return st('warn', avg + '자', '평균 목표 15~20자 — 문단 하나를 2줄(22~44자)로');
 }
 
 function judgeShortLines(m, t) {
   const lines = proseLines(m.body);
-  const short = lines.filter((l) => chars(l) <= t.short_line_max_chars).length;
-  if (short >= t.short_lines_min) return st('pass', short + '개', t.short_line_max_chars + '자 이하 줄 ' + short + '개');
+  /* 짧은 호흡 v5: '16자 이하 한 줄' 대신 '2줄(44자) 이하 문단'을 센다 — 사용자의 실제 호흡 단위. */
+  const short = lines.filter((l) => chars(l) <= SHORT_BLOCK_MAX).length;
+  if (short >= t.short_lines_min) return st('pass', short + '개', SHORT_BLOCK_MAX + '자 이하(2줄) 문단 ' + short + '개');
   if (short >= t.short_lines_warn) return st('near', short + '개', (t.short_lines_min - short) + '개 부족');
-  return st('warn', short + '개', '16자 이하 줄이 ' + short + '개뿐 — 목표 65개');
+  return st('warn', short + '개', SHORT_BLOCK_MAX + '자 이하 문단이 ' + short + '개뿐 — 목표 ' + t.short_lines_min + '개');
 }
 
 function judgeHashtags(m, t, core) {

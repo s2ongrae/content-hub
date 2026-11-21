@@ -688,6 +688,25 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('네이버에 붙이는 순서가 안내된다', kit.paste_steps.length >= 5 && /임시저장/.test(kit.paste_steps.join(' ')));
     ok('모르는 값은 [채우기]로 남긴다(지어내지 않음)', SL.buildBlogKit({ materials: SL.normalizeMaterials({ content: { memo: '메모' } }) }).titles[0].indexOf('[채우기]') >= 0);
 
+    /* 2줄 호흡·톤 (2026-11-21 제미니 확정안 A) */
+    const T = await import('file://' + path.join(ROOT, 'js', 'blogTone.js'));
+    ok('톤: 확정 수치(하한 22 · 목표 32~44 · 상한 54 · 1줄 20자)', T.RHYTHM.blockMin === 22 && T.RHYTHM.blockTargetLo === 32 && T.RHYTHM.blockTargetHi === 44 && T.RHYTHM.blockMax === 54 && T.RHYTHM.oneLineMax === 20);
+    ok('톤: 프리셋 3종(자조 찰진·담백 리뷰·정보 정리)', T.PRESETS.map((p) => p.id).join(',') === 'jajo,review,info' && T.PRESETS[0].polite === 75 && T.PRESETS[2].polite === 95);
+    ok('톤: 금지 문구 22개 이상', T.AI_COLUMN_BAN.length >= 22);
+    const longOne = '지난 8개월 동안 계좌는 계속 빨갰고 나는 계속 물을 탔는데 이제는 물 탈 돈도 남지 않아서 그냥 구경만 하고 있습니다.';
+    const splitOne = T.splitLongBlock(longOne);
+    ok('톤: 3줄(55자↑) 문단을 2줄로 나눈다', splitOne.length >= 2 && splitOne.every((x) => x.length <= T.RHYTHM.blockMax), splitOne.map((x) => x.length));
+    ok('톤: 숫자+단위는 자르지 않는다', T.isProtectedCut('원금 1억 1,300만 원이 반토막', '원금 1억 1,300만 원이 반토막'.indexOf(',', 0)) === true);
+    ok('톤: 문단 안 줄바꿈을 없앤다', T.flattenBlocks('가나다\n라마바\n\n사아자').join('|') === '가나다 라마바|사아자');
+    ok('톤: AI 칼럼투를 문단 첫머리에서 뗀다', T.stripBanWords('결론부터 말씀드리자면 계좌가 반토막 났습니다.').removed[0] === '결론부터 말씀드리자면' && T.stripBanWords('결론부터 말씀드리자면 계좌가 반토막 났습니다.').text.indexOf('결론부터') < 0);
+    const fixed = T.applyBlogRhythm('오늘 하루에만\n계좌에서 205만 원이 증발했다.\n\n' + longOne);
+    ok('톤: 정리하면 1줄 3연속이 사라지고 상한을 넘는 문단이 없다', fixed.stats.oneLineRunMax <= 2 && fixed.stats.overMax === 0, fixed.stats);
+    ok('톤: 정리해도 숫자·금액은 그대로 살아 있다', fixed.text.indexOf('205만 원') >= 0 && fixed.text.indexOf('1억') < 0);
+    const badTone = T.lintRhythm('짧다.\n\n짧아.\n\n짧네.\n\n' + longOne);
+    ok('톤: 3연속 1줄·상한 초과를 경고한다', badTone.some((x) => x.code === 'one_line_run') && badTone.some((x) => x.code === 'over_max'));
+    ok('톤: 정상 글이면 경고 0건', T.lintRhythm('오늘 하루에만 계좌에서 205만 원이 증발했고 수익률은 마이너스 3.5퍼센트였다.\n\n장 마감하고 화면을 보는데 헛웃음부터 나왔다.').length === 0, T.lintRhythm('오늘 하루에만 계좌에서 205만 원이 증발했고 수익률은 마이너스 3.5퍼센트였다.\n\n장 마감하고 화면을 보는데 헛웃음부터 나왔다.'));
+    ok('키트에 2줄 호흡 점검이 붙는다(원문은 안 바뀜)', kit.rhythm && kit.rhythm.stats.blocks >= 2 && kit.blocks.map((b) => b.text).join('\n\n') === memo);
+
     /* 피드 */
     const cards = SL.buildFeedCards({ materials: matB });
     ok('피드 카드 6장', cards.length === 6 && cards.map((c) => c.no).join(',') === '1,2,3,4,5,6');

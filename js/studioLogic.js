@@ -11,7 +11,8 @@
  *  · 카드 payload 쓰기는 언제나 studio.formats.<format> 안으로만. 구 studio 루트는 읽기 폴백만(1줄 롤백).
  */
 
-import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261121d';
+import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261121e';
+import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261121e';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 
@@ -347,6 +348,14 @@ export function buildBlogKit(input) {
     '임시저장 → 내가 직접 읽고 발행'
   ];
 
+  // 2줄 호흡 점검 — 원문은 그대로 두고 '지금 어떤 상태인지'만 계산한다(고치기는 사용자가 누를 때).
+  const bodyText = blocks.map((b) => b.text).join('\n\n');
+  const rhythm = {
+    stats: rhythmStats(bodyText),
+    issues: lintRhythm(bodyText),
+    preset: (materials.concept && materials.concept.tone) || 'plain'
+  };
+
   return {
     titles: titles,
     blocks: blocks,
@@ -356,6 +365,7 @@ export function buildBlogKit(input) {
     links: links,
     paste_steps: paste_steps,
     text: lines.join('\n'),
+    rhythm: rhythm,
     user_body_sha256: ''
   };
 }
@@ -516,13 +526,14 @@ export function composeBlogWithDraft(kit, draft) {
     lines.push(b.text);
     const after = b.id || 'U' + String(n + 1).padStart(2, '0');
     const add = aiByUser[after] || bridges[n] || '';
-    if (verified.ok && add) lines.push(add);
+    // AI 가 쓴 사이 문장만 2줄 호흡으로 나눈다(USER 블록은 손대지 않는다).
+    if (verified.ok && add) lines.push(splitLongBlock(add).join('\n\n'));
     const marks = (k.photo_plan || []).filter((x) => x.after_block === after);
     marks.forEach((x) => lines.push('   [사진] ' + x.photo + ' — ' + ((k.captions || []).find((c) => c.name === x.photo) || {}).text));
   });
   lines.push('');
   lines.push('■ 마무리 한 문단');
-  lines.push(d.outro || k.outro || FILL);
+  lines.push(d.outro ? splitLongBlock(d.outro).join('\n\n') : (k.outro || FILL));
   const caps = Array.isArray(d.captions) ? d.captions : [];
   if (caps.length) {
     lines.push('');
