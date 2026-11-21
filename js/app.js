@@ -20,7 +20,7 @@ import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderCreateStudio } from './createStudio.js?v=20261121r';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261121i';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
-import { produceSection } from './produceView.js?v=20261121x';
+import { produceSection } from './produceView.js?v=20261121y';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -263,6 +263,15 @@ async function boot() {
   }
 }
 
+/* ── 폰 하단 5칸 + 더보기 시트(2026-11-21) ──
+   하단에 없는 6개 화면은 더보기 시트로 연다. 시트가 없으면(옛 HTML) 아무 일도 하지 않는다. */
+const MORE_ROUTES = ['blog', 'review', 'lint', 'series', 'knowhow', 'ops'];
+
+function closeMoreSheet() {
+  const sheet = document.getElementById('more-sheet');
+  if (sheet && sheet.open) sheet.close();
+}
+
 function wireChrome() {
   document.querySelectorAll('[data-brand-btn]').forEach((btn) => {
     btn.addEventListener('click', () => applyBrand(btn.dataset.brandBtn));
@@ -287,8 +296,46 @@ function wireChrome() {
     const next = (location.hash.replace(/^#\/?/, '') || 'board').split('?')[0];
     if (state.quick && next !== 'approve') { state.quick.unmount(); state.quick = null; }
     state.route = next;
+    closeMoreSheet();
     renderRoute();
   });
+  /* 더보기 시트 — 열기·바깥 클릭 닫기·항목 선택 시 닫기 */
+  const moreBtn = $('#btn-more');
+  const moreSheet = document.getElementById('more-sheet');
+  if (moreBtn && moreSheet) {
+    moreBtn.addEventListener('click', () => {
+      if (typeof moreSheet.showModal === 'function') moreSheet.showModal();
+    });
+    moreSheet.addEventListener('click', (ev) => { if (ev.target === moreSheet) closeMoreSheet(); });
+    moreSheet.querySelectorAll('[data-route]').forEach((btn) => {
+      btn.addEventListener('click', () => closeMoreSheet());
+    });
+  }
+  /* 사이드바 접기 — 상태를 이 기기에 기억한다 */
+  const sidebar = document.getElementById('sidebar');
+  const railBtn = $('#btn-rail');
+  if (sidebar) {
+    /* 접힘일 때는 제목을 툴팁으로만 보여 주므로, 접기 버튼의 이름도 '펼치기'로 바꿔 둔다 */
+    const syncRail = () => {
+      if (!railBtn) return;
+      const rail = sidebar.classList.contains('is-rail');
+      const label = rail ? '사이드바 펼치기' : '사이드바 접기';
+      railBtn.setAttribute('aria-label', label);
+      railBtn.setAttribute('title', label);
+      railBtn.setAttribute('aria-expanded', rail ? 'false' : 'true');
+    };
+    try { if (localStorage.getItem('ch_sidebar_rail') === '1') sidebar.classList.add('is-rail'); } catch (e) {}
+    syncRail();
+    if (railBtn) {
+      railBtn.addEventListener('click', () => {
+        const rail = sidebar.classList.toggle('is-rail');
+        try { localStorage.setItem('ch_sidebar_rail', rail ? '1' : '0'); } catch (e) {}
+        syncRail();
+      });
+    }
+  }
+  /* PC 폭이 되면 시트는 닫는다 */
+  window.addEventListener('resize', () => { if (window.innerWidth >= 900) closeMoreSheet(); });
   wireSettings();
 }
 
@@ -480,6 +527,9 @@ function renderRoute() {
     if (tab.dataset.route === tabRoute) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   });
+  /* 하단 5칸에 없는 화면이면 [더보기]를 켜 둔다(시트에서 들어온 화면) */
+  const moreTab = $('#btn-more');
+  if (moreTab) moreTab.classList.toggle('is-active', MORE_ROUTES.indexOf(tabRoute) >= 0);
   const main = $('#main');
   clear(main);
   const ctx = { h, state, api, toast, friendlyError, banner, pageHead, relTime, BRANDS, brandChannels, channelLabel, channelState, channelIcon, CHANNELS, renderRoute, openDetail };
