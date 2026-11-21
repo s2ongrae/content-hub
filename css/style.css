@@ -942,6 +942,7 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 }
 .lr-row[data-state="near"] { border-color: color-mix(in srgb, var(--warn) 42%, var(--line)); }
 .lr-row[data-state="warn"] { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); }
+.lr-row[data-state="fail"] { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--bg-soft)); }
 .lr-badge {
   flex: 0 0 auto; font-size: 10.5px; font-weight: 800; border-radius: 999px;
   padding: 2px 8px; background: var(--line); color: var(--tx-2);
@@ -949,6 +950,16 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 .lr-row[data-state="pass"] .lr-badge { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
 .lr-row[data-state="near"] .lr-badge { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .lr-row[data-state="warn"] .lr-badge { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+.lr-row[data-state="fail"] .lr-badge { background: var(--danger); color: #fff; }
+
+/* AI 티 7패턴 · D.I.A.+ (2026-11-21, #44584) */
+.aitione { margin-top: 12px; display: grid; gap: 6px; }
+.aitione h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aitione-hold {
+  margin: 0; padding: 9px 11px; border-radius: 11px; font-size: 12.5px; font-weight: 800; line-height: 1.45;
+  color: #fff; background: var(--danger);
+}
+.lint-score.hold .ls-num { color: var(--danger); }
 .lr-main { flex: 1 1 auto; min-width: 0; }
 .lr-title { font-size: 12.5px; font-weight: 700; overflow-wrap: anywhere; }
 .lr-note { font-size: 11.5px; color: var(--tx-3); }

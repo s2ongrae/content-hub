@@ -74,6 +74,7 @@ def load_rules() -> dict:
         "coreTags": DEFAULT_CORE,
         "titleLexicon": DEFAULT_LEXICON,
         "rules": [],
+        "aiTone": dict(AI_TONE_DEFAULTS),
         "version": "기본값",
     }
     try:
@@ -85,6 +86,7 @@ def load_rules() -> dict:
     base["coreTags"] = data.get("coreTags") or DEFAULT_CORE
     base["titleLexicon"] = data.get("titleLexicon") or DEFAULT_LEXICON
     base["rules"] = data.get("rules") or []
+    base["aiTone"] = data.get("aiTone") or dict(AI_TONE_DEFAULTS)
     base["version"] = data.get("version") or "2026w48"
     base["benchmark"] = data.get("benchmark")
     return base
@@ -245,6 +247,349 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
     return "warn", "—", "알 수 없는 규칙"
 
 
+AI_TONE_DEFAULTS = {
+    "version": "2026w48",
+    "hold_at": 2,
+    "intro_chars": 150,
+    "first_chars": 400,
+    "sd_min": 6.0,
+    "sentence_min": 8,
+    "number_ratio_min": 0.15,
+    "number_blocks_min": 8,
+    "headings_min": 3,
+    "heading_spread_max": 4,
+    "first_person_min": 2,
+    "over_polite_max": 4,
+    "first_person_min_by_preset": {"jajo": 1, "review": 2, "info": 1},
+    "keyword_count": [3, 5],
+    "keyword_fail": 6,
+    "regex": {
+        "first_person": r"(?<![가-힣])(?:나|내|제|저|우리)(?=[는가도만한걸게에선를의]|[\s,.!?~…]|$)",
+        "experience": r"(?:직접|실제로|써보니|써 보고|가보니|가 봤|먹어보니|먹어 봤|앉아보니|느꼈|느낀|개인적으로|내 기준|솔직히)",
+        "cliche": r"(?:도움이 되셨|도움이 되었|기대해 봅니다|기대해봅니다|응원합니다|응원하겠습니다|마치겠습니다|마무리하겠습니다|알아보았습니다|이상으로 (?:마치|정리)|그럼 다음에)",
+        "over_polite": r"(?:물론|다만|참고로|혹시라도|부담 없이|부담없이|편하게|편한 마음)",
+        "proper": r"(?:[가-힣]{2,}(?:동|구|시|역|점|로|길)|[A-Za-z]{2,})",
+        "number": r"[0-9]",
+        "dia_question": r"(?:\?|까\?|나요|인가요|을까|ㄹ까|궁금|고민|헷갈|모르겠|찾는다면|고를 때|정할 때|알아야)",
+        "dia_answer": r"(?:답(?:이다|입니다|이에요)|정답|결론(?:은|부터|적)|바로 (?:이|그|여기)|추천(?:한다|합니다|해요|드립니다|이에요)|괜찮(?:다|습니다|아요|네요)|낫(?:다|습니다|아요)|만족|좋(?:다|습니다|았|네요))",
+        "dia_condition": r"(?:면 |라면|경우|때 |한정|평일|주말|점심|저녁|예약|주차|가격|가성비|웨이팅|대기|영업)",
+        "dia_target": r"(?:분들|분께|분이|분에게|초보|직장인|커플|혼밥|가족|친구|학생|손님|혼자|야근|퇴근|위한|하는 사람)",
+        "dia_conclusion": r"(?:추천|비추|재방문|또 갈|다시 갈|괜찮|좋았|만족|아쉬|결론|정리|총평|한 줄|다음에|다음엔|또 오)",
+    },
+    "patterns": [
+        {"id": "generic_intro", "no": 1, "label": "일반론 서론"},
+        {"id": "symmetric_headings", "no": 2, "label": "대칭 소제목"},
+        {"id": "cliche_ending", "no": 3, "label": "결말 상투어"},
+        {"id": "uniform_sentences", "no": 4, "label": "균일 문장 길이"},
+        {"id": "no_numbers", "no": 5, "label": "수치 없는 주장"},
+        {"id": "first_person_absent", "no": 6, "label": "1인칭 부재"},
+        {"id": "over_polite", "no": 7, "label": "과잉 친절"},
+    ],
+    "dia": {
+        "label": "첫 400자 D.I.A.+",
+        "elements": [
+            {"id": "question", "label": "질문·문제", "regex": "dia_question"},
+            {"id": "answer", "label": "답", "regex": "dia_answer"},
+            {"id": "condition", "label": "조건", "regex": "dia_condition"},
+            {"id": "target", "label": "대상", "regex": "dia_target"},
+            {"id": "conclusion", "label": "결론", "regex": "dia_conclusion"},
+        ],
+    },
+}
+
+BLOCK_NOISE = re.compile(r"^(?:!\[[^\]]*\]\([^)]*\)|</?(?:img|br|div|p|figure|figcaption)\b|\[사진\]|▲)", re.I)
+EMOJI_HEAD = re.compile(r"^[\U0001F300-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF]")
+
+
+def to_blocks(text: str) -> list[str]:
+    norm = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    return [b.strip() for b in re.split(r"\n{2,}", norm) if b.strip()]
+
+
+def prose_blocks(text: str) -> list[str]:
+    return [b for b in to_blocks(text) if not BLOCK_NOISE.match(b)]
+
+
+def headings_of(blocks: list[str]) -> list[dict]:
+    """소제목 — 우리 에디터는 `###`가 아니라 **굵은 한 줄**을 쓴다(js/blogAiTone.js 와 같은 규칙)."""
+    out: list[dict] = []
+    total = len(blocks)
+    for i, raw in enumerate(blocks):
+        s = raw.strip()
+        if not s:
+            continue
+        if (re.fullmatch(r"\*\*[^*].*\*\*", s) or re.match(r"#{1,6}\s", s)
+                or EMOJI_HEAD.match(s)):
+            out.append({"text": re.sub(r"^#{1,6}\s*", "", s).replace("**", "").strip(), "kind": "strong"})
+            continue
+        if i == 0 or i == total - 1:
+            continue
+        if len(s) > 22 or len(s) < 3:
+            continue
+        if re.search(r"[.!?。？！]$", s):
+            continue
+        if "," in s or re.match(r"^[-*•·>▲▸]", s) or s.startswith("#"):
+            continue
+        if re.search(r"(?:다|요|까|죠|네|음|함|임|겠|습니다|해요|었다|았다)$", s):
+            continue
+        out.append({"text": s, "kind": "weak"})
+    strong = [h for h in out if h["kind"] == "strong"]
+    return strong if len(strong) >= 3 else out
+
+
+def sentences_of(text: str) -> list[str]:
+    flat = re.sub(r"\n+", " ", text or "")
+    return [s.strip() for s in re.findall(r"[^.!?。？！]+[.!?。？！]?", flat) if len(s.strip()) >= 6]
+
+
+def _pstdev(nums: list[int]) -> float:
+    if len(nums) < 2:
+        return 0.0
+    return statistics.pstdev(nums)
+
+
+def _count_re(text: str, src: str) -> int:
+    try:
+        return len(re.findall(src, text or ""))
+    except re.error:
+        return 0
+
+
+def _has_re(text: str, src: str) -> bool:
+    try:
+        return re.search(src, text or "") is not None
+    except re.error:
+        return False
+
+
+def _kw_list(keywords) -> list[str]:
+    raw = keywords if isinstance(keywords, list) else str(keywords or "").split(",")
+    out: list[str] = []
+    for x in raw:
+        s = str(x or "").strip().lstrip("#")
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _count_text(text: str, kw: str) -> int:
+    s = re.sub(r"\s+", " ", text or "")
+    k = re.sub(r"\s+", " ", str(kw or "").strip())
+    if not k:
+        return 0
+    return s.count(k)
+
+
+def ai_tone_scan(body: str, keywords, preset: str, cfg: dict) -> dict:
+    c = dict(AI_TONE_DEFAULTS)
+    c.update(cfg or {})
+    c["regex"] = {**AI_TONE_DEFAULTS["regex"], **((cfg or {}).get("regex") or {})}
+    c["first_person_min_by_preset"] = {**AI_TONE_DEFAULTS["first_person_min_by_preset"],
+                                       **((cfg or {}).get("first_person_min_by_preset") or {})}
+    rx = c["regex"]
+    defs = cfg.get("patterns") if cfg and cfg.get("patterns") else AI_TONE_DEFAULTS["patterns"]
+    fix_of = {p["id"]: p.get("fix", "") for p in (cfg or {}).get("patterns") or []}
+
+    blocks = prose_blocks(body)
+    text = "\n\n".join(blocks)
+    total = len(text)
+    stats = {"blocks": len(blocks), "chars": total, "headings": 0, "heading_spread": 0,
+             "sentences": 0, "sentence_sd": 0.0, "first_person": 0, "experience": 0,
+             "number_blocks": 0, "number_ratio": 0.0, "intro_chars": 0, "over_polite": 0}
+
+    def item(pid: str, state: str, value: str, note: str) -> dict:
+        d = next((p for p in defs if p["id"] == pid), {"id": pid, "no": 0, "label": pid})
+        return {"id": pid, "no": d.get("no", 0), "label": d.get("label", pid),
+                "state": state, "value": value, "note": note, "fix": fix_of.get(pid, "")}
+
+    if not total:
+        pats = [item(p["id"], "near", "—", "본문을 넣으면 검사합니다") for p in defs]
+        return {"patterns": pats, "hits": [], "count": 0, "hold": False, "hold_reasons": [],
+                "stats": stats, "summary": "본문 없음", "version": c.get("version", "2026w48")}
+
+    pats: list[dict] = []
+
+    # ① 일반론 서론
+    intro = text[: int(c["intro_chars"])]
+    fp = _count_re(intro, rx["first_person"])
+    num = _count_re(intro, rx["number"])
+    proper = _count_re(intro, rx["proper"]) + sum(_count_text(intro, k) for k in _kw_list(keywords))
+    stats["intro_chars"] = len(intro)
+    if stats["intro_chars"] < 40:
+        pats.append(item("generic_intro", "near", f"앞 {stats['intro_chars']}자", "서론이 짧아 판정하지 않습니다"))
+    elif fp + num + proper == 0:
+        pats.append(item("generic_intro", "warn", "1인칭 0 · 숫자 0 · 고유명사 0",
+                          "앞 150자가 일반론입니다 — 첫 문장에 내 경험이나 숫자를 넣으세요"))
+    else:
+        pats.append(item("generic_intro", "pass", f"1인칭 {fp} · 숫자 {num} · 고유명사 {proper}", "앞 150자에 근거가 있음"))
+
+    # ② 대칭 소제목
+    heads = headings_of(blocks)
+    lens = [len(h["text"]) for h in heads]
+    spread = (max(lens) - min(lens)) if lens else 0
+    ends = [h["text"][-2:] for h in heads]
+    same_end = len(heads) >= 3 and all(e == ends[0] for e in ends)
+    stats["headings"] = len(heads)
+    stats["heading_spread"] = spread
+    if len(heads) < int(c["headings_min"]):
+        pats.append(item("symmetric_headings", "near", f"소제목 {len(heads)}개", f"소제목 {c['headings_min']}개 이상이어야 판정합니다"))
+    elif spread <= int(c["heading_spread_max"]) or same_end:
+        why = f"글자수 편차 {spread}자" if spread <= int(c["heading_spread_max"]) else "모든 소제목이 같은 어미"
+        pats.append(item("symmetric_headings", "warn", f"소제목 {len(heads)}개 · {why}", "소제목이 대칭입니다 — 하나를 질문·단언으로 바꾸세요"))
+    else:
+        pats.append(item("symmetric_headings", "pass", f"소제목 {len(heads)}개 · 편차 {spread}자", "소제목 길이가 들쭉날쭉 — 사람이 쓴 모양"))
+
+    # ③ 결말 상투어
+    tail = "\n".join(blocks[-2:])
+    m = re.search(rx["cliche"], tail)
+    if m:
+        pats.append(item("cliche_ending", "fail", m.group(0), "마지막 문단이 인사말입니다 — 결론·다음 행동으로 끝내세요"))
+    else:
+        pats.append(item("cliche_ending", "pass", "없음", "결말에 상투어 없음"))
+
+    # ④ 균일 문장 길이
+    sent = sentences_of(text)
+    sd = round(_pstdev([len(s) for s in sent]), 1)
+    stats["sentences"] = len(sent)
+    stats["sentence_sd"] = sd
+    if len(sent) < int(c["sentence_min"]):
+        pats.append(item("uniform_sentences", "near", f"문장 {len(sent)}개", f"문장 {c['sentence_min']}개 이상이어야 판정합니다"))
+    elif sd < float(c["sd_min"]):
+        pats.append(item("uniform_sentences", "warn", f"문장 {len(sent)}개 · SD {sd}",
+                         f"문장 길이가 고릅니다(SD {sd} < {c['sd_min']}) — 단문 하나를 섞으세요"))
+    else:
+        pats.append(item("uniform_sentences", "pass", f"문장 {len(sent)}개 · SD {sd}", "문장 길이 편차가 있음"))
+
+    # ⑤ 수치 없는 주장
+    with_num = sum(1 for b in blocks if _has_re(b, rx["number"]))
+    ratio = round(with_num / len(blocks), 2) if blocks else 0.0
+    stats["number_blocks"] = with_num
+    stats["number_ratio"] = ratio
+    if len(blocks) < int(c["number_blocks_min"]):
+        pats.append(item("no_numbers", "near", f"문단 {len(blocks)}개", f"문단 {c['number_blocks_min']}개 이상이어야 비율을 봅니다"))
+    elif ratio < float(c["number_ratio_min"]):
+        pats.append(item("no_numbers", "warn", f"{round(ratio * 100)}%",
+                         f"숫자가 든 문단이 {round(ratio * 100)}% — 가격·시간·대기 같은 수치를 넣으세요"))
+    else:
+        pats.append(item("no_numbers", "pass", f"{round(ratio * 100)}%", f"숫자가 든 문단 {with_num}/{len(blocks)}"))
+
+    # ⑥ 1인칭 부재 (FAIL 아니라 WARN)
+    fp_all = _count_re(text, rx["first_person"])
+    exp = _count_re(text, rx["experience"])
+    fp_min = c["first_person_min_by_preset"].get(preset, c["first_person_min"])
+    stats["first_person"] = fp_all
+    stats["experience"] = exp
+    if fp_all + exp >= fp_min:
+        pats.append(item("first_person_absent", "pass", f"1인칭 {fp_all} · 경험 {exp}",
+                         f"하한 {fp_min}회" + (f" ({preset})" if preset else "")))
+    else:
+        pats.append(item("first_person_absent", "warn", f"1인칭 {fp_all} · 경험 {exp}",
+                         f"내가 본 것 한 줄을 넣으세요(하한 {fp_min}회" + (f" · {preset}" if preset else "") + ")"))
+
+    # ⑦ 과잉 친절
+    polite = _count_re(text, rx["over_polite"])
+    stats["over_polite"] = polite
+    if polite > int(c["over_polite_max"]):
+        pats.append(item("over_polite", "warn", f"{polite}회", f"양보 접속사가 {polite}회 — 2회 이하로 덜어내세요"))
+    else:
+        pats.append(item("over_polite", "pass", f"{polite}회", f"상한 {c['over_polite_max']}회 이내"))
+
+    hits = [p for p in pats if p["state"] in ("warn", "fail")]
+    fails = [p for p in pats if p["state"] == "fail"]
+    hold = bool(fails) or len(hits) >= int(c["hold_at"])
+    reasons = []
+    if fails:
+        reasons.append("결말·과반복: " + "·".join(p["label"] for p in fails))
+    if len(hits) >= int(c["hold_at"]):
+        reasons.append(f"AI 티 {len(hits)}개 적발")
+    summary = (f"AI 티 {len(hits)}개 — " + "·".join(p["label"] for p in hits)) if hits else (
+        f"AI 티 0개 — 문장 {stats['sentences']}개 · SD {stats['sentence_sd']}" if stats["sentences"] else "AI 티 0개")
+    return {"patterns": pats, "hits": [p["id"] for p in hits], "count": len(hits), "hold": hold,
+            "hold_reasons": reasons, "stats": stats, "summary": summary, "version": c.get("version", "2026w48")}
+
+
+def dia_gate(body: str, cfg: dict) -> dict:
+    c = dict(AI_TONE_DEFAULTS)
+    c.update(cfg or {})
+    rx = {**AI_TONE_DEFAULTS["regex"], **((cfg or {}).get("regex") or {})}
+    dia = {**AI_TONE_DEFAULTS["dia"], **((cfg or {}).get("dia") or {})}
+    elements = dia.get("elements") or AI_TONE_DEFAULTS["dia"]["elements"]
+    blocks = prose_blocks(body)
+    text = "\n\n".join(blocks)
+    head = text[: int(c["first_chars"])]
+    tail = "\n".join(blocks[-2:])
+    out = []
+    for el in elements:
+        src = rx.get(el.get("regex", ""), r"$^")
+        in_head = _has_re(head, src)
+        if el["id"] == "conclusion" and not in_head:
+            in_tail = _has_re(tail, src)
+            out.append({"id": el["id"], "label": el.get("label", el["id"]),
+                        "state": "near" if in_tail else "warn",
+                        "value": "본문 끝에만" if in_tail else "없음",
+                        "note": "결론이 마지막 문단에만 있습니다 — 첫 400자에 한 줄 요약을 넣으세요" if in_tail else "결론이 없습니다"})
+            continue
+        out.append({"id": el["id"], "label": el.get("label", el["id"]),
+                    "state": "pass" if in_head else "warn",
+                    "value": "있음" if in_head else "없음",
+                    "note": "첫 400자 안" if in_head else "첫 400자에 없음"})
+    hits = sum(1 for e in out if e["state"] != "warn")
+    state = "pass" if hits >= 4 else "near" if hits >= 3 else "warn"
+    missing = [e["label"] for e in out if e["state"] == "warn"]
+    summary = (f"5요소 중 {hits}개 — 첫 400자 의도가 잡힘" if state == "pass"
+               else ("빠진 요소: " + "·".join(missing) if missing else f"5요소 중 {hits}개"))
+    return {"elements": out, "hits": hits, "total": len(out), "state": state,
+            "first_chars": len(head), "summary": summary, "version": c.get("version", "2026w48")}
+
+
+def keyword_check(body: str, keywords, cfg: dict) -> dict:
+    c = dict(AI_TONE_DEFAULTS)
+    c.update(cfg or {})
+    kws = _kw_list(keywords)
+    if not kws:
+        return {"items": [], "state": "near", "note": "노리는 검색어를 넣으면 본문 3~5회를 셉니다",
+                "version": c.get("version", "2026w48")}
+    blocks = prose_blocks(body)
+    text = "\n\n".join(blocks)
+    heads = " ".join(h["text"] for h in headings_of(blocks))
+    lo, hi = c["keyword_count"]
+    items = []
+    for kw in kws:
+        n = _count_text(text, kw)
+        in_head = _count_text(heads, kw)
+        state = "warn" if n == 0 else "fail" if n >= int(c["keyword_fail"]) else ("near" if n < lo else "pass")
+        if n == 0:
+            note = "본문에 없음 — 제목·첫 문단·소제목에 넣으세요"
+        elif n >= int(c["keyword_fail"]):
+            note = f"{n}회 — 과반복(권장 {lo}~{hi}회). 무관 문단의 반복을 지우세요"
+        elif n < lo:
+            note = f"{n}회 — {lo - n}회 더 넣어도 좋습니다"
+        else:
+            note = f"{n}회 — 권장 범위"
+        items.append({"keyword": kw, "count": n, "headings": in_head, "state": state, "note": note})
+    worst = ("fail" if any(i["state"] == "fail" for i in items)
+             else "warn" if any(i["state"] == "warn" for i in items)
+             else "near" if any(i["state"] == "near" for i in items) else "pass")
+    return {"items": items, "state": worst, "note": f"키워드 {len(items)}개 · 권장 {lo}~{hi}회",
+            "version": c.get("version", "2026w48")}
+
+
+def lint_ai_tone(body: str, keywords, cfg: dict, preset: str = "") -> dict:
+    tone = ai_tone_scan(body, keywords, preset, cfg)
+    dia = dia_gate(body, cfg)
+    kw = keyword_check(body, keywords, cfg)
+    reasons = list(tone["hold_reasons"])
+    if kw["state"] == "fail":
+        bad = [f'"{i["keyword"]}" {i["count"]}회' for i in kw["items"] if i["state"] == "fail"]
+        reasons.append("키워드 과반복: " + "·".join(bad))
+    hold = bool(tone["hold"] or kw["state"] == "fail")
+    return {"patterns": tone["patterns"], "hits": tone["hits"], "count": tone["count"],
+            "hold": hold, "hold_reasons": reasons, "dia": dia, "keywords": kw,
+            "stats": tone["stats"],
+            "summary": tone["summary"] + f" · D.I.A.+ {dia['hits']}/{dia['total']}",
+            "version": tone["version"]}
+
+
 def lint(title: str, body: str, photo_count: int | None, keyword_csv: str, rules: dict) -> dict:
     t = dict(DEFAULT_TARGETS)
     t.update(rules["targets"])
@@ -279,22 +624,29 @@ def lint(title: str, body: str, photo_count: int | None, keyword_csv: str, rules
         "avg_line": round(statistics.mean(len(x) for x in lines), 1) if lines else 0,
         "hashtags": len(tags),
     }
+    ai = lint_ai_tone(body, keywords, rules.get("aiTone") or {})
     return {
         "version": rules.get("version"),
         "score": score,
         "pass": all(it["state"] != "warn" for it in items),
         "items": items,
         "stats": stats,
+        "aiTone": ai,
+        "hold": ai["hold"],
+        "hold_reasons": ai["hold_reasons"],
     }
 
 
-MARK = {"pass": "✓", "near": "△", "warn": "✗"}
+MARK = {"pass": "✓", "near": "△", "warn": "✗", "fail": "⛔"}
 
 
 def print_report(result: dict) -> None:
     st = result["stats"]
+    ai = result.get("aiTone") or {}
+    hold = bool(ai.get("hold"))
     print(f"발행 전 린터 · 기준 {result['version']} · 점수 {result['score']} / 100 — "
-          + ("통과" if result["pass"] else "고칠 것 있음"))
+          + ("통과" if result["pass"] else "고칠 것 있음")
+          + (" · ⛔ AI 티 발행 보류" if hold else ""))
     print(f"제목 {st['title_chars']}자 · 본문 {st['body_chars']}자 · 사진 {st['photos']}장 · "
           f"문단 평균 {st['avg_line']}자 · 16자 이하 줄 {st['short_lines']}개 · 해시태그 {st['hashtags']}개")
     print("-" * 66)
@@ -306,12 +658,28 @@ def print_report(result: dict) -> None:
         for it in warn:
             print(f"→ {it['label']}: {it['fix']}")
 
+    if not ai:
+        return
+    print("-" * 66)
+    print(f"AI 티 7패턴 — 적발 {ai.get('count', 0)}개" + (" (발행 보류)" if hold else ""))
+    if hold:
+        print("⛔ 발행 보류 — " + " · ".join(ai.get("hold_reasons") or []))
+    for p in ai.get("patterns") or []:
+        print(f"{MARK.get(p['state'], '?')} {p['no']}. {p['label']:<10} {p['value']:<24} {p['note']}")
+    dia = ai.get("dia") or {}
+    marks = "   ".join(("✓" if e["state"] == "pass" else "△" if e["state"] == "near" else "✗") + e["label"]
+                      for e in (dia.get("elements") or []))
+    print(f"{MARK.get(dia.get('state'), '?')} 첫 400자 D.I.A.+  {dia.get('hits', 0)}/{dia.get('total', 5)}   {marks}")
+    for k in (ai.get("keywords") or {}).get("items") or []:
+        print(f"{MARK.get(k['state'], '?')} 🔎 {k['keyword']:<10} {str(k['count']) + '회':<6} {k['note']}")
+
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="대전청년 블로그 발행 전 린터 (8항목)")
+    ap = argparse.ArgumentParser(description="대전청년 블로그 발행 전 린터 (8항목 + AI 티 7패턴·D.I.A.+)")
     ap.add_argument("draft", help="초안 md 경로 ('-' 이면 표준입력)")
     ap.add_argument("--photo", type=int, default=None, help="촬영 사진 수(안 주면 본문의 ![]() 개수)")
     ap.add_argument("--keyword", default="", help="노리는 검색어, 쉼표 구분")
+    ap.add_argument("--strict", action="store_true", help="AI 티 '발행 보류'도 실패(1)로 세기")
     ap.add_argument("--json", action="store_true", help="결과를 JSON 으로")
     args = ap.parse_args()
 
@@ -330,6 +698,8 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print_report(result)
+    if args.strict and result.get("hold"):
+        return 1
     return 0 if result["pass"] else 1
 
 

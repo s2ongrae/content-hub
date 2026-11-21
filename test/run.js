@@ -732,6 +732,96 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('톤: 정상 글이면 경고 0건', T.lintRhythm('오늘 하루에만 계좌에서 205만 원이 증발했고 수익률은 마이너스 3.5퍼센트였다.\n\n장 마감하고 화면을 보는데 헛웃음부터 나왔다.').length === 0, T.lintRhythm('오늘 하루에만 계좌에서 205만 원이 증발했고 수익률은 마이너스 3.5퍼센트였다.\n\n장 마감하고 화면을 보는데 헛웃음부터 나왔다.'));
     ok('키트에 2줄 호흡 점검이 붙는다(원문은 안 바뀜)', kit.rhythm && kit.rhythm.stats.blocks >= 2 && kit.blocks.map((b) => b.text).join('\n\n') === memo);
 
+    /* AI 티 7패턴 · 첫 400자 D.I.A.+ (#44584, 2026-11-21) */
+    {
+      const aiSeed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'blog_lint_rules_2026w48.json'), 'utf8')).aiTone;
+      const AI = await import('file://' + path.join(ROOT, 'js', 'blogAiTone.js'));
+      const BL = await import('file://' + path.join(ROOT, 'js', 'blogLint.js'));
+      ok('AI 티: 시드에 7패턴 · D.I.A.+ 5요소', aiSeed.patterns.length === 7 && aiSeed.dia.elements.length === 5);
+      ok('AI 티: 화면 기본값과 시드 임계값이 같다', AI.AI_TONE_DEFAULTS.hold_at === aiSeed.hold_at
+        && AI.AI_TONE_DEFAULTS.sd_min === aiSeed.sd_min
+        && AI.AI_TONE_DEFAULTS.regex.cliche === aiSeed.regex.cliche
+        && AI.AI_TONE_DEFAULTS.keyword_fail === aiSeed.keyword_fail);
+      ok('AI 티: 결말 상투어는 FAIL · 1인칭 부재는 WARN(우리 톤 보호)',
+        aiSeed.patterns.find((p) => p.id === 'cliche_ending').warn === 'FAIL'
+        && aiSeed.patterns.find((p) => p.id === 'first_person_absent').warn === 'WARN'
+        && aiSeed.first_person_min_by_preset.info === 1);
+
+      /* 소제목은 `###`가 아니라 굵은 한 줄(우리 에디터 형식) */
+      const boldHeads = ['**외관은 평범했다**', '본문 한 줄입니다.', '**고기는 두툼했다**', '또 본문.', '**밑반찬은 셀프**'];
+      const hs = AI.headingsOf(boldHeads);
+      ok('AI 티: 굵은 한 줄을 소제목으로 인식한다', hs.length === 3 && hs.every((x) => x.kind === 'strong'), hs.map((x) => x.text));
+      ok('AI 티: 캡션(▲)·사진 줄은 소제목이 아니다',
+        AI.headingsOf(['첫 문단.', '▲ 외관 사진', '둘째 문단.', '▲ 메뉴판', '셋째 문단.']).length === 0);
+
+      const goodBody = '봉명동에서 늦게까지 여는 삼겹살집을 찾는다면 미미삼겹 유성점이 답이다. 2인 3만2천원이고 평일 저녁 8시 웨이팅은 0분이었다. 주차는 건물 뒤 3대, 야근 끝난 직장인에게 맞는 곳이다. 다음엔 평일 6시에 가볼 생각이다.';
+      const g = AI.lintAiTone({ title: '[봉명동 삼겹살] 미미삼겹', body: goodBody, keywords: '봉명동맛집,삼겹살' }, aiSeed);
+      ok('AI 티: 사람이 쓴 첫 400자는 일반론·1인칭·수치를 통과',
+        g.patterns.find((p) => p.id === 'generic_intro').state === 'pass'
+        && g.patterns.find((p) => p.id === 'no_numbers').state !== 'warn', g.summary);
+      ok('AI 티: 첫 400자 D.I.A.+ 5요소를 다 잡는다', g.dia.hits === 5 && g.dia.state === 'pass', g.dia.elements.map((e) => e.id + ':' + e.state));
+      ok('AI 티: 정상 글은 발행 보류가 아니다', g.hold === false, g.holdReasons);
+
+      const bland = '현대 사회에서 맛집을 고르는 일은 참 어렵습니다. 좋은 맛집을 찾기 위해서는 여러 가지를 살펴보아야 합니다.';
+      ok('AI 티: 일반론 서론을 WARN으로 잡는다',
+        AI.lintAiTone({ body: bland }, aiSeed).patterns.find((p) => p.id === 'generic_intro').state === 'warn');
+      ok('AI 티: 첫 400자가 비면 D.I.A.+는 고칠 것', AI.diaGate({ body: bland }, aiSeed).state === 'warn');
+
+      const cliche = '앞 문단입니다.\n\n두 번째 문단입니다.\n\n이상으로 삼겹살 맛집 고르는 방법에 대해 알아보았습니다.';
+      const cf = AI.lintAiTone({ body: cliche }, aiSeed);
+      ok('AI 티: 결말 상투어는 FAIL이고 혼자서도 보류',
+        cf.patterns.find((p) => p.id === 'cliche_ending').state === 'fail' && cf.hold === true);
+
+      const sym = ['**위치 확인하기**', '본문 하나입니다.', '**가격 비교하기**', '본문 둘입니다.', '**분위기 살펴보기**'];
+      ok('AI 티: 대칭 소제목(같은 길이)을 WARN으로',
+        AI.lintAiTone({ body: sym.join('\n\n') }, aiSeed).patterns.find((p) => p.id === 'symmetric_headings').state === 'warn');
+
+      /* 1인칭: FAIL이 아니라 WARN · 톤 프리셋별 하한 */
+      const oneMe = '나는 3만2천원을 냈습니다.\n\n고기는 두툼했습니다.\n\n불판은 약했습니다.\n\n주차는 3대였습니다.';
+      ok('AI 티: 1인칭 부재는 WARN(FAIL 아님)',
+        AI.lintAiTone({ body: oneMe }, aiSeed).patterns.find((p) => p.id === 'first_person_absent').state === 'warn');
+      ok('AI 티: 자조 톤(jajo)은 하한이 낮아 1인칭 1회로 통과',
+        AI.lintAiTone({ body: oneMe, tonePreset: 'jajo' }, aiSeed).patterns.find((p) => p.id === 'first_person_absent').state === 'pass');
+
+      /* 키워드 3~5회(B3) — 6회↑ FAIL */
+      const kw6 = Array.from({ length: 6 }, (_, i) => '삼겹살' + i + '번째 문단입니다.').join('\n\n');
+      const kw3 = Array.from({ length: 3 }, (_, i) => '삼겹살' + i + '번째 문단입니다.').join('\n\n');
+      const k6 = AI.keywordCheck({ body: kw6, keywords: '삼겹살' }, aiSeed);
+      ok('AI 티: 키워드 6회는 FAIL · 발행 보류', k6.state === 'fail' && AI.lintAiTone({ body: kw6, keywords: '삼겹살' }, aiSeed).hold === true);
+      ok('AI 티: 키워드 3회는 권장 범위', AI.keywordCheck({ body: kw3, keywords: '삼겹살' }, aiSeed).items[0].state === 'pass');
+      ok('AI 티: 없는 키워드는 WARN', AI.keywordCheck({ body: kw3, keywords: '봉명동맛집' }, aiSeed).items[0].state === 'warn');
+      ok('AI 티: 키워드를 안 넣으면 판정하지 않는다', AI.keywordCheck({ body: kw3 }, aiSeed).items.length === 0);
+
+      /* 린터 통합 — 8항목 점수에 섞이지 않는다 */
+      const lb = BL.lintBlog({ title: '[봉명동 삼겹살] 미미삼겹 유성점 솔직후기', body: goodBody, keywords: '봉명동맛집,삼겹살', photoCount: 18 });
+      ok('린터: aiTone·hold 를 함께 돌려준다', !!lb.aiTone && typeof lb.hold === 'boolean' && !!lb.aiTone.dia && !!lb.aiTone.keywords);
+      ok('린터: 항목 수는 그대로(8 + 링크 3) — AI 티는 점수 밖', lb.items.length === 11 && lb.items.filter((i) => i.weight > 0).length === 8);
+      ok('린터: 8항목 점수는 AI 티와 무관', lb.score === Math.round(lb.items.reduce((s, it) => s + (it.state === 'pass' ? it.weight : it.state === 'near' ? it.weight / 2 : 0), 0)));
+      ok('린터: AI 티가 치명적이면 hold 로 알린다',
+        BL.lintBlog({ title: '삼겹살 맛집 고르는 방법', body: cliche }).hold === true);
+
+      /* 웹앱·파이썬 CLI 같은 규칙(파이썬이 있으면 대조) */
+      const py = spawnSync('python3', ['-c', 'print(1)'], { encoding: 'utf8' });
+      if (py.status === 0) {
+        const tmp = path.join(require('os').tmpdir(), 'ch-aitone-' + process.pid + '.md');
+        const pyBody = goodBody + '\n\n이상으로 삼겹살 맛집 고르는 방법에 대해 알아보았습니다.';
+        fs.writeFileSync(tmp, '# [봉명동 삼겹살] 미미삼겹\n\n' + pyBody, 'utf8');
+        const r = spawnSync('python3', [path.join(ROOT, 'tools', 'blog_lint_cli.py'), tmp, '--keyword', '봉명동맛집,삼겹살', '--json'], { encoding: 'utf8' });
+        let pyAi = null;
+        try { pyAi = JSON.parse(r.stdout).aiTone; } catch (e) { pyAi = null; }
+        const jsAi = AI.lintAiTone({ body: pyBody, keywords: '봉명동맛집,삼겹살' }, aiSeed);
+        ok('AI 티: 웹앱과 파이썬 CLI 판정이 같다', !!pyAi
+          && pyAi.count === jsAi.count
+          && pyAi.dia.hits === jsAi.dia.hits
+          && pyAi.hold === jsAi.hold
+          && pyAi.keywords.items.map((k) => k.keyword + k.count).join(',') === jsAi.keywords.items.map((k) => k.keyword + k.count).join(','),
+        { py: pyAi && { count: pyAi.count, dia: pyAi.dia && pyAi.dia.hits, hold: pyAi.hold }, js: { count: jsAi.count, dia: jsAi.dia.hits, hold: jsAi.hold }, err: String(r.stderr || '').slice(0, 200) });
+        try { fs.unlinkSync(tmp); } catch (e) {}
+      } else {
+        ok('AI 티: 웹앱과 파이썬 CLI 대조(파이썬 없음 — 건너뜀)', true);
+      }
+    }
+
     /* 피드 */
     const cards = SL.buildFeedCards({ materials: matB });
     ok('피드 카드 6장', cards.length === 6 && cards.map((c) => c.no).join(',') === '1,2,3,4,5,6');

@@ -45,6 +45,57 @@
   },
   "coreTags": ["대전맛집", "유성맛집", "봉명동맛집"],
   "titleLexicon": ["대전", "유성", "봉명동", "어은동", "궁동", "온천", "관평동", "둔산", "삼겹살", "칼국수", "고기", "맛집", "술집", "해장", "제육", "혼밥", "주차"],
+  "aiTone": {
+    "version": "2026w48",
+    "source": "downloads/스레드_꿀팁_수집_및_제미니_디벨롭_20261121.md §1-3(B2·B3·B6) · §3-2 · §4-3·4",
+    "note": "AI 티 7패턴(WARN/표시) + 첫 400자 D.I.A.+ 게이트 + 키워드 3~5회. 웹앱(js/blogAiTone.js)과 파이썬 CLI(tools/blog_lint_cli.py)가 같이 읽습니다.",
+    "hold_at": 2,
+    "intro_chars": 150,
+    "first_chars": 400,
+    "sd_min": 6.0,
+    "sentence_min": 8,
+    "number_ratio_min": 0.15,
+    "number_blocks_min": 8,
+    "headings_min": 3,
+    "heading_spread_max": 4,
+    "first_person_min": 2,
+    "over_polite_max": 4,
+    "first_person_min_by_preset": { "jajo": 1, "review": 2, "info": 1 },
+    "keyword_count": [3, 5],
+    "keyword_fail": 6,
+    "regex": {
+      "first_person": "(?<![가-힣])(?:나|내|제|저|우리)(?=[는가도만한걸게에선를의]|[\\s,.!?~…]|$)",
+      "experience": "(?:직접|실제로|써보니|써 보고|가보니|가 봤|먹어보니|먹어 봤|앉아보니|느꼈|느낀|개인적으로|내 기준|솔직히)",
+      "cliche": "(?:도움이 되셨|도움이 되었|기대해 봅니다|기대해봅니다|응원합니다|응원하겠습니다|마치겠습니다|마무리하겠습니다|알아보았습니다|이상으로 (?:마치|정리)|그럼 다음에)",
+      "over_polite": "(?:물론|다만|참고로|혹시라도|부담 없이|부담없이|편하게|편한 마음)",
+      "proper": "(?:[가-힣]{2,}(?:동|구|시|역|점|로|길)|[A-Za-z]{2,})",
+      "number": "[0-9]",
+      "dia_question": "(?:\\?|까\\?|나요|인가요|을까|ㄹ까|궁금|고민|헷갈|모르겠|찾는다면|고를 때|정할 때|알아야)",
+      "dia_answer": "(?:답(?:이다|입니다|이에요)|정답|결론(?:은|부터|적)|바로 (?:이|그|여기)|추천(?:한다|합니다|해요|드립니다|이에요)|괜찮(?:다|습니다|아요|네요)|낫(?:다|습니다|아요)|만족|좋(?:다|습니다|았|네요))",
+      "dia_condition": "(?:면 |라면|경우|때 |한정|평일|주말|점심|저녁|예약|주차|가격|가성비|웨이팅|대기|영업)",
+      "dia_target": "(?:분들|분께|분이|분에게|초보|직장인|커플|혼밥|가족|친구|학생|손님|혼자|야근|퇴근|위한|하는 사람)",
+      "dia_conclusion": "(?:추천|비추|재방문|또 갈|다시 갈|괜찮|좋았|만족|아쉬|결론|정리|총평|한 줄|다음에|다음엔|또 오)"
+    },
+    "patterns": [
+      { "id": "generic_intro", "no": 1, "label": "일반론 서론", "judge": "앞 150자에 1인칭·숫자·고유명사가 0개", "warn": "WARN", "fix": "첫 150자에 내 경험(1인칭)이나 숫자·장소명을 하나 넣으세요. 인사말·일반론 3문장은 지웁니다." },
+      { "id": "symmetric_headings", "no": 2, "label": "대칭 소제목", "judge": "소제목 3개↑ · 글자수 편차 ±2자 또는 같은 어미 100%", "warn": "WARN", "fix": "소제목 하나를 질문이나 단언으로 바꾸고 길이를 들쭉날쭉하게 두세요." },
+      { "id": "cliche_ending", "no": 3, "label": "결말 상투어", "judge": "마지막 2문단에 '도움이 되셨/기대해 봅니다/마치겠습니다' 류", "warn": "FAIL", "fix": "마지막 문단은 인사 대신 결론·다음 행동 한 줄로 끝내세요." },
+      { "id": "uniform_sentences", "no": 4, "label": "균일 문장 길이", "judge": "문장 길이 표준편차 SD < 6.0 (문장 8개 이상)", "warn": "WARN", "fix": "짧은 한 문장을 섞으세요. 3~5자 단문 하나가 AI 문체를 가장 크게 지웁니다." },
+      { "id": "no_numbers", "no": 5, "label": "수치 없는 주장", "judge": "숫자가 든 문단 비율 15% 미만 (문단 8개 이상)", "warn": "WARN", "fix": "가격·대기시간·영업시간 같은 숫자를 문단마다 하나씩 넣으세요." },
+      { "id": "first_person_absent", "no": 6, "label": "1인칭 부재", "judge": "경험 표현이 톤 프리셋 하한 미만", "warn": "WARN", "fix": "내가 본 것 한 줄을 넣으세요. 정보 정리 글은 1개면 충분합니다." },
+      { "id": "over_polite", "no": 7, "label": "과잉 친절", "judge": "'물론·다만·참고로·부담 없이' 4회 초과", "warn": "WARN", "fix": "양보·배려 접속사를 덜어내세요. 한 글에 두 번까지면 충분합니다." }
+    ],
+    "dia": {
+      "label": "첫 400자 D.I.A.+",
+      "elements": [
+        { "id": "question", "label": "질문·문제", "regex": "dia_question" },
+        { "id": "answer", "label": "답", "regex": "dia_answer" },
+        { "id": "condition", "label": "조건", "regex": "dia_condition" },
+        { "id": "target", "label": "대상", "regex": "dia_target" },
+        { "id": "conclusion", "label": "결론", "regex": "dia_conclusion" }
+      ]
+    }
+  },
   "rules": [
     {
       "id": "title_front",

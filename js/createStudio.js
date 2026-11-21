@@ -26,6 +26,7 @@ import {
 } from './studioLogic.js?v=20261121h';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261121g';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261121g';
+import { lintAiTone } from './blogAiTone.js?v=20261121';
 import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261121a';
 import { paintAiClip } from './aiClip.js?v=20261121b';
 
@@ -789,6 +790,31 @@ function paintKit(out, ctx, kit, ui, draft) {
   });
   box.appendChild(h('div', { class: 'row' }, fix));
   box.appendChild(rhBox);
+
+  /* ── AI 티 7패턴 · 첫 400자 D.I.A.+ (2026-11-21, #44584) — 점검 탭과 같은 엔진 ── */
+  const mat = mem.materials || {};
+  const kws = [
+    (mat.place && mat.place.name) || '',
+    (mat.content && mat.content.region_dong) || '',
+    (mat.content && mat.content.category) || ''
+  ].filter(Boolean).join(',');
+  const ai = lintAiTone({
+    title: (kit.titles || [])[0] || '', body: bodyText, keywords: kws,
+    tonePreset: (kit.rhythm && kit.rhythm.preset) || ''
+  });
+  box.appendChild(h('h3', { text: 'AI 티 7패턴 · D.I.A.+' }));
+  if (ai.hold) box.appendChild(h('p', { class: 'st-hint err', text: '⛔ 발행 보류 — ' + ai.holdReasons.join(' · ') }));
+  box.appendChild(h('p', { class: 'st-hint' + (ai.count ? ' err' : ''),
+    text: ai.count
+      ? '⚠ AI 티 ' + ai.count + '개 — ' + ai.patterns.filter((p) => p.state === 'warn' || p.state === 'fail').map((p) => p.label + '(' + p.value + ')').join(' · ')
+      : '✓ AI 티 0개 — 문장 ' + ai.stats.sentences + '개 · SD ' + ai.stats.sentenceSd + ' · 1인칭 ' + ai.stats.firstPerson }));
+  box.appendChild(h('p', { class: 'st-hint' + (ai.dia.state === 'pass' ? '' : ' err'),
+    text: 'D.I.A.+ ' + ai.dia.hits + '/' + ai.dia.total + ' — '
+      + ai.dia.elements.map((e) => (e.state === 'pass' ? '✓' : e.state === 'near' ? '△' : '✗') + e.label).join('  ') }));
+  if (ai.keywords.items.length) {
+    box.appendChild(h('p', { class: 'st-hint' + (ai.keywords.state === 'fail' ? ' err' : ''),
+      text: '검색어 — ' + ai.keywords.items.map((k) => k.keyword + ' ' + k.count + '회').join(' · ') }));
+  }
 
   box.appendChild(h('h3', { text: '네이버에 붙이는 순서' }));
   box.appendChild(h('ol', { class: 'st-steps' }, kit.paste_steps.map((s) => h('li', { text: s }))));

@@ -6,7 +6,7 @@
  * 초안은 이 브라우저에만 저장한다(새로고침해도 남게).
  */
 
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261118';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261121';
 
 const DRAFT_KEY = 'contenthub.lint_draft.v1';
 
@@ -18,7 +18,61 @@ function writeDraft(d) {
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch (e) { /* 무시 */ }
 }
 
-const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것' };
+const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것', fail: '보류' };
+const AI_STATE_LABEL = { pass: '없음', near: '—', warn: '주의', fail: '보류' };
+
+/** AI 티 7패턴 · D.I.A.+ · 키워드 판넬 — 8항목 점수와 따로 보여준다(점수에 안 섞임). */
+function aiTonePanel(h, r) {
+  const ai = r.aiTone || {};
+  const patterns = ai.patterns || [];
+  const dia = ai.dia || { elements: [], hits: 0, total: 5, state: 'near' };
+  const kw = ai.keywords || { items: [], state: 'near', note: '' };
+  const wrap = h('div', { class: 'aitione' },
+    h('h3', null, 'AI 티 7패턴 · D.I.A.+',
+      h('span', { class: 'tag', text: '적발 ' + (ai.count || 0) + '개 · ' + (ai.count >= 2 ? '발행 보류' : '표시만') })));
+
+  if (ai.hold) {
+    wrap.appendChild(h('p', { class: 'aitione-hold', text: '⛔ 발행 보류 — ' + (ai.holdReasons || []).join(' · ') }));
+  }
+
+  const list = h('div', { class: 'blint-list' });
+  patterns.forEach((p) => {
+    list.appendChild(h('div', { class: 'lr-row', 'data-state': p.state },
+      h('span', { class: 'lr-badge', text: AI_STATE_LABEL[p.state] || p.state }),
+      h('div', { class: 'lr-main' },
+        h('div', { class: 'lr-title', text: p.no + '. ' + p.label + '  ·  ' + p.value }),
+        h('div', { class: 'lr-note', text: p.note || p.judge || '' }),
+        (p.state === 'pass' || p.state === 'near') ? null : h('div', { class: 'lr-fix', text: p.fix })),
+      h('span', { class: 'lr-w', text: p.state === 'fail' ? 'FAIL' : p.state === 'warn' ? 'WARN' : '' })));
+  });
+  wrap.appendChild(list);
+
+  const diaRow = h('div', { class: 'lr-row', 'data-state': dia.state },
+    h('span', { class: 'lr-badge', text: STATE_LABEL[dia.state] || dia.state }),
+    h('div', { class: 'lr-main' },
+      h('div', { class: 'lr-title', text: '첫 400자 D.I.A.+  ·  ' + dia.hits + '/' + dia.total }),
+      h('div', { class: 'lr-note', text: (dia.elements || []).map((e) => (e.state === 'pass' ? '✓ ' : e.state === 'near' ? '△ ' : '✗ ') + e.label).join('   ') }),
+      dia.state === 'pass' ? null : h('div', { class: 'lr-fix', text: (dia.elements || []).filter((e) => e.state === 'warn').map((e) => e.fix).slice(0, 2).join(' ') })),
+    h('span', { class: 'lr-w', text: '질문·답·조건·대상·결론' }));
+  wrap.appendChild(diaRow);
+
+  if ((kw.items || []).length) {
+    const kwList = h('div', { class: 'blint-list', style: 'margin-top:6px' });
+    kw.items.forEach((k) => {
+      kwList.appendChild(h('div', { class: 'lr-row', 'data-state': k.state },
+        h('span', { class: 'lr-badge', text: AI_STATE_LABEL[k.state] || k.state }),
+        h('div', { class: 'lr-main' },
+          h('div', { class: 'lr-title', text: '🔎 ' + k.keyword + '  ·  ' + k.count + '회' }),
+          h('div', { class: 'lr-note', text: k.note })),
+        h('span', { class: 'lr-w', text: k.state === 'fail' ? 'FAIL' : '' })));
+    });
+    wrap.appendChild(kwList);
+  }
+
+  wrap.appendChild(h('p', { class: 'hint', style: 'margin-top:8px',
+    text: '판정은 기계적으로 센 값만 봅니다. AI 티 2개↑ 또는 결말 상투어·키워드 6회↑ 면 [발행 보류]로 표시합니다 — 고친 뒤 다시 검사하세요.' }));
+  return wrap;
+}
 
 export async function renderLintView(main, ctx) {
   const { h, pageHead, toast } = ctx;
@@ -27,7 +81,7 @@ export async function renderLintView(main, ctx) {
   const draft = readDraft();
 
   main.appendChild(pageHead('🔍 발행 전 린터',
-    '상위 24건 실측 8항목 · 통과하면 그대로 올리면 됩니다'));
+    '상위 24건 실측 8항목 + AI 티 7패턴·D.I.A.+ — 통과하면 그대로 올리면 됩니다'));
 
   const titleEl = h('input', { type: 'text', value: draft.title || '', placeholder: '예: [봉명동 삼겹살] 미미삼겹 유성점 솔직후기 : …', autocomplete: 'off' });
   const bodyEl = h('textarea', { rows: '14', placeholder: '본문을 붙여넣으세요(정보 카드 → 외관 → 메뉴 → 먹방 → 총평)' });
@@ -45,7 +99,7 @@ export async function renderLintView(main, ctx) {
 
   const counters = h('div', { class: 'lint-counters' });
   const resultHost = h('div');
-  const runBtn = h('button', { class: 'btn primary block', type: 'button', text: '8항목 검사' });
+  const runBtn = h('button', { class: 'btn primary block', type: 'button', text: '8항목 + AI 티 검사' });
   form.appendChild(runBtn);
   form.appendChild(counters);
   main.appendChild(form);
@@ -90,11 +144,13 @@ export async function renderLintView(main, ctx) {
 
     const warn = r.items.filter((i) => i.state === 'warn');
     const near = r.items.filter((i) => i.state === 'near');
-    const head = h('div', { class: 'lint-score' + (r.pass ? ' ok' : '') },
+    const ai = r.aiTone || { patterns: [], dia: { elements: [], hits: 0, total: 5 }, keywords: { items: [] }, holdReasons: [] };
+    const hold = !!r.hold;
+    const head = h('div', { class: 'lint-score' + (r.pass && !hold ? ' ok' : '') + (hold ? ' hold' : '') },
       h('div', { class: 'ls-num', text: String(r.score) }),
       h('div', { class: 'ls-txt' },
-        h('strong', { text: r.pass ? '통과 — 발행해도 됩니다' : (warn.length >= 3 ? '미달 — 손볼 곳이 ' + warn.length + '개' : '보완 — ' + warn.length + '개만 고치면 통과') }),
-        h('span', { text: '주의 ' + near.length + ' · 고칠 것 ' + warn.length + ' · 기준 ' + rules.version })));
+        h('strong', { text: hold ? '발행 보류 — ' + (ai.holdReasons || []).join(' · ') : (r.pass ? '통과 — 발행해도 됩니다' : (warn.length >= 3 ? '미달 — 손볼 곳이 ' + warn.length + '개' : '보완 — ' + warn.length + '개만 고치면 통과')) }),
+        h('span', { text: '주의 ' + near.length + ' · 고칠 것 ' + warn.length + ' · AI 티 ' + (ai.count || 0) + ' · D.I.A.+ ' + (ai.dia ? ai.dia.hits : 0) + '/' + (ai.dia ? ai.dia.total : 5) + ' · 기준 ' + rules.version })));
 
     const panel = h('div', { class: 'panel lint-result' }, head);
     const list = h('div', { class: 'lint-list' });
@@ -108,6 +164,9 @@ export async function renderLintView(main, ctx) {
         h('span', { class: 'lr-w', text: it.weight ? '+' + it.weight : '' })));
     });
     panel.appendChild(list);
+
+    /* ── AI 티 7패턴 · 첫 400자 D.I.A.+ · 키워드 3~5회 (2026-11-21, #44584) ── */
+    panel.appendChild(aiTonePanel(h, r));
 
     if (warn.length) {
       panel.appendChild(h('p', { class: 'hint', style: 'margin-top:10px',
@@ -129,7 +188,8 @@ export async function renderLintView(main, ctx) {
     paintCounters();
     paintResult();
     const r = lintBlog({ title: titleEl.value, body: bodyEl.value, photoCount: photoEl.value === '' ? undefined : Number(photoEl.value), keywords: kwEl.value }, rules);
-    toast(r.pass ? '통과 · ' + r.score + '점' : '고칠 것 ' + r.items.filter((i) => i.state === 'warn').length + '개 · ' + r.score + '점',
+    if (r.hold) toast('발행 보류 — ' + (r.holdReasons || []).join(' · '), 'err');
+    else toast(r.pass ? '통과 · ' + r.score + '점' : '고칠 것 ' + r.items.filter((i) => i.state === 'warn').length + '개 · ' + r.score + '점',
       r.pass ? 'ok' : 'err');
   });
 
@@ -140,8 +200,7 @@ export async function renderLintView(main, ctx) {
 
   /* 기준 요약 */
   const guide = h('div', { class: 'panel' },
-    h('h3', null, '8항목 기준', h('span', { class: 'tag', text: '2026w48' })));
-  const g = h('div', { class: 'gate' });
+    h('h3', null, '8항목 기준', h('span', { class: 'tag', text: '2026w48' })));  const g = h('div', { class: 'gate' });
   rules.rules.forEach((r) => g.appendChild(h('div', { class: 'gate-row' },
     h('span', { text: r.label }),
     h('span', { class: 'gv na', text: r.pass || '' }))));

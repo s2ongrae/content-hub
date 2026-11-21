@@ -13,7 +13,7 @@
  * 글별 조회수·유입 검색어는 네이버가 로그인한 본인에게만 보여 주므로 가져오지 않는다(성과 탭 수동 입력).
  * 렌더링은 h()(createElement + textContent)만 쓴다.
  */
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261118';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261121';
 import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261121h';
 import { axisShort, trendChip, trendTone, rankChip, docChip, splitRows, makeSeoSeed, putSeoSeed, titleLen } from './blogSeo.js?v=20261121a';
 
