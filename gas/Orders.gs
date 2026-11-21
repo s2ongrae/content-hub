@@ -188,6 +188,10 @@ const RENDER_MAX_IMAGES = 25;
 const RENDER_PROFILES = ['captions', 'bgm'];
 const RENDER_BRANDS = ['daejeon_youth', 'ppiyak_kimmary'];
 const RENDER_FITS = ['crop', 'blur', 'pad'];   // 프레이밍 — 비우면 노트북이 원본 방향으로 정한다
+// 자동 줌·모션(2026-11-21) — 노트북 lib/motion.js PRESET_IDS · 허브 js/produceLogic.js MOTION_IDS 와 같은 값.
+//   motion 은 'auto'(기본 · 오늘 오더도 모션이 붙는다) · dynamic · calm · none. none 이면 예전과 완전 동일.
+const RENDER_MOTIONS = ['auto', 'dynamic', 'calm', 'none'];
+const RENDER_MOTION_QUALITY = ['standard', 'high'];   // standard = linear(≤1.15배) / high = cubic 강제
 const RENDER_MAX_INPUTS = 8;
 /* 완제품(2026-11-20): 자막 번인·내레이션. 큐 payload 4,000자 때문에 40큐까지 인라인,
    그보다 많으면 payload_source:'drive' 로만 보내고 노트북이 카드 payload(production)에서 읽는다. */
@@ -395,6 +399,17 @@ function hubRenderPayload_(payload) {
     const c = Number(payload.crop_x);
     if (!isFinite(c) || c < 0 || c > 1) throw bad('crop_x 는 0~1 사이 숫자여야 합니다.');
     out.crop_x = c;
+  }
+  // 자동 줌·모션 — 이 함수가 payload 를 고정 키로 다시 만들기 때문에 여기서 싣지 않으면 선택이 조용히 사라진다.
+  if (payload.motion !== undefined && payload.motion !== null && payload.motion !== '') {
+    const mo = String(payload.motion).trim().toLowerCase();
+    if (RENDER_MOTIONS.indexOf(mo) === -1) throw bad('motion 은 ' + RENDER_MOTIONS.join(' · ') + ' 중 하나여야 합니다.');
+    out.motion = mo;
+  }
+  if (payload.motion_quality !== undefined && payload.motion_quality !== null && payload.motion_quality !== '') {
+    const mq = String(payload.motion_quality).trim().toLowerCase();
+    if (RENDER_MOTION_QUALITY.indexOf(mq) === -1) throw bad('motion_quality 는 ' + RENDER_MOTION_QUALITY.join(' · ') + ' 중 하나여야 합니다.');
+    out.motion_quality = mq;
   }
   const cuts = hubRenderCuts_(payload.cuts, names.length);
   if (cuts.length) out.cuts = cuts;

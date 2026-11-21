@@ -26,7 +26,8 @@ import {
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
-  buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE
+  buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
+  MOTION_IDS, MOTION_LABELS
 } from './produceLogic.js?v=20261121r';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261121r';
 import { readStudio, mergeFormat } from './studioLogic.js?v=20261121r';
@@ -725,7 +726,8 @@ export function produceSection(ctx) {
         narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined,
         template: state.template, title: state.title, badge: state.badge, hook: state.hook, hookSub: state.hook_sub, outro: state.outro,
         hookPos: state.hook_pos, hookHold: state.hook_hold,
-        frameLock: state.frame_lock, frameLockImage: state.frame_lock_image, frameLockSeconds: state.frame_lock_seconds
+        frameLock: state.frame_lock, frameLockImage: state.frame_lock_image, frameLockSeconds: state.frame_lock_seconds,
+        motion: state.motion, motionQuality: state.motion_quality
       });
       return { cr, b };
     };
@@ -815,6 +817,16 @@ export function produceSection(ctx) {
       h('span', { class: 'pr-check-s', text: state.frame_lock === true
         ? '잠갔는데 0.0초에 보일 훅이 없으면 소용없어요 — 오프닝 훅이나 보조 글자를 같이 넣어 주세요.'
         : '여러 AI 클립을 이어 붙일 때만 켜세요. 일반 촬영본 한 개면 켜지 않아도 돼요.' })));
+
+    // 자동 줌·모션(2026-11-21) — 영상을 준 그대로 쓰지 않고 클립마다 줌인/줌아웃을 번갈아 넣고 훅 끝에 펀치(점프컷).
+    //   세로 변환 패스에 융합하므로 재인코딩 횟수는 그대로(fit·번인 2회). 기본 auto — 끄려면 '끔'.
+    box.append(h('div', { class: 'pr-field' },
+      h('span', { class: 'pr-label', text: '자동 줌·모션' }),
+      h('select', { class: 'pr-sel', 'aria-label': '자동 줌·모션', onchange: (e) => change((st) => { st.motion = e.target.value; }) },
+        ...MOTION_IDS.map((id) => h('option', { value: id, selected: state.motion === id ? '' : null, text: MOTION_LABELS[id] }))),
+      h('span', { class: 'pr-check-s', text: state.motion === 'none'
+        ? '모션 없이 지금과 똑같이 자르기만 해요(원본 그대로).'
+        : '3초 이상 클립에 줌인·줌아웃을 번갈아 넣고, 훅 끝에 펀치줌 1회. 1080p 가로 원본은 최대 1.12배.' })));
 
     box.append(...orderBlock('render', {
       sendText: '노트북에 렌더 오더 보내기',

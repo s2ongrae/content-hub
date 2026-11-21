@@ -407,6 +407,26 @@ console.log('\n[8h-lock] 무음 보조 글자·첫 프레임 잠금 (2026-11-21)
   ok('hook_sub·frame_lock 이 붙고도 큐 한도(4,000자) 안', JSON.stringify(pL).length < 4000, JSON.stringify(pL).length);
 }
 
+console.log('\n[8h-motion] 자동 줌·모션 2키 (2026-11-21)');
+{
+  const baseM = { content_id: 'CH-20261121-MOT', brand: 'daejeon_youth', inputs: ['a.mp4'] };
+  const pA = A.ctx.hubRenderPayload_(Object.assign({}, baseM, { motion: 'auto' }));
+  ok('motion 은 이 함수를 지나 payload 에 그대로 살아남는다', pA.motion === 'auto', pA);
+  ok('none·calm·dynamic 3종도 통과', ['none', 'calm', 'dynamic'].every(function (m) { return A.ctx.hubRenderPayload_(Object.assign({}, baseM, { motion: m })).motion === m; }));
+  ok('motion_quality(high) 도 통과', A.ctx.hubRenderPayload_(Object.assign({}, baseM, { motion_quality: 'high' })).motion_quality === 'high');
+  const rejectM = function (pl) { try { A.ctx.hubRenderPayload_(Object.assign({}, baseM, pl)); return false; } catch (e) { return e.code === 'ERR_VALIDATION_FAILED'; } };
+  ok('거부: 모르는 motion · 모르는 화질', rejectM({ motion: 'wobble' }) && rejectM({ motion_quality: '4k' }));
+  ok('motion 이 붙고도 큐 한도(4,000자) 안', JSON.stringify(pA).length < 4000, JSON.stringify(pA).length);
+  ok('RENDER_MOTIONS·RENDER_MOTION_QUALITY 상수가 노트북과 같다', (function () {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'gas', 'Orders.gs'), 'utf8');
+    return /RENDER_MOTIONS = \['auto', 'dynamic', 'calm', 'none'\]/.test(src) && /RENDER_MOTION_QUALITY = \['standard', 'high'\]/.test(src);
+  })());
+  ok('2·3단계(transcribe·finish) payload 에는 모션을 싣지 않는다(세로 변환은 1단계에만)', (function () {
+    const st = A.ctx.hubRenderPayload_({ content_id: 'CH-20261121-MOT', brand: 'daejeon_youth', stage: 'finish', burn: false, motion: 'none' });
+    return st.stage === 'finish' && st.motion === undefined;
+  })());
+}
+
 console.log('\n[8i] content_draft — 초안 생성(LOW · 파일 안 고침)');
 const nodeCrypto = require('crypto');
 const sha = (t) => nodeCrypto.createHash('sha256').update(String(t), 'utf8').digest('hex');

@@ -294,7 +294,17 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
 
     /* 오더 payload 는 계약 키만 */
     const okP = L.buildRenderPayload({ contentId: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', cropX: 0.5 });
-    ok('payload 계약 v1', okP.ok && same(okP.payload, { content_id: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', crop_x: 0.5, template: 'auto' }), okP);
+    ok('payload 계약 v1', okP.ok && same(okP.payload, { content_id: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', crop_x: 0.5, template: 'auto', motion: 'auto' }), okP);
+    // 자동 줌·모션(2026-11-21) — 기본 auto 는 늘 싣고, none·dynamic·calm 은 그대로, 모르는 값은 거절
+    ok('motion 기본 auto(오늘 오더도 모션이 붙는다)', L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'] }).payload.motion === 'auto');
+    ok('motion none·calm·dynamic 이 payload 에 실린다', ['none', 'calm', 'dynamic'].every((m) => L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], motion: m }).payload.motion === m));
+    ok('모르는 motion 은 거절', !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], motion: 'wobble' }).ok);
+    ok('motion_quality 는 high 일 때만 싣는다(standard 는 기본값)', (() => {
+      const hi = L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], motionQuality: 'high' });
+      const st = L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], motionQuality: 'standard' });
+      return hi.payload.motion_quality === 'high' && !('motion_quality' in st.payload) && !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], motionQuality: '4k' }).ok;
+    })());
+    ok('motion 은 큐 한도(4,000자)를 사실상 늘리지 않는다(약 +15바이트)', JSON.stringify({ content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], motion: 'none' }).length - JSON.stringify({ content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'] }).length <= 20);
     ok('crop_x 가 비면 키를 만들지 않는다', !('crop_x' in L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cropX: '' }).payload));
     const fitP = L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], fit: ' BLUR ' });
     ok('fit 은 소문자로 payload 에 실린다', fitP.ok && fitP.payload.fit === 'blur', fitP);
@@ -381,7 +391,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('컷이 없으면 빈 목록(오더에 cuts 키가 없다)', same(L.cutsForOrder(L.defaultState(), ['a.mp4']), { ok: true, cuts: [] }) && !('cuts' in L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [] }).payload));
     ok('영상이 없는데 컷이 있으면 오류', L.cutsForOrder(stC, []).ok === false);
     ok('컷 151곳은 거부', !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: Array.from({ length: 151 }, (_, i) => [i * 2, i * 2 + 1]) }).ok && L.cutsForOrder(L.normalizeState({ inputs: ['a.mp4'], cut_list: Array.from({ length: 150 }, (_, i) => ({ type: 'DEAD', from: i * 2, to: i * 2 + 1, on: true })) }), ['a.mp4']).cuts.length === 150);
-    ok('payload 에 cuts 를 싣는다(계약 키 + cuts)', same(L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [[1, 2]] }).payload, { content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', cuts: [[1, 2]], template: 'auto' }));
+    ok('payload 에 cuts 를 싣는다(계약 키 + cuts)', same(L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [[1, 2]] }).payload, { content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', cuts: [[1, 2]], template: 'auto', motion: 'auto' }));
     ok('cuts 값 검사: 역순·음수·파일 번호 범위 밖·모양', [[[2, 1]], [[-1, 1]], [[1, 2, 3]], [['a', 2]], [[1]]].every((c) => !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: c }).ok));
     ok('영상 1개인데 파일 번호가 붙은 컷·영상 둘인데 번호 없는 컷은 거부', !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4', 'b.mp4'], cuts: [[1, 2]] }).ok);
     ok('cuts 150개 payload 는 큐 한도(4000자)에 들어간다', JSON.stringify(Object.assign({ type: 'content_render' }, L.buildRenderPayload({ contentId: 'C'.repeat(40), brand: 'ppiyak_kimmary', inputs: ['01_외관.mp4', '02_메뉴판.mp4'], profile: 'bgm', cropX: 0.123, cuts: Array.from({ length: 150 }, (_, i) => [1000 + i * 2.5, 1001.5 + i * 2.5, 1]) }).payload)).length < 4000);
@@ -1102,6 +1112,17 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('상태의 범위 밖 잠금 길이는 버린다', PL.normalizeState({ frame_lock: true, frame_lock_seconds: 9 }).frame_lock_seconds === '');
     ok('제작 ④ 화면에 무음 보조 글자·첫 프레임 잠금 칸이 있다', /무음 보조 글자/.test(pv) && /첫 프레임 잠금/.test(pv) && /hookSub: state\.hook_sub/.test(pv) && /frameLock: state\.frame_lock/.test(pv));
     ok('GAS: hook_sub·frame_lock 을 검사해 넘긴다', /hook_sub: 6/.test(orders) && /out\.frame_lock = true/.test(orders) && /frame_lock_seconds 는 0\.02~0\.5/.test(orders));
+    /* ── 자동 줌·모션(2026-11-21) — 기본 auto · 3종 프리셋 · 끄기 none ── */
+    ok('기본값은 auto · standard', PL.defaultState().motion === 'auto' && PL.defaultState().motion_quality === 'standard');
+    ok('프리셋 4종 auto · dynamic · calm · none', PL.MOTION_IDS.join(',') === 'auto,dynamic,calm,none' && PL.MOTION_LABELS.none === '끔');
+    ok('상태: 고른 모션이 남고(새로고침 유지), 모르는 값은 auto', PL.normalizeState({ motion: 'dynamic', motion_quality: 'high' }).motion === 'dynamic' && PL.normalizeState({ motion: 'wobble' }).motion === 'auto' && PL.normalizeState({ motion_quality: 'x' }).motion_quality === 'standard');
+    ok('옛 저장값(모션 키 없음)은 auto 로 돈다(오늘 오더도 모션이 붙는다)', PL.normalizeState({ inputs: ['a.mp4'] }).motion === 'auto');
+    ok('오더: motion 은 늘 싣고(기본 auto), none 이면 none', PL.buildRenderPayload(Object.assign({}, base, { motion: 'none' })).payload.motion === 'none' && PL.buildRenderPayload(Object.assign({}, base)).payload.motion === 'auto');
+    ok('오더: 모르는 모션·화질은 거부', !PL.buildRenderPayload(Object.assign({}, base, { motion: 'wobble' })).ok && !PL.buildRenderPayload(Object.assign({}, base, { motionQuality: '4k' })).ok);
+    ok('제작 ④ 화면에 자동 줌·모션 보기 칸이 있다', /자동 줌·모션/.test(pv) && /MOTION_LABELS\[id\]/.test(pv) && /motion: state\.motion, motionQuality: state\.motion_quality/.test(pv));
+    ok('화면 도움말이 프리셋 동작을 밝힌다(3초 이상 · 펀치 1회 · 1080p 가로 1.12배)', /3초 이상 클립에 줌인·줌아웃/.test(pv) && /훅 끝에 펀치줌 1회/.test(pv) && /1080p 가로 원본은 최대 1\.12배/.test(pv));
+    ok('GAS: motion·motion_quality 두 키를 검사해 넘긴다', /RENDER_MOTIONS = \['auto', 'dynamic', 'calm', 'none'\]/.test(orders) && /out\.motion = mo/.test(orders) && /RENDER_MOTION_QUALITY = \['standard', 'high'\]/.test(orders) && /out\.motion_quality = mq/.test(orders));
+    ok('4계층 값이 같다(화면 · GAS · 노트북)', PL.MOTION_IDS.join(',') === 'auto,dynamic,calm,none' && fs.existsSync(path.join(ROOT, 'js', 'produceLogic.js')) && /MOTION_IDS/.test(pv));
     // 대본 AI 가 뽑은 질문형 훅 → 제작 스텝퍼 훅 칸(2026-11-21)
     const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
     ok('대본 결과의 훅·보조 글자를 카드 production 에 남긴다', /hook: draft\.hook \|\| null/.test(csSrc) && /hook_sub: draft\.hook_sub \|\| null/.test(csSrc));

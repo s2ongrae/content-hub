@@ -24,6 +24,11 @@ export const SUB_STYLES = ['auto', 'shorts', 'long'];   // 자막 스타일 — 
 // 첫 프레임 잠금(2026-11-21) — 노트북 lib/framelock.js 와 같은 값. 기본 1프레임(0.04초).
 export const FRAME_LOCK_SECONDS = { min: 0.02, max: 0.5, default: 0.04 };
 export const FRAME_LOCK_IMAGE_RE = /\.(jpe?g|png|webp)$/i;
+/* 자동 줌·모션(2026-11-21) — 노트북 lib/motion.js · 허브 GAS RENDER_MOTIONS · 포털 qqRenderMotionOf_ 와 같은 값.
+   기본 auto: 오늘 오더도 클립마다 줌인/줌아웃이 붙고 훅 끝에 펀치 한 번. none 이면 예전과 똑같다. */
+export const MOTION_IDS = ['auto', 'dynamic', 'calm', 'none'];
+export const MOTION_LABELS = { auto: '자동(추천)', dynamic: '다이나믹', calm: '차분하게', none: '끔' };
+export const MOTION_QUALITIES = ['standard', 'high'];
 /* 완제품(2026-11-20): 자막 번인·내레이션. 큐가 많으면 큐 payload(4,000자)를 넘으므로 40큐까지 인라인,
    그보다 많으면 payload_source:'drive' 로 보내고 노트북이 카드 payload(production)에서 읽는다. */
 export const MAX_CUES_INLINE = 40;
@@ -90,7 +95,7 @@ export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', b
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '', motion: 'auto', motion_quality: 'standard' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -127,6 +132,9 @@ export function normalizeState(raw) {
   s.frame_lock_seconds = Number.isFinite(Number(raw.frame_lock_seconds)) && Number(raw.frame_lock_seconds) >= FRAME_LOCK_SECONDS.min && Number(raw.frame_lock_seconds) <= FRAME_LOCK_SECONDS.max ? Math.round(Number(raw.frame_lock_seconds) * 100) / 100 : '';
   s.hook_pos = raw.hook_pos === 'center' || raw.hook_pos === 'top' ? raw.hook_pos : '';
   s.hook_hold = typeof raw.hook_hold === 'number' && raw.hook_hold >= 1 && raw.hook_hold <= 4 ? Math.round(raw.hook_hold * 10) / 10 : '';
+  // 자동 줌·모션(2026-11-21) — 옛 저장값에는 없으므로 비면 auto(기본값)로 돈다.
+  s.motion = MOTION_IDS.indexOf(String(raw.motion || '')) >= 0 ? String(raw.motion) : 'auto';
+  s.motion_quality = MOTION_QUALITIES.indexOf(String(raw.motion_quality || '')) >= 0 ? String(raw.motion_quality) : 'standard';
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
@@ -291,7 +299,7 @@ export function normalizeCues(raw, label, opts) {
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds, motion, motionQuality }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -362,9 +370,15 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
       else payload.frame_lock_seconds = Math.round(n * 100) / 100;
     }
   }
+  // 자동 줌·모션(2026-11-21) — motion 은 'auto' 도 늘 싣는다(클립별 계획은 노트북이 만든다). none 이면 예전과 똑같다.
+  const mo = String(motion || 'auto').trim().toLowerCase();
+  if (MOTION_IDS.indexOf(mo) < 0) errors.push('자동 줌은 ' + MOTION_IDS.join(' · ') + ' 중 하나여야 해요');
+  else payload.motion = mo;
+  const mq = String(motionQuality || 'standard').trim().toLowerCase();
+  if (MOTION_QUALITIES.indexOf(mq) < 0) errors.push('모션 화질은 ' + MOTION_QUALITIES.join(' · ') + ' 중 하나여야 해요');
+  else if (mq !== 'standard') payload.motion_quality = mq;
   if (errors.length) return { ok: false, errors };
-  const willBurn = burnSubtitles !== false && (cap.cues.length > 0 || source === 'drive');
-  if (!willBurn && burnSubtitles === false && (cap.cues.length > 0 || source === 'drive')) payload.burn_subtitles = false;
+  const willBurn = burnSubtitles !== false && (cap.cues.length > 0 || source === 'drive');  if (!willBurn && burnSubtitles === false && (cap.cues.length > 0 || source === 'drive')) payload.burn_subtitles = false;
   else if (willBurn && sub !== 'auto') payload.sub_style = sub;
   if (JSON.stringify(payload).length > MAX_PAYLOAD_CHARS && source === 'inline') {
     // 글자 수가 넘으면 인라인을 포기하고 카드에서 읽게 한다(문장을 자르지 않는다).
