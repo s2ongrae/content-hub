@@ -394,32 +394,66 @@ function blogSeoPick_(input) {
     };
   }).filter(function (x) { return x.score > -100; });
 
-  // 축별 1차 배분 → 남는 자리는 점수 높은 축에서 채운다
-  const byAxis = {};
-  BLOG_SEO_AXIS_ORDER_.forEach(function (a) { byAxis[a] = []; });
-  scored.forEach(function (x) { (byAxis[x.axis] = byAxis[x.axis] || []).push(x); });
-  Object.keys(byAxis).forEach(function (a) {
-    byAxis[a].sort(function (p, q) { return q.score - p.score; });
-  });
+  // 표본이 얇은 말은 '표본 적음'이라 적고 뒤로 미룬다 — 오름/내림을 말할 수 없는 값이다.
+  const thin = scored.filter(function (x) { return x.trend_state === '표본 적음' || x.trend_state === '표본 없음'; });
+  const solid = scored.filter(function (x) { return thin.indexOf(x) < 0; });
 
+  // 축별로 점수 높은 순으로 줄을 세우고, 라운드마다 축 하나씩 돌아가며 뽑는다.
+  //   → 1번은 각 축의 가장 센 말, 2번은 그다음 … 한 축이 화면을 다 차지하지 않는다.
+  const roundTables = {};
+  BLOG_SEO_AXIS_ORDER_.forEach(function (a) {
+    roundTables[a] = solid.filter(function (x) { return x.axis === a; })
+      .sort(function (p, q) { return q.score - p.score; });
+  });
+  const taken = {};
   const picked = [];
-  BLOG_SEO_AXIS_ORDER_.forEach(function (a) {
-    const want = BLOG_SEO_QUOTA_[a] || 0;
-    byAxis[a].slice(0, want).forEach(function (x) { picked.push(x); });
+  for (let round = 0; round < BLOG_SEO_COUNT_ && picked.length < BLOG_SEO_COUNT_; round++) {
+    const line = [];
+    BLOG_SEO_AXIS_ORDER_.forEach(function (a) {
+      const want = BLOG_SEO_QUOTA_[a] || 0;
+      if (round >= want) return;
+      const x = roundTables[a][round];
+      if (!x) return;
+      // 점수가 마이너스인 후보는 그 축의 자리를 비워 두고, 뒤에 전체 점수 순으로 채운다.
+      if (x.score < 0) return;
+      line.push(x);
+    });
+    line.sort(function (p, q) { return q.score - p.score; });
+    line.forEach(function (x) {
+      if (picked.length >= BLOG_SEO_COUNT_) return;
+      if (taken[x.axis + '|' + x.keyword]) return;
+      taken[x.axis + '|' + x.keyword] = true;
+      x.slot = (roundTables[x.axis].indexOf(x));
+      picked.push(x);
+    });
+  }
+  // 남는 자리는 전체 점수 순(축 상한 = 배분+1)으로 채운다.
+  const restAll = solid.filter(function (x) { return !taken[x.axis + '|' + x.keyword]; })
+    .sort(function (p, q) { return q.score - p.score; });
+  const axisCount = {};
+  picked.forEach(function (x) { axisCount[x.axis] = (axisCount[x.axis] || 0) + 1; });
+  restAll.forEach(function (x) {
+    if (picked.length >= BLOG_SEO_COUNT_) return;
+    const cap = (BLOG_SEO_QUOTA_[x.axis] || 0) + 1;
+    if ((axisCount[x.axis] || 0) >= cap) return;
+    x.slot = roundTables[x.axis].indexOf(x);
+    axisCount[x.axis] = (axisCount[x.axis] || 0) + 1;
+    picked.push(x);
   });
-  const restAll = [];
-  BLOG_SEO_AXIS_ORDER_.forEach(function (a) {
-    const want = BLOG_SEO_QUOTA_[a] || 0;
-    byAxis[a].slice(want).forEach(function (x) { restAll.push(x); });
-  });
-  restAll.sort(function (p, q) { return q.score - p.score; });
-  let need = BLOG_SEO_COUNT_ - picked.length;
-  for (let n = 0; n < restAll.length && need > 0; n++) { picked.push(restAll[n]); need--; }
+  // 그래도 모자라면 표본 적음 후보로 채우되, 화면·근거에 '표본 적음'이라고 적는다.
+  if (picked.length < BLOG_SEO_COUNT_) {
+    thin.sort(function (p, q) { return q.score - p.score; });
+    thin.forEach(function (x) {
+      if (picked.length >= BLOG_SEO_COUNT_) return;
+      x.slot = 0;
+      picked.push(x);
+    });
+  }
 
   // 제목 붙이기 — 같은 제목이 최근에 나왔으면 다음 각도로 넘긴다.
   const madeTitles = [];
   const rows = picked.map(function (x, idx) {
-    const title = blogSeoTitle_(x.axis, x.keyword, day, madeTitles);
+    const title = blogSeoTitle_(x.axis, x.keyword, day, madeTitles, x.slot || 0);
     madeTitles.push(title);
     const t = x.trend || {};
     const bits = [];
@@ -430,7 +464,6 @@ function blogSeoPick_(input) {
       bits.push(x.trend_state);
     }
     if (x.my_rank) bits.push('내 ' + x.my_rank + '위');
-    else bits.push('내 글 없음');
     if (x.doc_total != null) bits.push('문서 ' + blogSeoDocLabel_(x.doc_total));
     if (x.inflow) bits.push('유입 "' + x.inflow + '"');
     return {
@@ -465,11 +498,12 @@ function blogSeoDocLabel_(n) {
 }
 
 /** 키워드 → 제목. 날짜·키워드 해시로 각도를 돌리고, 최근에 쓴 제목은 건너뛴다. */
-function blogSeoTitle_(axis, keyword, day, avoid) {
+function blogSeoTitle_(axis, keyword, day, avoid, slot) {
   const spec = BLOG_SEO_AXES_[axis] || BLOG_SEO_AXES_.food;
   const list = spec.titles || ['{kw} 정리'];
   const year = String(day).slice(0, 4);
-  const start = blogSeoHash_(String(day) + '|' + keyword) % list.length;
+  // 같은 축에서 두 번째·세 번째 줄은 다른 각도로 쓴다(같은 날 같은 문형이 반복되지 않게).
+  const start = (blogSeoHash_(String(day) + '|' + keyword) + (Number(slot) || 0)) % list.length;
   for (let i = 0; i < list.length; i++) {
     const raw = list[(start + i) % list.length];
     let t = raw.replace(/\{kw\}/g, keyword).replace(/\{year\}/g, year);
