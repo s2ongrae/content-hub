@@ -61,19 +61,19 @@ export const INSERT = {
 export const PRESETS = {
   product_scene: {
     label: '상품 컷 (묘한살림)',
-    subject: 'the product',
+    subject: 'ceramic bowl',
     scene: 'A single {subject} sits on a {surface} in a real Korean apartment corner. Soft window light from the left, gentle camera push-in, dust motes in the light, shallow depth of field, honest everyday look.',
     motion: 'slow dolly in, subtle parallax, product stays in frame the whole shot'
   },
   daily_broll: {
     label: '대전 일상 B롤',
-    subject: 'a quiet street corner',
+    subject: 'quiet street corner',
     scene: 'A {subject} in Daejeon before sunset, wet asphalt reflections, natural handheld feel, 26mm lens look, muted colors.',
     motion: 'slow handheld pan, tiny step forward, natural shake'
   },
   mary_action: {
     label: '메리 동작 (레퍼런스 춤)',
-    subject: 'a British Shorthair cat',
+    subject: 'British Shorthair cat',
     scene: 'A {subject} is the only character in a sunlit living room, soft natural light, candid home video look.',
     motion: 'the cat performs the dance moves of the reference clip: two front paws up, then body sway, then a small hop'
   }
