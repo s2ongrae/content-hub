@@ -321,11 +321,12 @@ function seoList(h, ctx, rows, data) {
       h('span', { class: 'seo-axis ' + String(r.axis || ''), text: axisShort(r.axis) }),
       titleBtn,
       len.over ? h('span', { class: 'tag', text: len.len + '자 · 김' }) : null);
+    // 근거는 칩 세 개로만 — 서버의 reason 을 그대로 또 쓰면 같은 말이 두 번 나온다.
     const sub = h('div', { class: 'l-sub', style: 'white-space:normal;overflow:visible;line-height:1.45' },
       h('em', { class: 'delta' + trendTone(r), text: trendChip(r) }),
-      h('span', { text: ' · ' + rankChip(r) }),
+      rankChip(r) ? h('span', { text: ' · ' + rankChip(r) }) : null,
       docChip(r) ? h('span', { text: ' · ' + docChip(r) }) : null,
-      h('span', { text: ' · ' + (r.reason || '') }));
+      r.inflow ? h('span', { text: ' · 유입 "' + r.inflow + '"' }) : null);
     const side = h('div', { class: 'l-side' },
       h('button', { class: 'btn xs primary', type: 'button', text: '초안', title: '이 제목으로 #/create/blog 시작', onclick: go }));
     list.appendChild(h('div', { class: 'lrow seo-row' },
