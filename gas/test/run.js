@@ -1934,6 +1934,17 @@ console.log('\n[13] 네이버 데이터랩 (gas/Insight.gs) — 천장·캐시·
     ok('legacy 는 옛 주소로 간다', /openapi\.naver\.com\/v1\/datalab\/search/.test(N.env.fetched[1].url), N.env.fetched[1].url);
   }
 
+  /* ── 작은 숫자는 판단하지 않는다(상대지수 10 미만) ── */
+  {
+    const N = loadGas();
+    const small = N.ctx.trendSummary_([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1].map((r, i) => ({ period: 'p' + i, ratio: r })));
+    eq('최고점이 한 자리 수면 판단 보류', small.trend, '표본 적음');
+    eq('그때는 계절 뱀지도 안 단다', small.season, '');
+    const big = N.ctx.trendSummary_([20, 20, 20, 20, 20, 20, 20, 20, 40, 40, 40, 40].map((r, i) => ({ period: 'p' + i, ratio: r })));
+    eq('충분히 큰 말은 그대로 판정', big.trend, '오르는 중');
+    eq('벼랑 끝 상승이면 성수기', big.season, '성수기');
+  }
+
   /* ── 입력 다듬기: 5묶음·5검색어 ── */
   {
     const N = loadGas();

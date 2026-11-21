@@ -450,7 +450,7 @@ function trendRow(h, r) {
   return h('div', { class: 'lrow trend-row', style: 'align-items:flex-start' },
     h('div', { class: 'l-main', style: 'min-width:0' },
       h('div', { class: 'l-title' }, r.title, ' ', badge),
-      h('div', { class: 'l-sub' },
+      h('div', { class: 'l-sub', style: 'white-space:normal;overflow:visible;text-overflow:clip;line-height:1.45' },
         h('span', { text: '최근 4주 ' + r.delta_text }),
         h('em', { class: 'delta' + deltaClass, text: r.trend }),
         h('span', { text: ' · 지금 ' + (r.latest == null ? '—' : r.latest) + ' / 기간 최고 ' + (r.peak == null ? '—' : r.peak) }))),

@@ -297,10 +297,14 @@ function trendSummary_(data) {
   if (recent4 != null && prev4 != null && prev4 > 0) deltaPct = Math.round(((recent4 - prev4) / prev4) * 1000) / 10;
   const peak = n ? Math.max.apply(null, list.map(function (x) { return x.ratio; })) : null;
   const latest = n ? list[n - 1].ratio : null;
+  // 상대지수는 이 요청의 최고점을 100으로 둔다. 그래서 peak 가 한 자리 수인 말은
+  // '그 주제 안에서 거의 안 찾는 말'이라 오름/내림·계절을 판단할 표본이 안 된다.
+  const thin = (peak != null && peak < 10);
   let trend = '알 수 없음';
-  if (deltaPct != null) trend = deltaPct >= 15 ? '오르는 중' : deltaPct <= -15 ? '내리는 중' : '비슷함';
+  if (thin) trend = '표본 적음';
+  else if (deltaPct != null) trend = deltaPct >= 15 ? '오르는 중' : deltaPct <= -15 ? '내리는 중' : '비슷함';
   let season = '';
-  if (latest != null && peak) {
+  if (!thin && latest != null && peak) {
     if (latest >= peak * 0.85) season = '성수기';
     else if (latest <= peak * 0.3) season = '비수기';
   }
