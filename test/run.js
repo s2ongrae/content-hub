@@ -994,8 +994,9 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const sp = S.splitRows([1, 2, 3, 4, 5, 6]);
     eq('처음 4개만 보인다', sp.first.length, 4);
     eq('나머지 2개는 펼치기', sp.rest.length, 2);
-    const tl = S.titleLen('가'.repeat(40));
-    ok('34자를 넘으면 표시한다', tl.over === true && tl.len === 40, tl);
+    const tl = S.titleLen('가'.repeat(50));
+    ok('45자를 넘으면 표시한다', tl.over === true && tl.len === 50, tl);
+    ok('45자까지는 그대로', S.titleLen('가'.repeat(45)).over === false);
     const seed = S.makeSeoSeed(
       { title: '대전 냉삼 다녀왔습니다', keyword: '대전 냉삼', axis: 'food', axis_label: '대전 맛집·카페' },
       { food: { skeleton: ['1. 언제:', '2. 주차:'] } }, '2026-11-21');

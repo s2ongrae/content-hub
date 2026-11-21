@@ -62,9 +62,9 @@ export function splitRows(rows) {
   return { first: list.slice(0, FIRST_COUNT), rest: list.slice(FIRST_COUNT) };
 }
 
-/** 제목 길이 — 모바일 목록에서 잘리지 않는 18~34자 */
+/** 제목 길이 — 모바일 목록에서 잘리지 않는 18~45자(내 상위 5편 제목 평균은 53자) */
 export const TITLE_MIN = 18;
-export const TITLE_MAX = 34;
+export const TITLE_MAX = 45;
 export function titleLen(title) {
   const n = Array.from(String(title || '')).length;
   return { len: n, ok: n >= TITLE_MIN && n <= TITLE_MAX, over: n > TITLE_MAX };

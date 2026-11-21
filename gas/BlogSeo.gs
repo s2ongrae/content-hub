@@ -35,7 +35,7 @@ const BLOG_SEO_QUOTA_ = { food: 3, life: 3, store: 2, cat: 2 };
 /** 후보는 배분보다 2개씩 더 본다(표본 적음·이미 쓴 말로 빠질 때 채우려고). */
 const BLOG_SEO_EXTRA_ = 2;
 const BLOG_SEO_TREND_BATCH_ = 5;        // 데이터랩 요청 1회에 주제어 5개까지
-const BLOG_SEO_TITLE_MAX_ = 34;         // 모바일 목록에서 잘리지 않는 상한(공백 포함)
+const BLOG_SEO_TITLE_MAX_ = 45;         // 모바일 목록에서 잘리지 않는 상한(공백 포함) — 내 상위 글 평균은 53자
 const BLOG_SEO_TITLE_MIN_ = 18;
 const BLOG_SEO_RECENT_DAYS_ = 7;        // 같은 제목을 다시 내지 않으려 보는 기간
 const BLOG_SEO_DUP_DAYS_ = 30;          // 이미 쓴 글과 겹치는지 보는 기간
@@ -443,17 +443,33 @@ function blogSeoPick_(input) {
   // 그래도 모자라면 표본 적음 후보로 채우되, 화면·근거에 '표본 적음'이라고 적는다.
   if (picked.length < BLOG_SEO_COUNT_) {
     thin.sort(function (p, q) { return q.score - p.score; });
+    const axisThin = {};
+    picked.forEach(function (x) { axisThin[x.axis] = (axisThin[x.axis] || 0) + 1; });
     thin.forEach(function (x) {
       if (picked.length >= BLOG_SEO_COUNT_) return;
+      const cap = (BLOG_SEO_QUOTA_[x.axis] || 0) + 1;
+      if ((axisThin[x.axis] || 0) >= cap) return;
+      x.slot = 0;
+      axisThin[x.axis] = (axisThin[x.axis] || 0) + 1;
+      picked.push(x);
+    });
+    // 축 상한 때문에 모자라면 그때는 상한을 풀고 채운다(빈 줄보다 낫다).
+    thin.forEach(function (x) {
+      if (picked.length >= BLOG_SEO_COUNT_) return;
+      if (picked.indexOf(x) >= 0) return;
       x.slot = 0;
       picked.push(x);
     });
   }
 
+  // 화면은 센 것부터 — 뽑는 순서(축 돌아가며)와 보여 주는 순서(점수)를 나눈다.
+  picked.sort(function (p, q) { return q.score - p.score; });
+
   // 제목 붙이기 — 같은 제목이 최근에 나왔으면 다음 각도로 넘긴다.
   const madeTitles = [];
+  const usedTemplates = {};
   const rows = picked.map(function (x, idx) {
-    const title = blogSeoTitle_(x.axis, x.keyword, day, madeTitles, x.slot || 0);
+    const title = blogSeoTitle_(x.axis, x.keyword, day, madeTitles, x.slot || 0, usedTemplates);
     madeTitles.push(title);
     const t = x.trend || {};
     const bits = [];
@@ -498,16 +514,26 @@ function blogSeoDocLabel_(n) {
 }
 
 /** 키워드 → 제목. 날짜·키워드 해시로 각도를 돌리고, 최근에 쓴 제목은 건너뛴다. */
-function blogSeoTitle_(axis, keyword, day, avoid, slot) {
+function blogSeoTitle_(axis, keyword, day, avoid, slot, usedTemplates) {
   const spec = BLOG_SEO_AXES_[axis] || BLOG_SEO_AXES_.food;
   const list = spec.titles || ['{kw} 정리'];
   const year = String(day).slice(0, 4);
-  // 같은 축에서 두 번째·세 번째 줄은 다른 각도로 쓴다(같은 날 같은 문형이 반복되지 않게).
+  const used = usedTemplates || {};
+  used[axis] = used[axis] || [];
+  // 같은 축에서 두 번째·세 번째 줄은 **아직 안 쓴 각도**로 쓴다(같은 날 같은 문형이 반복되지 않게).
   const start = (blogSeoHash_(String(day) + '|' + keyword) + (Number(slot) || 0)) % list.length;
   for (let i = 0; i < list.length; i++) {
-    const raw = list[(start + i) % list.length];
-    let t = raw.replace(/\{kw\}/g, keyword).replace(/\{year\}/g, year);
+    const at = (start + i) % list.length;
+    let t = list[at].replace(/\{kw\}/g, keyword).replace(/\{year\}/g, year);
     if (t.length > BLOG_SEO_TITLE_MAX_) t = t.slice(0, BLOG_SEO_TITLE_MAX_);
+    if ((avoid || []).indexOf(t) >= 0) continue;
+    if (used[axis].indexOf(at) >= 0) continue;
+    used[axis].push(at);
+    return t;
+  }
+  // 각도를 다 썼으면 제목이 겹치지 않는 쪽을 쓴다.
+  for (let i = 0; i < list.length; i++) {
+    const t = list[(start + i) % list.length].replace(/\{kw\}/g, keyword).replace(/\{year\}/g, year);
     if ((avoid || []).indexOf(t) < 0) return t;
   }
   return list[start].replace(/\{kw\}/g, keyword).replace(/\{year\}/g, year);

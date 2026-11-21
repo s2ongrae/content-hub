@@ -1991,7 +1991,7 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
   picked.rows.forEach(r => { cnt[r.axis] = (cnt[r.axis] || 0) + 1; });
   eq('축 배분 3/3/2/2', JSON.stringify([cnt.food, cnt.life, cnt.store, cnt.cat]), JSON.stringify([3, 3, 2, 2]));
   eq('순위는 1~10', picked.rows.map(r => r.rank).join(','), '1,2,3,4,5,6,7,8,9,10');
-  ok('제목은 34자 이내', picked.rows.every(r => r.title.length <= 34), picked.rows.map(r => r.title.length));
+  ok('제목은 45자 이내', picked.rows.every(r => r.title.length <= 45), picked.rows.map(r => r.title.length));
   ok('제목이 서로 다르다', new Set(picked.rows.map(r => r.title)).size === 10);
   ok('키워드가 제목에 들어 있다', picked.rows.every(r => r.title.indexOf(r.keyword) >= 0));
   ok('근거 줄에 내 순위/문서 이야기', picked.rows.every(r => /내 |문서 |최근 4주|표본|유입/.test(r.reason)));
@@ -2084,6 +2084,14 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
     ok('표본 적음 후보는 뒤로 밀린다', out.rows.every((r, n) => r.trend_state !== '표본 적음' || n === out.rows.length - 1), out.rows.map(r => r.trend_state));
     const food = out.rows.filter(r => r.axis === 'food');
     ok('같은 축 두 줄은 각도가 다르다', food.length === 2 && food[0].title !== food[1].title, food.map(r => r.title));
+    const catSix = N.ctx.blogSeoPick_({
+      day: '2026-11-21',
+      candidates: ev(N.ctx, 'BLOG_SEO_AXES_').cat.keywords.slice(0, 4).map(k => ({ axis: 'cat', keyword: k })),
+      trend: ev(N.ctx, 'BLOG_SEO_AXES_').cat.keywords.slice(0, 4).reduce((o, k, n) => { o[k] = { peak: 100, delta_pct: 40 - n * 5 }; return o; }, {}),
+      docs: {}, mine: { ranks: {}, inflow: [], posts: [], recentTitles: [], pattern: null }
+    });
+    const catTitles = catSix.rows.map(r => r.title.replace(r.keyword, '{kw}'));
+    ok('한 축에서 각도가 겹치지 않는다', new Set(catTitles).size === catTitles.length, catTitles);
     ok('순위가 없으면 "내 글 없음"을 쓰지 않는다', out.rows.every(r => r.reason.indexOf('내 글 없음') < 0), out.rows[0].reason);
   }
 
