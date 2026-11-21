@@ -720,13 +720,13 @@ function paintVideo(actions, out, ctx, ui) {
 
   const scriptBtn = h('button', { class: 'btn', type: 'button', text: '🤖 대본·자막·내레이션 만들기' });
   const renderBtn = h('button', { class: 'btn primary', type: 'button', text: '🎬 사진으로 완제품 렌더 (노트북)' });
-  const stepsBtn = h('button', { class: 'btn sm', type: 'button', text: '영상 편집 6단계 열기' });
+  const stepsBtn = h('button', { class: 'btn sm', type: 'button', text: '영상 편집 단계(제작 스텝퍼) 열기' });
 
   actions.appendChild(h('div', { class: 'row' }, scriptBtn, renderBtn));
-  actions.appendChild(h('p', { class: 'st-hint' },
-    '이 길이에 사진 ' + plan.target + '장 · 지금 ' + plan.count + '장' + (plan.enough ? '' : ' — ' + plan.missing + '장 더 올리면 완성됩니다') +
-    ' · 렌더는 1080×1920 30fps, 켄번즈(장당 3.0초 이상·자막 길이에 맞춰 늘어남), 자막 번인+내레이션 포함입니다.'));
-  actions.appendChild(h('p', { class: 'st-hint', text: '영상이 이미 있으면 아래 6단계(제작 스텝퍼)에서 올리고 컷·자막·마무리를 하세요. 그 화면은 그대로 살아 있습니다.' }));
+  actions.appendChild(h('div', { class: 'st-hint' },
+    h('span', { text: '이 길이에 사진 ' + plan.target + '장 · 지금 ' + plan.count + '장 — ' + (plan.enough ? (plan.meets_target ? '충분합니다' : plan.missing + '장 더 있으면 더 좋습니다') : ('최소 ' + plan.min + '장이 필요합니다(' + (plan.min - plan.count) + '장 더)')) }),
+    h('span', { text: ' · 렌더는 1080×1920 30fps, 켄번즈(장당 3.0초 이상·자막 길이에 맞춰 늘어남), 자막 번인+내레이션 포함입니다.' })));
+  actions.appendChild(h('p', { class: 'st-hint', text: '영상이 이미 있으면 아래 [영상 편집 단계]에서 올리고 컷·자막·마무리를 하세요. 그 화면(제작 스텝퍼)은 그대로 살아 있습니다.' }));
 
   const stepsHost = h('div', { class: 'st-steps-host' });
   stepsHost.hidden = true;
