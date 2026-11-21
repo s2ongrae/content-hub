@@ -963,6 +963,12 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('시드: 안전영역·자막 수치가 노트북과 같다', seed.common.safe_zone.top === 240 && seed.common.caption.cpl === 13 && seed.common.caption.size === 68);
     ok('videoTemplate 의 id 목록이 시드와 같다', JSON.stringify(VT.TEMPLATE_IDS) === JSON.stringify(['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary']));
 
+    const sr = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'video_script_rules.json'), 'utf8'));
+    ok('대본 시드: 15초 80~110자 · 30초 180~220자', sr.length['15'].min === 80 && sr.length['15'].max === 110 && sr.length['30'].min === 180 && sr.length['30'].max === 220);
+    ok('대본 시드: 첫 3초 훅 · CTA 2~3초', sr.structure.hook_seconds === 3 && sr.structure.cta_min === 2 && sr.structure.cta_max === 3);
+    ok('대본 시드: 금지어에 인생템·완벽한·최고의·가성비 갑', ['인생템', '완벽한', '최고의', '가성비 갑'].every(w => sr.banned.indexOf(w) >= 0));
+    ok('대본 시드: 톤 복제 참고가 있다', sr.tone_references.daejeon_youth.length >= 3 && /봉명동/.test(sr.tone_references.daejeon_youth[0]));
+
     const orders = fs.readFileSync(path.join(ROOT, 'gas', 'Orders.gs'), 'utf8');
     ok('GAS: 템플릿 4종을 검사하고 통과시킨다', /RENDER_TEMPLATES = \['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary'\]/.test(orders) && /out\.template = tm/.test(orders) && /out\[k\] = t/.test(orders));
     const pv = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
