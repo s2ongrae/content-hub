@@ -19,18 +19,18 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121g';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121g';
+import { buildEDL } from './yt/edl.js?v=20261121i';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121i';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery
-} from './produceLogic.js?v=20261121g';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261121g';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261121g';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint } from './videoTemplate.js?v=20261121g';
+} from './produceLogic.js?v=20261121i';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261121i';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261121i';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint } from './videoTemplate.js?v=20261121i';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;

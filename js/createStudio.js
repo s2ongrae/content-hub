@@ -15,7 +15,7 @@
  */
 
 import { produceSection } from './produceView.js?v=20261121g';
-import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261121g';
+import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261121i';
 import {
   FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
   normalizeMaterials, emptyMaterials, materialSummary, hasMaterial, factsOf, autoOrderPhotos, photoRole,
