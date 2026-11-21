@@ -11,8 +11,8 @@
  *  · 카드 payload 쓰기는 언제나 studio.formats.<format> 안으로만. 구 studio 루트는 읽기 폴백만(1줄 롤백).
  */
 
-import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261121f';
-import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261121f';
+import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261121g';
+import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261121g';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 

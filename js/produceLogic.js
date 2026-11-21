@@ -10,7 +10,7 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261121f';
+import { tcToSec } from './yt/edl.js?v=20261121g';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -475,10 +475,10 @@ export function reportIsFresh(text, sentAt) {
   return fin >= sent - 120000;
 }
 
-/** BGM 찾기 빠른 검색어 — 곡 제목이 영어라 영어 검색어로 찾는다(화면에는 한글 이름을 같이 보여 준다). */
+/** BGM 찾기 빠른 검색어 — 곡 제목·태그가 영어라 영어 한 단어로 찾는다(여러 단어는 전부 들어간 곡만 나와서 결과가 적다. 실측 2026-11-21). */
 export const BGM_QUICK_TERMS = [
-  { label: '잔잔한', q: 'calm piano' }, { label: '밝은', q: 'upbeat happy' }, { label: '로파이', q: 'lofi chill' },
-  { label: '어쿠스틱', q: 'acoustic guitar' }, { label: '신나는', q: 'energetic pop' }, { label: '시네마틱', q: 'cinematic' }
+  { label: '잔잔한', q: 'calm' }, { label: '편안한', q: 'relaxing' }, { label: '밝은', q: 'happy' }, { label: '신나는', q: 'energetic' },
+  { label: '어쿠스틱', q: 'acoustic' }, { label: '재즈', q: 'jazz' }, { label: '시네마틱', q: 'cinematic' }, { label: '칠', q: 'chill' }
 ];
 
 /** 곡 길이(초) → '3:05' */

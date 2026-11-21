@@ -19,17 +19,17 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121f';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121f';
+import { buildEDL } from './yt/edl.js?v=20261121g';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121g';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery
-} from './produceLogic.js?v=20261121f';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261121f';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261121f';
+} from './produceLogic.js?v=20261121g';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261121g';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261121g';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -1022,7 +1022,7 @@ export function produceSection(ctx) {
   function bgmFinder() {
     const m = state.make;
     const host = h('div', { class: 'pr-bgm' });
-    const input = h('input', { class: 'pr-in', type: 'text', maxlength: '40', placeholder: '찾을 말 — 영어가 잘 맞아요 (예: calm piano)', 'aria-label': 'BGM 검색어', value: bgmMem.q });
+    const input = h('input', { class: 'pr-in', type: 'text', maxlength: '40', placeholder: '찾을 말 — 영어 한 단어가 잘 맞아요 (예: calm)', 'aria-label': 'BGM 검색어', value: bgmMem.q });
     const goBtn = h('button', { class: 'btn sm primary', type: 'button', text: 'BGM 찾기' });
     const out = h('div', { class: 'pr-bgm-out', 'aria-live': 'polite' });
     const savedHost = h('div', { class: 'pr-bgm-saved' });
@@ -1030,12 +1030,12 @@ export function produceSection(ctx) {
 
     async function runSearch(q0) {
       const q = cleanBgmQuery(q0 !== undefined ? q0 : input.value);
-      if (!q) { bgmMem.msg = '찾을 말을 적어 주세요(예: calm piano).'; paintOut(); return; }
+      if (!q) { bgmMem.msg = '찾을 말을 적어 주세요(예: calm). 여러 단어는 전부 들어간 곡만 나와요.'; paintOut(); return; }
       bgmMem.q = q; input.value = q; bgmMem.busy = true; bgmMem.msg = '찾는 중…'; stopBgmAudio(); paintOut();
       try {
         const res = await api.post('bgm_search', { q });
         bgmMem.res = (res && res.data) || null;
-        bgmMem.msg = bgmMem.res && bgmMem.res.items && bgmMem.res.items.length ? '' : '조건에 맞는 곡이 없어요 — 다른 말로 찾아 보세요.';
+        bgmMem.msg = bgmMem.res && bgmMem.res.items && bgmMem.res.items.length ? '' : '조건에 맞는 곡이 없어요 — 단어를 줄이거나(예: calm) 위의 빠른 버튼을 눌러 보세요.';
       } catch (err) { bgmMem.msg = '찾지 못했어요 — ' + bgmErrText(err); }
       bgmMem.busy = false;
       if (alive()) paintOut();

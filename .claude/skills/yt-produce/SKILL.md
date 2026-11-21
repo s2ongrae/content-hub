@@ -11,6 +11,7 @@ description: 촬영 원본을 클린 마스터(`{content_id}_clean.mp4`)와 SRT 
 
 > **2026-11-20 개정 — 기본 경로는 허브다(표준 v3 §6).** 영상 제작은 손 명령이 아니라 **콘텐츠 허브 카드의 '제작' 탭**으로 한다(사용자 결정: 캡컷 하이브리드 폐지).
 > ① 영상 올리기(드라이브) → ③ 컷 목록 → ④ 클린 마스터 오더 → ⑤ 자막 초안 오더(`stage:'transcribe'`, Whisper) → **사람이 허브에서 고쳐 확정** → ⑥ 마무리 오더(`stage:'finish'`: 확정 자막 굽기·AI 안내·BGM·-14 LUFS·커버 → `{id}_finish.mp4`) → ⑦ 사람 확인 → 발행은 사람.
+> BGM 은 ⑥ 에서 '무료 BGM 찾기'(CC0·퍼블릭 도메인·CC BY 만)로 고르고, CC BY 곡은 출처 문구를 영상 설명란에 넣는다(허브가 문구를 만들어 준다).
 > 오더는 전부 포털 오더함에서 **사람이 승인**해야 노트북(`hub-agent/notebook-agent/lib/render.js`·`render_stages.js`)이 실행한다. 이 문서의 아래 명령은 노트북이 내부에서 쓰는 것과 같은 도구이고, 허브가 없을 때·점검할 때만 손으로 쓴다. 아래 "캡컷" 언급은 허브 이전 규칙이다.
 
 출처: affaan-m/ECC `video-editing`(작업 층 구분) · remotion-dev/skills(자막 데이터 개념) · Whisper-TikTok(Apache-2.0, 구조만 참고). 코드를 가져다 붙이지 않았다.
