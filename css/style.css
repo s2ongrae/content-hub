@@ -1437,3 +1437,40 @@ a.cmp-card:hover { border-color: var(--accent); }
 .pr-bgm-info strong { overflow-wrap: anywhere; }
 .pr-bgm-now { margin: 0; font-size: 13px; color: var(--tx); overflow-wrap: anywhere; }
 .pr-credit { display: block; margin: 6px 0; padding: 6px 8px; border-radius: 6px; background: var(--surface-2); color: var(--tx); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ───────────── 오늘의 추천 제목 10 (#/blog, 2026-11-21) ───────────── */
+.seo-panel h3 { flex-wrap: wrap; gap: 6px; }
+.seo-list { gap: 6px; }
+.seo-row { align-items: flex-start; gap: 8px; }
+.seo-row .l-main { min-width: 0; }
+.seo-head { display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; }
+.seo-axis {
+  flex: 0 0 auto; font-size: 10.5px; font-weight: 800; letter-spacing: -0.2px;
+  padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--tx-2); background: var(--surface-2); margin-top: 1px;
+}
+.seo-axis.food { color: #ff9a4d; border-color: rgba(255, 154, 77, .35); background: rgba(255, 154, 77, .10); }
+.seo-axis.life { color: #6cc7ff; border-color: rgba(108, 199, 255, .35); background: rgba(108, 199, 255, .10); }
+.seo-axis.store { color: #9f8bff; border-color: rgba(159, 139, 255, .35); background: rgba(159, 139, 255, .10); }
+.seo-axis.cat { color: #7fe0a8; border-color: rgba(127, 224, 168, .35); background: rgba(127, 224, 168, .10); }
+.seo-title {
+  flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: 0;
+  color: inherit; font: inherit; font-size: 13.5px; font-weight: 650; line-height: 1.45;
+  overflow-wrap: anywhere; cursor: pointer;
+}
+.seo-title:hover { color: var(--accent-2); text-decoration: underline; text-underline-offset: 3px; }
+.seo-row .l-sub .delta { margin-left: 0; }
+.seo-more { margin-top: 8px; }
+.seo-more > summary {
+  cursor: pointer; font-size: 12.5px; color: var(--tx-2); padding: 8px 10px;
+  border: 1px dashed var(--line); border-radius: 10px; list-style: none;
+}
+.seo-more > summary::-webkit-details-marker { display: none; }
+.seo-more > summary::before { content: '▾ '; color: var(--tx-3); }
+.seo-more[open] > summary::before { content: '▴ '; }
+.seo-more .seo-list { margin-top: 8px; }
+.delta.down { color: var(--warn); }
+@media (max-width: 699px) {
+  .seo-row { flex-direction: column; align-items: stretch; }
+  .seo-row .l-side { justify-content: flex-end; }
+}

@@ -22,8 +22,9 @@
  *   · insight_shopping : 쇼핑 분야(카테고리 코드) 최대 3개 → 분야별 검색 클릭 추이
  *   · insight_budget   : 오늘·이번 달 사용량/천장 (화면 표시용, API 호출 없음)
  *
- * 읽는 법 — ratio 는 절대 검색량이 아니다. 같은 요청 안에서 가장 높았던 구간을 100으로 둔 상대값이다.
- *   그래서 서로 다른 요청(따로 부른 키워드)의 숫자를 나란히 비교하면 안 된다. 비교할 것은 한 요청에 묶어 보낸다.
+ * 읽는 법 — ratio 는 절대 검색량이 아니다. **주제어(묶음)마다** 그 묶음의 가장 높았던 구간을 100으로 둔 상대값이다
+ *   (공식 문서: "구간별 결과에서 가장 큰 값을 100으로 설정한 상댓값"). 그래서 100·78 같은 크기는 키워드끼리 비교할 수 없다.
+ *   비교할 수 있는 것은 모양뿐이다 — 최근 4구간 vs 직전 4구간 증감률, 성수기 여부.
  */
 
 const INSIGHT_ENDPOINTS_ = {
@@ -380,7 +381,7 @@ function handleInsightTrend_(ss, payload, ctx) {
   const out = {
     start_date: body.startDate, end_date: body.endDate, time_unit: body.timeUnit,
     groups: results, requested: groups.length,
-    note: '숫자는 절대 검색량이 아니라 이 요청 안에서 가장 높았던 구간을 100으로 둔 상대값입니다. 다른 요청과 나란히 비교하지 마세요.',
+    note: '숫자는 절대 검색량이 아니라 주제어마다 그 묶음의 최고점을 100으로 둔 상대값입니다. 키워드끼리 크기를 비교하지 말고 증감·계절만 보세요.',
     cached: false, api_mode: got.mode,
     budget: insightBudgetOf_('trend')
   };

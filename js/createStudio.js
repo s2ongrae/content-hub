@@ -25,6 +25,7 @@ import {
 } from './studioLogic.js?v=20261121g';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261121g';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261121g';
+import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261121a';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';
@@ -191,6 +192,12 @@ function renderFormat(main, ctx, format) {
       h('p', { class: 'st-dim', text: mem.cardId ? '카드 ' + mem.cardId + ' 에 이어서 담습니다' : '재료만 넣으면 브라우저에서 바로, AI 는 필요할 때만' })));
   main.appendChild(head);
 
+  /* ⓪ SEO 추천 제목에서 넘어온 경우 — 제목은 이미 정해졌고, 채울 것만 알려 준다 */
+  if (format === 'blog') {
+    const seed = peekSeoSeed();
+    if (seed) main.appendChild(seoSeedPanel(ctx, seed, () => saveMaterials()));
+  }
+
   /* ① 재료(접이식) */
   const summary = h('span', { class: 'st-summary', text: materialSummary(m) });
   const body = h('div', { class: 'st-mat-body' });
@@ -225,6 +232,53 @@ function renderFormat(main, ctx, format) {
   /* 카드 줄 — 공통 */
   actions.appendChild(cardRow(ctx, format, ui));
   return null;
+}
+
+/* ────────────────────────── SEO 추천 제목에서 넘어옴 ────────────────────────── */
+
+/** 오늘의 추천 제목에서 넘어왔을 때 그 제목 — 없으면 빈 값(3안을 새로 만든다). */
+function seoTitleOf() {
+  const seed = peekSeoSeed();
+  return seed ? seed.title : '';
+}
+
+/** 제목을 그대로 쓰고, 메모 칸에 축별 뼈대를 넣어 준다(내가 쓴 메모는 건드리지 않는다). */
+function seoSeedPanel(ctx, seed, onFill) {
+  const { h, toast } = ctx;
+  const m = mem.materials;
+  const hasMemo = !!String(m.content.memo || '').trim();
+
+  const fill = h('button', {
+    class: 'btn xs', type: 'button',
+    text: hasMemo ? '뼈대 덧붙이기' : '메모 뼈대 넣기',
+    title: '지금 메모에 5줄 질문을 넣습니다 — 답만 적으면 2줄 호흡 초안이 나와요',
+    onclick: () => {
+      const sk = String(seed.skeleton || '').trim();
+      if (!sk) { toast('이 축에는 뼈대가 없습니다', 'err'); return; }
+      m.content.memo = hasMemo ? (String(m.content.memo).replace(/\s+$/, '') + '\n\n' + sk) : sk;
+      if (m.concept && seed.axis === 'food') m.concept.kind = 'review';
+      if (m.concept && seed.axis === 'life') m.concept.kind = 'info';
+      if (m.concept && seed.axis === 'store') m.concept.kind = 'info';
+      onFill();
+      toast('메모에 뼈대를 넣었습니다 — 내 말로 고쳐 쓰면 됩니다', 'ok');
+      ctx.renderRoute();
+    }
+  });
+
+  const close = h('button', {
+    class: 'btn xs ghost', type: 'button', text: '추천 접기',
+    onclick: () => { clearSeoSeed(); ctx.renderRoute(); }
+  });
+
+  return h('div', { class: 'panel st-seed' },
+    h('h3', null, '오늘의 추천 제목에서 시작', h('span', { class: 'tag', text: seed.axis_label || '추천' })),
+    h('p', { class: 'st-seed-title', text: seed.title }),
+    h('p', { class: 'st-hint',
+      text: '이 제목이 [바로 만들기]의 1안이 됩니다'
+        + (seed.keyword ? ' · 검색어 ' + seed.keyword : '')
+        + (seed.day ? ' · ' + seed.day.slice(5).replace('-', '/') + ' 추천' : '') }),
+    h('p', { class: 'st-hint', text: '본문은 내가 쓴 메모만 씁니다. 제목만으로 본문을 지어내지 않습니다 — 사진·메모를 넣어야 초안이 나와요.' }),
+    h('div', { class: 'row', style: 'margin-top:8px;gap:6px;flex-wrap:wrap' }, fill, close));
 }
 
 function parseCardParam() {
@@ -614,7 +668,7 @@ function paintBlog(actions, out, ctx, ui) {
   free.addEventListener('click', async () => {
     free.disabled = true;
     try {
-      const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [] }));
+      const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [], title: seoTitleOf() }));
       mem.kit = kit;
       ui.out.replaceChildren();
       paintKit(out, ctx, kit, ui);
@@ -643,7 +697,7 @@ function paintBlog(actions, out, ctx, ui) {
           const draft = (st.formats.blog && (st.formats.blog.draft || st.formats.blog.ai)) || null;
           if (!draft) { toast('카드에 초안이 아직 없습니다 — 잠시 뒤 [결과 새로고침]을 눌러 주세요', 'err'); return; }
           mem.draft = draft;
-          const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [] }));
+          const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [], title: seoTitleOf() }));
           mem.kit = kit;
           paintKit(out, ctx, kit, ui, draft);
           toast('AI 초안을 카드에서 가져왔습니다', 'ok');

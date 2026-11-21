@@ -205,6 +205,9 @@ export class ContentHubApi {
   insightShopping(data) { return this.post('insight_shopping', data, null, { timeoutMs: 60000 }); }
   insightBudget() { return this.post('insight_budget', {}); }
 
+  /* 오늘의 블로그 제목 10 (gas/BlogSeo.gs) — 처음 부를 때만 데이터랩·검색을 부르고, 같은 날은 저장된 줄을 준다. */
+  blogSeoTitles(data = {}) { return this.post('blog_seo_titles', data, null, { timeoutMs: 120000 }); }
+
   recordMetrics(data, action) {
     return this.post('record_metrics', data, action ? action.key : null);
   }
