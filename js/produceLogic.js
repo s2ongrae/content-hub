@@ -10,8 +10,8 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261121i';
-import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261121i';
+import { tcToSec } from './yt/edl.js?v=20261121j';
+import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261121j';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -87,7 +87,7 @@ export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', b
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', outro: '' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', outro: '', hook_pos: '', hook_hold: '' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -116,6 +116,8 @@ export function normalizeState(raw) {
   ['title', 'badge', 'hook', 'outro'].forEach((k) => {
     if (typeof raw[k] === 'string') s[k] = raw[k].slice(0, k === 'title' ? 40 : (k === 'badge' ? 14 : (k === 'hook' ? 16 : 24)));
   });
+  s.hook_pos = raw.hook_pos === 'center' || raw.hook_pos === 'top' ? raw.hook_pos : '';
+  s.hook_hold = typeof raw.hook_hold === 'number' && raw.hook_hold >= 1 && raw.hook_hold <= 4 ? Math.round(raw.hook_hold * 10) / 10 : '';
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
@@ -280,7 +282,7 @@ export function normalizeCues(raw, label, opts) {
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, outro }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, outro, hookPos, hookHold }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -333,7 +335,7 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   if (narrate === true) payload.narrate = true;
   if (voice) payload.voice = String(voice);
   // 채널 시그니처 템플릿 — template 은 'auto' 도 늘 싣는다(노트북이 브랜드 기본을 고른다).
-  const tf = buildTemplateFields({ template, title, badge, hook, outro });
+  const tf = buildTemplateFields({ template, title, badge, hook, outro, hookPos, hookHold });
   errors.push(...tf.errors);
   if (!tf.ok) return { ok: false, errors };
   if (tf.ok) Object.assign(payload, tf.fields);

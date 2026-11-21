@@ -9,6 +9,10 @@ export const TEMPLATE_LABELS = {
   daejeon_youth: '대전 청년',
   ppiyak_kimmary: '삐약 김메리'
 };
+export const HOOK_POSITIONS = [{ id: 'center', label: '중앙' }, { id: 'top', label: '상단' }];
+export const HOOK_HOLDS = [1.5, 2.0, 2.4, 3.0];
+export const DEFAULT_HOOK_POS = 'center';
+export const DEFAULT_HOOK_HOLD = 2.4;
 export const TEMPLATE_LIMITS = { title: 40, badge: 14, hook: 16, outro: 24 };
 // 트랙별 기본값 — '자동'을 골랐을 때 화면에 미리 보여 준다.
 export const TEMPLATE_DEFAULTS = {
@@ -28,7 +32,7 @@ export function trimTemplateText(value, max) {
  * 오더에 실을 템플릿 칸. template 은 항상 싣는다('auto' 포함) — 노트북이 브랜드 기본을 고른다.
  * 반환: { ok, fields, errors }
  */
-export function buildTemplateFields({ template, title, badge, hook, outro } = {}) {
+export function buildTemplateFields({ template, title, badge, hook, outro, hookPos, hookHold } = {}) {
   const errors = [];
   const t = String(template == null || template === '' ? 'auto' : template).trim().toLowerCase();
   if (TEMPLATE_IDS.indexOf(t) < 0) errors.push('템플릿은 ' + TEMPLATE_IDS.join(' · ') + ' 중 하나여야 해요');
@@ -39,6 +43,16 @@ export function buildTemplateFields({ template, title, badge, hook, outro } = {}
       const v = trimTemplateText(vals[k], TEMPLATE_LIMITS[k]);
       if (v) fields[k] = v;
     });
+    const pos = String(hookPos == null ? '' : hookPos).trim().toLowerCase();
+    if (pos) {
+      if (HOOK_POSITIONS.some((p) => p.id === pos)) fields.hook_pos = pos;
+      else errors.push('훅 위치는 중앙·상단 중 하나여야 해요');
+    }
+    const holdRaw = hookHold == null ? '' : String(hookHold).trim();
+    if (holdRaw !== '') {
+      const n = Number(holdRaw);
+      if (Number.isFinite(n)) fields.hook_hold = Math.round(Math.min(4, Math.max(1, n)) * 10) / 10;
+    }
   }
   return { ok: errors.length === 0, fields, errors };
 }
