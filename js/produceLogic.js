@@ -10,8 +10,8 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261121j';
-import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261121j';
+import { tcToSec } from './yt/edl.js?v=20261121l';
+import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261121l';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -487,6 +487,9 @@ export function reportIsFresh(text, sentAt) {
   if (!Number.isFinite(fin) || !Number.isFinite(sent)) return true;
   return fin >= sent - 120000;
 }
+
+/** 허브에 올라온 결과 파일(노트북이 올린 최종 영상·커버) 이름 규칙 — gas/Result.gs 와 같다. */
+export const RESULT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(mp4|jpg)$/;
 
 /** BGM 찾기 빠른 검색어 — 곡 제목·태그가 영어라 영어 한 단어로 찾는다(여러 단어는 전부 들어간 곡만 나와서 결과가 적다. 실측 2026-11-21). */
 export const BGM_QUICK_TERMS = [

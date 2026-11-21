@@ -20,7 +20,7 @@ import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderCreateStudio } from './createStudio.js?v=20261121k';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261121h';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
-import { produceSection } from './produceView.js?v=20261121k';
+import { produceSection } from './produceView.js?v=20261121l';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 

@@ -528,6 +528,15 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('미리듣기용 오디오는 Jamendo 저장소만 허용(CSP media-src) · 그 밖의 주소는 열지 않는다', /media-src 'self' blob: https:\/\/\*\.storage\.jamendo\.com;/.test(idxHtml) && !/media-src[^;]*\*[^.]/.test(idxHtml.replace(/https:\/\/\*\.storage\.jamendo\.com/, '')));
     ok('BGM 찾기 화면: 검색·미리듣기·고르기·보관함·출처 문구 복사, innerHTML 없음', /api\.post\('bgm_search'/.test(pvSrc) && /api\.post\('bgm_pick'/.test(pvSrc) && /api\.post\('bgm_list'/.test(pvSrc) && /api\.post\('bgm_delete'/.test(pvSrc) && /출처 문구 복사/.test(pvSrc) && /미리듣기/.test(pvSrc) && !/innerHTML/.test(pvSrc));
     ok('서버가 준 곡 이름이 BGM 이름 규칙에 맞을 때만 쓴다', /if \(!BGM_NAME_RE\.test\(name\)\) throw/.test(pvSrc));
+    /* ── 만든 파일 받기(④·⑥) ── */
+    const resultGas = fs.readFileSync(path.join(ROOT, 'gas', 'Result.gs'), 'utf8');
+    const gasRe = (resultGas.match(/const RESULT_NAME_RE = (\/.*\/);/) || [])[1];
+    ok('결과 파일 이름 규칙은 화면·서버(Result.gs)가 같다', !!gasRe && gasRe === String(L.RESULT_NAME_RE), [gasRe, String(L.RESULT_NAME_RE)]);
+    ok('결과 파일 이름: 영문·숫자·._- 의 mp4·jpg 만', ['KM-20261121-001_finish.mp4', 'a.jpg', 'DY-1_cover.jpg'].every(n => L.RESULT_NAME_RE.test(n)) && ['../x.mp4', 'a/b.mp4', 'x.mov', 'x.png', '.hid.mp4', '한글.mp4', 'x.mp4 ', ''].every(n => !L.RESULT_NAME_RE.test(n)));
+    ok('만든 파일 화면: 목록·조각 받기·지우기·내려받기·여기서 보기, innerHTML 없음', /api\.post\('result_list'/.test(pvSrc) && /api\.post\('result_fetch'/.test(pvSrc) && /api\.post\('result_delete'/.test(pvSrc) && /내려받기/.test(pvSrc) && /여기서 보기/.test(pvSrc) && /a\.download = it\.name/.test(pvSrc) && !/innerHTML/.test(pvSrc));
+    ok('허브가 준 이름이 규칙에 맞는 파일만 보여 준다 · 받은 크기가 목록과 다르면 실패', /RESULT_NAME_RE\.test\(String\(x\.name\)\)/.test(pvSrc) && /if \(total !== it\.size\) throw/.test(pvSrc));
+    ok('④ 결과와 ⑥ 마무리 결과에 만든 파일 상자가 붙는다', (pvSrc.match(/box\.appendChild\(resultFiles\(\)\)/g) || []).length === 2);
+    ok('카드를 바꾸면 받아 둔 임시 주소를 해제한다(revokeObjectURL)', /resultMem\.id !== contentId\) resultReset\(\)/.test(pvSrc) && /URL\.revokeObjectURL/.test(pvSrc));
     ok('produceView 가 srtRules·produceLogic 을 버전 쿼리로 부른다', /from '\.\/srtRules\.js\?v=\d+[a-z]'/.test(pvSrc));
 
     /* ── 화면 스모크: 가짜 DOM 으로 produceSection 을 그려 7개 단계를 전부 열어 본다 ──
