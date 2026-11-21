@@ -24,8 +24,8 @@
  * 화면은 createElement/textContent 만 쓴다(CSP — HTML 문자열 금지).
  */
 
-import { getAnalytics } from './analyticsView.js?v=20261121q';
-import { currentRows } from './channelView.js?v=20261121q';
+import { getAnalytics, waitAnalytics } from './analyticsView.js?v=20261121r';
+import { currentRows } from './channelView.js?v=20261121r';
 
 /* ───────────── 기준값(우리 기준) ───────────── */
 
@@ -279,14 +279,10 @@ const metaCache = { at: 0, map: {}, loading: false };
 const META_TTL_MS = 5 * 60 * 1000;
 const MAX_META_IDS = 200;
 
-const sleep = (ms) => new Promise((res) => { setTimeout(res, ms); });
-
-/** 자동 수집 캐시가 '지금 불러오는 중'이면 끝날 때까지 조금 기다린다(두 패널이 같이 부른다). */
+/** 자동 수집 캐시가 '지금 불러오는 중'이면 끝날 때까지 조금 기다린다(다른 패널이 같이 부른다). */
 async function readyAnalytics(api, brand) {
   const cache = await getAnalytics(api, brand);
-  if (!cache || !cache.loading) return cache;
-  const t0 = Date.now();
-  while (cache.loading && Date.now() - t0 < 8000) await sleep(150);
+  if (cache && cache.loading) await waitAnalytics();
   return cache;
 }
 

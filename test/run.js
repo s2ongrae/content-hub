@@ -1319,6 +1319,9 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('#/perf 전체 탭이 진단 패널을 부른다', /renderDiagnosisPanel\(dxHost, ctx, rows\)/.test(pfv) && /from '\.\/perfDiagnosis\.js/.test(pfv));
     ok('자동 수집은 노출·시청시간·평균 시청률을 버리지 않는다', /impressions: n\(r\.impressions\)/.test(fs.readFileSync(path.join(ROOT, 'js', 'analyticsView.js'), 'utf8'))
       && /avg_view_pct: n\(r\.avg_view_pct\)/.test(fs.readFileSync(path.join(ROOT, 'js', 'analyticsView.js'), 'utf8')));
+    /* 다른 화면이 먼저 불러오는 중일 때 '0건'을 그리지 않는다(숫자와 0건이 같이 보이던 것) */
+    const avsrc = fs.readFileSync(path.join(ROOT, 'js', 'analyticsView.js'), 'utf8');
+    ok('이미 불러오는 중이면 기다렸다 다시 그린다(0건 오표시 방지)', /if \(stale\) \{/.test(avsrc) && /cache\.loading \? waitAnalytics\(\)/.test(avsrc) && /export function waitAnalytics/.test(avsrc));
   } catch (err) {
     ok('쇼츠 3지표 진단 시험', false, (err && err.stack) || err);
   }

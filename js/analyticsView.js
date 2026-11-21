@@ -74,6 +74,19 @@ export async function getAnalytics(api, brand, maxAgeMs) {
   return loadAnalytics(api, brand);
 }
 
+/** 이미 도는 불러오기가 끝날 때까지 기다린다(최대 8초). 그 뒤 cache 를 그대로 돌려준다. */
+export function waitAnalytics(maxMs) {
+  const limit = Number(maxMs) || 8000;
+  const t0 = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (!cache.loading || Date.now() - t0 > limit) { resolve(cache); return; }
+      setTimeout(tick, 150);
+    };
+    tick();
+  });
+}
+
 function normalizeRow(r) {
   const n = (v) => (v == null || v === '' || Number.isNaN(Number(v))) ? 0 : Number(v);
   return {
@@ -226,11 +239,14 @@ export function renderAnalyticsPanel(main, ctx) {
     return panel;
   }
 
-  /* 첫 진입·60초 지났으면 한 번 불러오고 다시 그린다(무한 루프 방지: loading 플래그). */
+  /* 첫 진입·60초 지났으면 한 번 불러오고 다시 그린다(무한 루프 방지: loading 플래그).
+     2026-11-21: 다른 화면(앱 새로고침·진단 카드)이 이미 불러오는 중일 때도 '0건'을 그리지 않고
+     그 불러오기가 끝나기를 기다렸다가 다시 그린다 — 같은 화면에서 숫자와 0건이 같이 보이던 것을 막는다. */
   const stale = cache.brand !== brand || (Date.now() - cache.at) > STALE_MS;
-  if (stale && !cache.loading) {
+  if (stale) {
     panel.appendChild(h('p', { class: 'hint', text: '자동 수집분을 불러오는 중…' }));
-    loadAnalytics(api, brand).then(() => {
+    const done = cache.loading ? waitAnalytics() : loadAnalytics(api, brand);
+    done.then(() => {
       if (typeof ctx.renderRoute === 'function') ctx.renderRoute();
     });
     panel.appendChild(guidePanel(h));

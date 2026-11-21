@@ -17,9 +17,9 @@
  *  · 리프레시: D+14 검색유입이 D+7의 70% 이하로 떨어짐.
  */
 
-import { renderAnalyticsPanel } from './analyticsView.js?v=20261121q';
-import { renderChannelView } from './channelView.js?v=20261121q';
-import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261121q';
+import { renderAnalyticsPanel } from './analyticsView.js?v=20261121r';
+import { renderChannelView } from './channelView.js?v=20261121r';
+import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261121r';
 import { trackChannelsOf } from './trackChannels.js?v=20261119o';
 
 const PERF_CHANNELS = ['blog', 'shorts', 'reels', 'clip', 'daangn'];
