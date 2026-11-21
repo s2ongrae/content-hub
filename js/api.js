@@ -200,6 +200,11 @@ export class ContentHubApi {
   blogPostBody(data) { return this.post('blog_post_body', data, null, { timeoutMs: 45000 }); }
   blogRankCheck(data) { return this.post('blog_rank_check', data, null, { timeoutMs: 90000 }); }
 
+  /* 네이버 데이터랩 (gas/Insight.gs) — 검색어 트렌드·쇼핑 인사이트. 서버가 자체 일·월 천장을 지킨다. */
+  insightTrend(data) { return this.post('insight_trend', data, null, { timeoutMs: 60000 }); }
+  insightShopping(data) { return this.post('insight_shopping', data, null, { timeoutMs: 60000 }); }
+  insightBudget() { return this.post('insight_budget', {}); }
+
   recordMetrics(data, action) {
     return this.post('record_metrics', data, action ? action.key : null);
   }

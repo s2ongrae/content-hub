@@ -54,6 +54,7 @@
 | 5 | `Notify.gs` | [`gas/Notify.gs`](gas/Notify.gs) |
 | 6 | `Onboarding.gs` | [`gas/Onboarding.gs`](gas/Onboarding.gs) |
 | 7 | `Orders.gs` | [`gas/Orders.gs`](gas/Orders.gs) — 원스톱 만들기 화면의 [📁 드라이브 폴더 읽기]·[🤖 노트북에 오더] |
+| 8 | `Insight.gs` | [`gas/Insight.gs`](gas/Insight.gs) — #/blog 의 **키워드 트렌드**(네이버 데이터랩). 일·월 천장과 12시간 캐시가 여기 있습니다 |
 
 각 파일 오른쪽 위 **⋯ → 다운로드**로 받은 파일을 열어 전체 선택 · 복사해도 됩니다.
 저장 후 시트로 돌아가 **새로고침(F5)** 하면 상단에 **ContentHub OS** 메뉴가 생깁니다.
