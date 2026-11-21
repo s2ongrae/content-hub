@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "updated_at": "2026-11-21",
-  "note": "대전 청년 영상 템플릿 — 허브 화면·노트북 렌더(lib/template.js)·GAS 검증이 같은 수치를 본다. 확정안은 콘텐츠 허브 제미니 고정방(2026-11-21).",
+  "note": "대전 청년 영상 템플릿 — 허브 화면·노트북 렌더(lib/template.js)·GAS 검증이 같은 수치를 본다. 확정안은 콘텐츠 허브 제미니 고정방(2026-11-21). 오프닝 훅은 화면 가운데(y 중심 860, 박스 높이 144)에 2.4초 유지 후 제목이 2.4~5.0초에 들어온다.",
   "common": {
     "resolution": "1080x1920",
     "fps": 30,
@@ -11,7 +11,7 @@
     "font": "Pretendard",
     "caption": { "size": 68, "cpl": 13, "lines": 2, "margin_v": 501, "outline": 3, "shadow": 1, "fade": [80, 60] },
     "punch": { "size": 76, "pop_ms": 100 },
-    "hook": { "seconds": 1.5, "size": 96 },
+    "hook": { "pos": "center", "hold_s": 2.4, "y_center": 860, "y_top": 470, "size": 96, "box_pad": 24, "max_box_w": 880, "min_size": 60, "title_hold_s": 2.6 },
     "header": { "hold_until": 3.5, "title_size": 80, "title_cpl": 10, "badge_size": 48, "badge_height": 78, "slim_size": 32, "slim_height": 58, "y": 244, "x": 100 },
     "outro": { "seconds": 1.2, "size": 40, "underline": true },
     "tts": { "hype": { "rate": "+20%", "pitch": "+7Hz", "volume": "+12%" }, "calm": { "rate": "+8%", "pitch": "+0Hz", "volume": "+0%" } },
