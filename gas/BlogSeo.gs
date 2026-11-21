@@ -114,8 +114,9 @@ function blogSeoSheet_(ss) {
 }
 
 function blogSeoRowsOfDay_(ss, day) {
+  // 시트는 '2026-11-21' 문자열을 Date 로 바꿔 돌려줄 때가 있다 → 같은 키로 맞춘다(dayKey_, Blog.gs).
   return readSheetAsObjects_(ss, BLOG_SEO_SHEET_)
-    .filter(function (r) { return String(r.day) === day && String(r.title) !== ''; })
+    .filter(function (r) { return dayKey_(r.day) === day && String(r.title) !== ''; })
     .sort(function (a, b) { return (Number(a.rank) || 99) - (Number(b.rank) || 99); });
 }
 
@@ -129,7 +130,7 @@ function blogSeoSave_(ss, day, rows) {
       const values = sheet.getRange(1, 1, last, BLOG_SEO_HEAD_.length).getValues();
       for (let i = 1; i < values.length; i++) {
         const row = values[i];
-        if (String(row[0]) === day) continue;
+        if (dayKey_(row[0]) === day) continue;
         if (String(row.join('')).replace(/\s/g, '') === '') continue;
         kept.push(row);
       }
