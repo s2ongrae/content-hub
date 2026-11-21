@@ -913,7 +913,10 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       time_unit: 'week', start_date: '2025-11-20', end_date: '2026-11-19',
       groups: [{ title: '대전 맛집', keywords: ['대전 맛집'], delta_pct: 100, latest: 40, peak: 40, recent4: 40, prev4: 20, series: [{ period: 'p', ratio: 40 }] }]
     });
-    eq('응답 → 화면 줄', rows.length, 1);
+    ok('응답 → 화면 줄', rows.length === 1);
+    const flat = T.trendRows({ groups: [{ title: '대전 봉명동', delta_pct: 0, latest: 1, peak: 1, trend: '비슷함', season: '성수기', series: [{ period: 'p', ratio: 1 }] }] });
+    eq('작은 말(최고 10 미만)은 서버가 성수기라 해도 화면은 표본 적음', flat[0].trend, '표본 적음');
+    eq('그때는 뱀지를 다지 않는다', flat[0].season, '');
     eq('줄의 판정 단어', rows[0].trend, '오르는 중');
     eq('줄의 뱃지', rows[0].season, '성수기');
     eq('예산 문구', T.budgetText({ used_day: 3, cap_day: 200, used_month: 12, cap_month: 2000 }), '오늘 3/200회 · 이번 달 12/2,000회');

@@ -14,7 +14,7 @@
  * 렌더링은 h()(createElement + textContent)만 쓴다.
  */
 import { lintBlog, loadLintRules } from './blogLint.js?v=20261118';
-import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261121a';
+import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261121h';
 
 const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것' };
 

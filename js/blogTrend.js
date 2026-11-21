@@ -67,18 +67,25 @@ export function sparkBars(series, count = 12) {
 /** 응답(groups) → 화면 줄 */
 export function trendRows(data) {
   const groups = (data && Array.isArray(data.groups)) ? data.groups : [];
-  return groups.map((g) => ({
-    title: String(g.title || ''),
-    keywords: Array.isArray(g.keywords) ? g.keywords : [],
-    delta: g.delta_pct == null ? null : Number(g.delta_pct),
-    delta_text: deltaText(g.delta_pct),
-    trend: g.trend || trendWord(g.delta_pct),
-    season: g.season || seasonWord(g.latest, g.peak),
-    latest: g.latest == null ? null : Number(g.latest),
-    peak: g.peak == null ? null : Number(g.peak),
-    recent4: g.recent4 == null ? null : Number(g.recent4),
-    bars: sparkBars(g.series)
-  }));
+  return groups.map((g) => {
+    const latest = g.latest == null ? null : Number(g.latest);
+    const peak = g.peak == null ? null : Number(g.peak);
+    // 서버가 한 자리 수(상대지수 10 미만)를 '표본 적음'으로 보내지만,
+    // 예전에 배포된 서버 응답이나 캐시가 남아 있어도 화면이 같은 규칙을 지킨다.
+    const thin = peak != null && peak < 10;
+    return {
+      title: String(g.title || ''),
+      keywords: Array.isArray(g.keywords) ? g.keywords : [],
+      delta: g.delta_pct == null ? null : Number(g.delta_pct),
+      delta_text: deltaText(g.delta_pct),
+      trend: thin ? '표본 적음' : (g.trend || trendWord(g.delta_pct)),
+      season: thin ? '' : (g.season || seasonWord(latest, peak)),
+      latest: latest,
+      peak: peak,
+      recent4: g.recent4 == null ? null : Number(g.recent4),
+      bars: sparkBars(g.series)
+    };
+  });
 }
 
 /** '오늘 3/200회 · 이번 달 12/2,000회' */
