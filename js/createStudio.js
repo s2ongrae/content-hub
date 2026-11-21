@@ -28,7 +28,7 @@ import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261121g';
 import { lintAiTone } from './blogAiTone.js?v=20261121';
 import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261121a';
-import { paintAiClip } from './aiClip.js?v=20261121b';
+import { paintAiClip } from './aiClip.js?v=20261121c';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';

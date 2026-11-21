@@ -16,6 +16,14 @@
     "cta_max": 3,
     "roles": ["hook", "body", "cta"]
   },
+  "hook_form": {
+    "note": "질문형 훅 70% (2026-11-21) — 무음으로 보는 시청자를 첫 1초에 글자로 잡는다. 본문 규준은 hub-agent lib/template.js·content-hub js/videoTemplate.js 한 곳에 있다.",
+    "question_ratio": 0.7,
+    "cycle": 10,
+    "question": { "min_chars": 8, "max_chars": 11, "end": "?", "example": "이 가격 실화냐?" },
+    "statement": { "note": "나머지 3편만. 정보 전달형·비교형 편에 쓴다." },
+    "hook_sub": { "max_chars": 6, "example": "끝까지 보셈", "note": "질문 바로 아래 결과 예고 한 줄. 비우면 질문만 나간다." }
+  },
   "captions": { "cpl": 13, "lines": 2, "cue_min_s": 1.2, "cue_max_s": 3.5 },
   "narration": { "chars_min": 20, "chars_max": 32, "tones": ["hype", "calm"] },
   "banned": [

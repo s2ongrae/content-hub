@@ -1072,6 +1072,31 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('GAS: 템플릿 4종을 검사하고 통과시킨다', /RENDER_TEMPLATES = \['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary'\]/.test(orders) && /out\.template = tm/.test(orders) && /out\[k\] = t/.test(orders));
     const pv = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
     ok('제작 ④ 화면에 템플릿 칸이 있다', /채널 템플릿/.test(pv) && /template: state\.template/.test(pv));
+
+    /* ── 질문형 훅 70% · 무음 보조 글자 · 첫 프레임 잠금(2026-11-21) ── */
+    ok('질문형: ? 로 끝나면 질문형(전각 ？ 포함)', VT.isQuestionHook('이 가격 실화냐?') && VT.isQuestionHook('진짜야？') && !VT.isQuestionHook('천 두 장뿐'));
+    ok('질문형 규칙: 8~11자 통과 · 규칙 값은 시드와 같다', (() => {
+      const c = VT.checkHookForm('이 가격 실화냐?');
+      const s = seed.common.hook.question;
+      return c.form === 'question' && c.chars === 9 && c.ok === true && s.ratio === 0.7 && s.min_chars === 8 && s.max_chars === 11 && VT.HOOK_QUESTION.ratio === s.ratio && VT.HOOK_QUESTION.min === s.min_chars;
+    })());
+    ok('단언형·길이 벗어남은 경고만(막지 않는다)', VT.checkHookForm('천 두 장뿐').warnings.length === 1 && VT.checkHookForm('이 가격이 진짜 이게 맞다고?').warnings.length === 1 && VT.checkHookForm('').form === 'none');
+    ok('편 번호로 10편 중 7편 질문형', [1, 2, 3, 4, 5, 6, 7].every((n) => VT.hookFormFor(n) === 'question') && [8, 9, 10].every((n) => VT.hookFormFor(n) === 'statement') && VT.hookFormFor(11) === 'question');
+    const sub = PL.buildRenderPayload(Object.assign({}, base, { template: 'daejeon_youth', hook: '이 가격 실화냐?', hookSub: '끝까지 보셈 진짜로' }));
+    ok('무음 보조 글자는 6자에서 자르고 오더에 싣는다', sub.ok && sub.payload.hook_sub === '끝까지 보셈', sub.payload && sub.payload.hook_sub);
+    ok('보조 글자 상한이 시드와 같다', seed.order_fields.hook_sub === 6 && VT.TEMPLATE_LIMITS.hook_sub === 6);
+    ok('none 템플릿이면 보조 글자도 싣지 않는다', PL.buildRenderPayload(Object.assign({}, base, { template: 'none', hookSub: '끝까지' })).payload.hook_sub === undefined);
+
+    const lock = PL.buildRenderPayload(Object.assign({}, base, { frameLock: true, frameLockImage: 'mary_front.jpg', frameLockSeconds: 0.04 }));
+    ok('첫 프레임 잠금: 켜면 frame_lock·사진·길이가 실린다', lock.ok && lock.payload.frame_lock === true && lock.payload.frame_lock_image === 'mary_front.jpg' && lock.payload.frame_lock_seconds === 0.04, lock.payload);
+    ok('첫 프레임 잠금: 끄면 사진이 와도 싣지 않는다(숨은 동작 없음)', (() => { const r = PL.buildRenderPayload(Object.assign({}, base, { frameLockImage: 'm.jpg' })); return r.ok && r.payload.frame_lock === undefined && r.payload.frame_lock_image === undefined; })());
+    ok('첫 프레임 잠금 거부: 사진 경로·확장자, 길이 범위', !PL.buildRenderPayload(Object.assign({}, base, { frameLock: true, frameLockImage: '../m.jpg' })).ok && !PL.buildRenderPayload(Object.assign({}, base, { frameLock: true, frameLockImage: 'm.gif' })).ok && !PL.buildRenderPayload(Object.assign({}, base, { frameLock: true, frameLockSeconds: 2 })).ok);
+    ok('첫 프레임 잠금: 시드 값과 같다(기본 1프레임 0.04초 · 0.02~0.5초)', seed.frame_lock.default_seconds === 0.04 && seed.frame_lock.min_seconds === PL.FRAME_LOCK_SECONDS.min && seed.frame_lock.max_seconds === PL.FRAME_LOCK_SECONDS.max);
+    const lst = PL.normalizeState({ frame_lock: true, frame_lock_image: 'mary.jpg', frame_lock_seconds: 0.2, hook_sub: '끝까지 보세요' });
+    ok('상태에 잠금·보조 글자가 남는다(새로고침해도 유지)', lst.frame_lock === true && lst.frame_lock_image === 'mary.jpg' && lst.frame_lock_seconds === 0.2 && lst.hook_sub === '끝까지 보세');
+    ok('상태의 범위 밖 잠금 길이는 버린다', PL.normalizeState({ frame_lock: true, frame_lock_seconds: 9 }).frame_lock_seconds === '');
+    ok('제작 ④ 화면에 무음 보조 글자·첫 프레임 잠금 칸이 있다', /무음 보조 글자/.test(pv) && /첫 프레임 잠금/.test(pv) && /hookSub: state\.hook_sub/.test(pv) && /frameLock: state\.frame_lock/.test(pv));
+    ok('GAS: hook_sub·frame_lock 을 검사해 넘긴다', /hook_sub: 6/.test(orders) && /out\.frame_lock = true/.test(orders) && /frame_lock_seconds 는 0\.02~0\.5/.test(orders));
   } catch (err) {
     ok('채널 영상 템플릿 시험', false, (err && err.stack) || err);
   }

@@ -392,6 +392,21 @@ console.log('\n[8h-mv] 뮤직비디오 payload (2026-11-21 Phase 1)');
   ok('거부된 뮤직비디오 오더는 큐를 부르지 않았다', A.env.fetched.length === nBeforeBad);
 }
 
+console.log('\n[8h-lock] 무음 보조 글자·첫 프레임 잠금 (2026-11-21)');
+{
+  const baseLock = { content_id: 'CH-20261121-LOCK', brand: 'daejeon_youth', inputs: ['a.mp4', 'b.mp4'] };
+  const pL = A.ctx.hubRenderPayload_(Object.assign({}, baseLock, { template: 'daejeon_youth', hook: '이 가격 실화냐?', hook_sub: '끝까지 보셈 진짜로', frame_lock: true, frame_lock_image: 'mary_front.jpg', frame_lock_seconds: 0.04 }));
+  ok('hook_sub 는 6자에서 자른다', pL.hook_sub === '끝까지 보셈', pL.hook_sub);
+  ok('frame_lock 세 칸이 payload 에 실린다', pL.frame_lock === true && pL.frame_lock_image === 'mary_front.jpg' && pL.frame_lock_seconds === 0.04, pL);
+  const offL = A.ctx.hubRenderPayload_(Object.assign({}, baseLock, { frame_lock: false, frame_lock_image: 'm.jpg' }));
+  ok('frame_lock 이 꺼져 있으면 사진을 버린다', offL.frame_lock === undefined && offL.frame_lock_image === undefined, offL);
+  const rejectL = (pl) => { try { A.ctx.hubRenderPayload_(Object.assign({}, baseLock, pl)); return false; } catch (e) { return e.code === 'ERR_VALIDATION_FAILED'; } };
+  ok('거부: frame_lock 문자열 · 사진 경로 · 사진 확장자 · 길이 범위',
+    rejectL({ frame_lock: 'yes' }) && rejectL({ frame_lock: true, frame_lock_image: '../m.jpg' }) && rejectL({ frame_lock: true, frame_lock_image: 'm.gif' }) && rejectL({ frame_lock: true, frame_lock_seconds: 2 }));
+  ok('사진 없이 잠그기만 해도 통과(잇기만 한다)', (() => { const r = A.ctx.hubRenderPayload_(Object.assign({}, baseLock, { frame_lock: true })); return r.frame_lock === true && r.frame_lock_image === undefined; })());
+  ok('hook_sub·frame_lock 이 붙고도 큐 한도(4,000자) 안', JSON.stringify(pL).length < 4000, JSON.stringify(pL).length);
+}
+
 console.log('\n[8i] content_draft — 초안 생성(LOW · 파일 안 고침)');
 const nodeCrypto = require('crypto');
 const sha = (t) => nodeCrypto.createHash('sha256').update(String(t), 'utf8').digest('hex');
