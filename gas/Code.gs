@@ -255,7 +255,11 @@ const M1_HANDLERS = {
   list_blog_stats: handleListBlogStats_,
   blog_post_body: handleBlogPostBody_,
   blog_rank_check: handleBlogRankCheck_,
-  blog_stats_ingest: handleBlogStatsIngest_
+  blog_stats_ingest: handleBlogStatsIngest_,
+  // 네이버 데이터랩 (gas/Insight.gs)
+  insight_trend: handleInsightTrend_,
+  insight_shopping: handleInsightShopping_,
+  insight_budget: handleInsightBudget_
 };
 
 function handleHealth_(ss, payload) {

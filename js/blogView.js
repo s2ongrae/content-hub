@@ -14,6 +14,7 @@
  * 렌더링은 h()(createElement + textContent)만 쓴다.
  */
 import { lintBlog, loadLintRules } from './blogLint.js?v=20261118';
+import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261121a';
 
 const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것' };
 
@@ -203,6 +204,9 @@ export function renderBlogView(main, ctx) {
 
   /* ⑤ 검색 순위 */
   main.appendChild(rankPanel(h, ctx, blog));
+
+  /* ⑤-2 키워드 트렌드 — 네이버 데이터랩 검색어 트렌드(서버가 일·월 천장을 지킨다) */
+  main.appendChild(trendPanel(h, ctx, blog));
 
   main.appendChild(setupPanel(h, blog));
 }
@@ -430,6 +434,85 @@ function rankPanel(h, ctx, blog) {
   if (chips) panel.appendChild(chips);
   panel.appendChild(h('p', { class: 'hint', style: 'margin-top:8px',
     text: '네이버 검색 API의 블로그 검색(정확도순) 기준입니다. 통합검색 화면의 스마트블록 위치와는 조금 다를 수 있어요.' }));
+  return panel;
+}
+
+/* ───────────── 키워드 트렌드 (네이버 데이터랩) ───────────── */
+
+function trendRow(h, r) {
+  const badge = r.season ? h('span', { class: 'tag', text: r.season }) : null;
+  const deltaClass = r.delta == null ? '' : r.delta > 0 ? ' up' : '';
+  const bars = r.bars.map((b) => h('i', {
+    style: 'flex:1;height:' + Math.max(6, b.pct) + '%;background:var(--accent);border-radius:2px;opacity:'
+      + (0.3 + (b.pct / 100) * 0.7),
+    title: b.period + ' · ' + b.value
+  }));
+  return h('div', { class: 'lrow trend-row', style: 'align-items:flex-start' },
+    h('div', { class: 'l-main', style: 'min-width:0' },
+      h('div', { class: 'l-title' }, r.title, ' ', badge),
+      h('div', { class: 'l-sub' },
+        h('span', { text: '최근 4주 ' + r.delta_text }),
+        h('em', { class: 'delta' + deltaClass, text: r.trend }),
+        h('span', { text: ' · 지금 ' + (r.latest == null ? '—' : r.latest) + ' / 기간 최고 ' + (r.peak == null ? '—' : r.peak) }))),
+    h('div', { style: 'display:flex;align-items:flex-end;gap:2px;height:26px;width:96px;flex:0 0 96px',
+      title: r.keywords.length ? r.keywords.join(', ') : r.title }, bars));
+}
+
+function trendPanel(h, ctx, blog) {
+  const { state, api, toast, friendlyError } = ctx;
+  const panel = h('div', { class: 'panel' },
+    h('h3', null, '키워드 트렌드', h('span', { class: 'tag', text: '네이버 데이터랩 · 12개월 주간' })));
+
+  const saved = state.blogTrend;
+  if (saved && saved.error) {
+    panel.appendChild(h('p', { class: 'hint', style: 'color:var(--warn)', text: saved.error }));
+  } else if (saved && saved.data) {
+    const rows = trendRows(saved.data);
+    const list = h('div', { class: 'list trend-list' });
+    rows.forEach((r) => list.appendChild(trendRow(h, r)));
+    panel.appendChild(list);
+    panel.appendChild(h('p', { class: 'hint', style: 'margin-top:10px',
+      text: '주간 상대지수 · ' + rangeText(saved.data)
+        + (saved.data.budget ? ' · ' + budgetText(saved.data.budget) : '')
+        + (saved.data.cached ? ' · 저장된 값(12시간 안 재사용)' : '') }));
+    panel.appendChild(h('p', { class: 'hint',
+      text: '숫자는 절대 검색량이 아니라 이 요청 안에서 가장 높았던 구간을 100으로 둔 값입니다. 다른 요청과 나란히 비교하지 마세요.' }));
+  } else {
+    panel.appendChild(h('p', { class: 'hint',
+      text: '발행 전에 지금 오르는 말인지 확인하세요. 키워드 5개까지 한 번에 묶어 비교합니다(따로 부르면 서로 비교할 수 없어요).' }));
+  }
+
+  const input = h('input', { type: 'text',
+    placeholder: '키워드를 쉼표로 (최대 5개) 예: 봉명동 냉삼, 대전 삼겹살',
+    value: state.blogTrendKeywords || (blog.keyword_hints || []).slice(0, 5).join(', ') });
+  input.addEventListener('input', () => { state.blogTrendKeywords = input.value; });
+
+  const btn = h('button', {
+    class: 'btn sm primary', type: 'button', text: '추이 보기',
+    onclick: async () => {
+      const kws = normalizeKeywords(input.value, 5);
+      if (!kws.length) { toast('키워드를 하나 이상 적어 주세요', 'err'); return; }
+      btn.disabled = true; btn.textContent = '보는 중…';
+      try {
+        const res = await api.insightTrend({
+          brand: state.brand, months: 12, unit: 'week',
+          groups: kws.map((k) => ({ name: k, keywords: [k] }))
+        });
+        state.blogTrend = { data: res.data, at: Date.now() };
+        state.blogTrendKeywords = input.value;
+      } catch (err) {
+        const own = (err && (err.code === 'ERR_INSIGHT_BUDGET' || String(err.code || '').indexOf('ERR_NAVER') === 0 || err.code === 'ERR_NO_NAVER_KEY'));
+        state.blogTrend = { error: own ? (err.message || friendlyError(err)) : (blogErrorText(err.code, err.message) || friendlyError(err)) };
+      }
+      ctx.renderRoute();
+    }
+  });
+
+  panel.appendChild(h('div', { class: 'rank-form' }, input, btn));
+  if (!state.blogTrend) {
+    panel.appendChild(h('p', { class: 'hint', style: 'margin-top:8px',
+      text: '네이버 데이터랩(무료, 월 50,000건)을 씁니다. 이 앱은 그중 하루 200건까지만 쓰도록 서버에 천장을 박아 두었습니다.' }));
+  }
   return panel;
 }
 

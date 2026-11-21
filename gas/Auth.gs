@@ -62,6 +62,11 @@ const ACTION_WHITELIST = {
   blog_post_body:       { mode: 'READ',  allowDegraded: true,  m1: true },
   blog_rank_check:      { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   blog_stats_ingest:    { mode: 'WRITE', allowDegraded: false, m1: true },   // 피클이 읽어 온 로그인 통계(조회수·검색어·유입·독자)
+  // 네이버 데이터랩 (2026-11-21, gas/Insight.gs) — 검색어 트렌드·쇼핑 인사이트. 외부 호출 → 라우터 락 없음.
+  //   자체 일·월 천장(트렌드 200/2,000 · 쇼핑 100/1,000)을 락 안에서 확인·차감하고, 넘으면 API 를 부르지 않는다.
+  insight_trend:        { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  insight_shopping:     { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  insight_budget:       { mode: 'READ',  allowDegraded: true,  m1: true },
   // 파이프라인 상태머신 (M2 — 라우터만 연결, ERR_NOT_IMPLEMENTED)
   get_ready_queue:      { mode: 'READ',  allowDegraded: true,  m1: false },
   claim_task:           { mode: 'WRITE', allowDegraded: false, m1: false },

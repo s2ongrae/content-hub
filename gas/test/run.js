@@ -127,7 +127,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Blog.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Blog.gs', 'Insight.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -1836,6 +1836,113 @@ console.log('\n[B] 백업 버그 3종 (gas/Backup.gs) — 보존 정리 · 시�
     const r2 = w.W.ctx.runIntegrityCheck_('x');
     ok('12시간 넘은 저장 상태는 버리고 처음부터(옛 문제 수가 섞이지 않는다)', r2.total_issues === 0 && r2.critical === 0, JSON.stringify(r2));
     ok('백업 상태 요약에 점검 대기 여부가 나온다', typeof w.W.ctx.getBackupStatus_().pending_integrity === 'boolean');
+  }
+}
+
+console.log('\n[13] 네이버 데이터랩 (gas/Insight.gs) — 천장·캐시·파싱');
+{
+  /* ── 키가 없으면 부르지 않고 안내한다 ── */
+  {
+    const N = loadGas();
+    const r = callHandler(N.ctx, 'handleInsightTrend_', null, { groups: [{ name: '대전 맛집', keywords: ['대전 맛집'] }] });
+    eq('키가 없으면 ERR_NO_NAVER_KEY', r.code, 'ERR_NO_NAVER_KEY');
+    eq('키가 없으면 밖으로 나가지 않는다', N.env.fetched.length, 0);
+  }
+
+  /* ── 정상 호출 · 파싱 · 캐시 ── */
+  {
+    const N = loadGas();
+    N.env.props.set('NAVER_CLIENT_ID', 'test-id');
+    N.env.props.set('NAVER_CLIENT_SECRET', 'test-secret');
+    N.env.props.set('NAVER_API_MODE', 'hub');
+    const ratios = [20, 20, 20, 20, 20, 20, 20, 20, 40, 40, 40, 40];
+    N.env.setFetchReply({
+      code: 200,
+      body: JSON.stringify({
+        startDate: '2025-11-01', endDate: '2026-11-20', timeUnit: 'week',
+        results: [{
+          title: '대전 맛집', keywords: ['대전 맛집'],
+          data: ratios.map((r, i) => ({ period: '2026-0' + (i < 9 ? 1 : 2) + '-' + pad(i + 1), ratio: r }))
+        }]
+      })
+    });
+    const r = callHandler(N.ctx, 'handleInsightTrend_', null, {
+      brand: 'daejeon_youth', months: 12, unit: 'week',
+      groups: [{ name: '대전 맛집', keywords: ['대전 맛집'] }]
+    });
+    ok('트렌드를 읽는다', r.ok, r);
+    const g = r.ok ? r.data.groups[0] : {};
+    eq('주제어 이름', g.title, '대전 맛집');
+    eq('최근 4구간 평균', g.recent4, 40);
+    eq('직전 4구간 평균', g.prev4, 20);
+    eq('증감률 +100%', g.delta_pct, 100);
+    eq('판정은 오르는 중', g.trend, '오르는 중');
+    eq('기간 최고 100 기준값', g.peak, 40);
+    eq('성수기 뱀지', g.season, '성수기');
+    ok('열두 구간을 모두 돌려준다', g.series.length === 12, g.series && g.series.length);
+    ok('HUB 주소로 부른다', N.env.fetched[0].url.indexOf('naverapihub.apigw.ntruss.com/search-trend/v1/search') > 0, N.env.fetched[0].url);
+    ok('키는 헤더로만(주소에 없음)', !/test-secret/.test(N.env.fetched[0].url) && N.env.fetched[0].opts.headers['X-NCP-APIGW-API-KEY'] === 'test-secret');
+    ok('없는 값은 0으로 세지 않고 센다 — 첫 호출은 캐시 아님', r.ok && r.data.cached === false);
+    ok('사용량을 함께 돌려준다', r.ok && r.data.budget && r.data.budget.used_day === 1 && r.data.budget.cap_day === 200, r.data && r.data.budget);
+
+    const before = N.env.fetched.length;
+    const r2 = callHandler(N.ctx, 'handleInsightTrend_', null, {
+      brand: 'daejeon_youth', months: 12, unit: 'week',
+      groups: [{ name: '대전 맛집', keywords: ['대전 맛집'] }]
+    });
+    ok('같은 요청은 캐시로 돌려준다', r2.ok && r2.data.cached === true);
+    eq('캐시면 밖으로 다시 나가지 않는다', N.env.fetched.length, before);
+    eq('캐시면 사용량도 안 늘린다', r2.ok && r2.data.budget.used_day, 1);
+
+    const b = callHandler(N.ctx, 'handleInsightBudget_', null, {});
+    ok('사용량 액션은 API 를 부르지 않는다', b.ok && N.env.fetched.length === before && b.data.trend.cap_day === 200 && b.data.trend.cap_month === 2000, b.data && b.data.trend);
+  }
+
+  /* ── 일·월 천장: 넘으면 호출 0회 ── */
+  {
+    const N = loadGas();
+    N.env.props.set('NAVER_CLIENT_ID', 'test-id');
+    N.env.props.set('NAVER_CLIENT_SECRET', 'test-secret');
+    const day = N.ctx.insightDayKey_(new N.env.Date());
+    N.env.props.set('INSIGHT_TREND_D_' + day, '200');
+    const r = callHandler(N.ctx, 'handleInsightTrend_', null, { groups: [{ name: 'a', keywords: ['a'] }] });
+    eq('일 천장에 닿으면 ERR_INSIGHT_BUDGET', r.code, 'ERR_INSIGHT_BUDGET');
+    ok('천장 메시지에 숫자가 있다', r.ok === false && /200/.test(String(r.message)), r.message);
+    eq('천장이면 네이버를 부르지 않는다', N.env.fetched.length, 0);
+
+    const N2 = loadGas();
+    N2.env.props.set('NAVER_CLIENT_ID', 'test-id');
+    N2.env.props.set('NAVER_CLIENT_SECRET', 'test-secret');
+    const day2 = N2.ctx.insightDayKey_(new N2.env.Date());
+    const month2 = N2.ctx.insightMonthKey_(new N2.env.Date());
+    N2.env.props.set('INSIGHT_TREND_M_' + month2, '2000');
+    N2.env.props.set('INSIGHT_TREND_D_' + day2, '3');
+    const r2 = callHandler(N2.ctx, 'handleInsightTrend_', null, { groups: [{ name: 'a', keywords: ['a'] }] });
+    eq('월 천장에 닿아도 ERR_INSIGHT_BUDGET', r2.code, 'ERR_INSIGHT_BUDGET');
+    eq('월 천장이면 호출 0회', N2.env.fetched.length, 0);
+  }
+
+  /* ── 401/403 은 키 문제로 알린다(창구 두 곳을 다 본다) ── */
+  {
+    const N = loadGas();
+    N.env.props.set('NAVER_CLIENT_ID', 'bad-id');
+    N.env.props.set('NAVER_CLIENT_SECRET', 'bad-secret');
+    N.env.setFetchReply({ code: 401, body: JSON.stringify({ error: { errorCode: '401', message: 'Authentication Failed' } }) });
+    const r = callHandler(N.ctx, 'handleInsightTrend_', null, { groups: [{ name: 'a', keywords: ['a'] }] });
+    eq('401 이면 ERR_NO_NAVER_KEY', r.code, 'ERR_NO_NAVER_KEY');
+    eq('자동 모드는 두 창구를 다 시도한다', N.env.fetched.length, 2);
+    ok('legacy 는 옛 주소로 간다', /openapi\.naver\.com\/v1\/datalab\/search/.test(N.env.fetched[1].url), N.env.fetched[1].url);
+  }
+
+  /* ── 입력 다듬기: 5묶음·5검색어 ── */
+  {
+    const N = loadGas();
+    const many = [];
+    for (let i = 0; i < 8; i++) many.push({ name: 'g' + i, keywords: ['k' + i + 'a', 'k' + i + 'b', 'k' + i + 'c', 'k' + i + 'd', 'k' + i + 'e', 'k' + i + 'f'] });
+    const groups = N.ctx.normalizeTrendGroups_({ groups: many });
+    eq('주제어는 5묶음까지만', groups.length, 5);
+    eq('묶음당 검색어는 5개까지만', groups[0].keywords.length, 5);
+    eq('빈 입력은 0묶음', N.ctx.normalizeTrendGroups_({ groups: [{ name: '', keywords: ['a'] }, { name: 'b', keywords: [] }] }).length, 0);
   }
 }
 

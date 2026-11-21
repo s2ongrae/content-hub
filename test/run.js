@@ -18,6 +18,7 @@ const ok = (name, cond, extra) => {
   if (cond) console.log('  ✓ ' + name);
   else { failed++; console.log('  ✗ ' + name + (extra !== undefined ? '  → ' + String(extra).slice(0, 300) : '')); }
 };
+const eq = (name, actual, expected) => ok(name, actual === expected, { actual, expected });
 
 /* ① GAS 시험 */
 console.log('[1] GAS 시험 (gas/test/run.js)');
@@ -778,6 +779,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     {
       class N {
         constructor(tag) { this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.className = ''; this._text = ''; this.value = ''; this.checked = false; this.hidden = false; this.isConnected = true; this.style = {}; }
+        getContext() { return null; }   // 가짜 캔버스 — 2D 문맥이 없으면 그리기를 스스로 포기한다(비동기 그리기에서 터지지 않게)
         set textContent(v) { this._text = String(v); this.children = []; }
         get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
         setAttribute(k, v) { this.attrs[k] = String(v); }
@@ -883,6 +885,46 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('index.html 하단 탭 이름이 "제작"', /data-route="create"[^>]*aria-label="제작 스튜디오"/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('제작 스튜디오 시험', false, (err && err.stack) || err);
+  }
+
+  /* ── 키워드 트렌드(데이터랩) 순수 계산 ── */
+  try {
+    console.log('\n[7] 키워드 트렌드 순수 계산 (js/blogTrend.js)');
+    const T = await import('file://' + path.join(ROOT, 'js', 'blogTrend.js'));
+    eq('키워드는 쉼표로 나누고 중복을 지운다', T.normalizeKeywords('봉명동 냉삼, 대전 삼겹살, 봉명동 냉삼').join('|'), '봉명동 냉삼|대전 삼겹살');
+    eq('키워드는 5개까지만', T.normalizeKeywords('a,b,c,d,e,f,g').length, 5);
+    eq('빈 값은 0개', T.normalizeKeywords('  ,  ').length, 0);
+    eq('증감 표기 +34.2%', T.deltaText(34.24), '+34.2%');
+    eq('증감 표기 −12%', T.deltaText(-12), '−12%');
+    eq('증감 0은 그대로', T.deltaText(0), '그대로');
+    eq('증감 없음은 비교 전', T.deltaText(null), '비교 전');
+    eq('오르는 중(15% 이상)', T.trendWord(15), '오르는 중');
+    eq('비슷함(경계)', T.trendWord(14.9), '비슷함');
+    eq('내리는 중', T.trendWord(-15), '내리는 중');
+    eq('성수기 판정', T.seasonWord(90, 100), '성수기');
+    eq('비수기 판정', T.seasonWord(20, 100), '비수기');
+    eq('중간은 뱃지 없음', T.seasonWord(60, 100), '');
+
+    const bars = T.sparkBars([{ period: 'a', ratio: 0 }, { period: 'b', ratio: 50 }, { period: 'c', ratio: 100 }], 12);
+    eq('막대는 준 구간 수만큼', bars.length, 3);
+    ok('막대 높이는 최고 대비(0도 6%는 남긴다)', bars[0].pct === 6 && bars[1].pct === 50 && bars[2].pct === 100, bars);
+
+    const rows = T.trendRows({
+      time_unit: 'week', start_date: '2025-11-20', end_date: '2026-11-19',
+      groups: [{ title: '대전 맛집', keywords: ['대전 맛집'], delta_pct: 100, latest: 40, peak: 40, recent4: 40, prev4: 20, series: [{ period: 'p', ratio: 40 }] }]
+    });
+    eq('응답 → 화면 줄', rows.length, 1);
+    eq('줄의 판정 단어', rows[0].trend, '오르는 중');
+    eq('줄의 뱃지', rows[0].season, '성수기');
+    eq('예산 문구', T.budgetText({ used_day: 3, cap_day: 200, used_month: 12, cap_month: 2000 }), '오늘 3/200회 · 이번 달 12/2,000회');
+    eq('기간 문구', T.rangeText({ start_date: '2025-11-20', end_date: '2026-11-19', time_unit: 'week' }), '25.11~26.11 · 주간');
+
+    const bv = fs.readFileSync(path.join(ROOT, 'js', 'blogView.js'), 'utf8');
+    ok('blog: 키워드 트렌드 카드를 그린다', /function trendPanel\(/.test(bv) && /insightTrend\(/.test(bv));
+    ok('blog: 절대 검색량이 아니라는 문구를 화면에 둔다', /절대 검색량이 아니/.test(bv));
+    ok('blog: 데이터랩은 한 요청에 묶어 부른다(키워드별 따로 부르지 않는다)', /groups: kws\.map\(/.test(bv));
+  } catch (err) {
+    ok('키워드 트렌드 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
