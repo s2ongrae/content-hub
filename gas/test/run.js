@@ -2068,6 +2068,25 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
     return ss.getSheetByName('Blog_Seo_Titles').getLastRow();
   })(), 11);
 
+  /* 표본 적음은 뒤로 · 같은 축은 각도를 바꾼다 */
+  {
+    const cands = [
+      { axis: 'food', keyword: '대전 맛집' }, { axis: 'food', keyword: '유성 맛집' },
+      { axis: 'life', keyword: '대전 청년 정책' }, { axis: 'store', keyword: '무재고 부업' },
+      { axis: 'cat', keyword: '고양이 모래' }
+    ];
+    const tr = {
+      '대전 맛집': { peak: 100, delta_pct: 30 }, '유성 맛집': { peak: 100, delta_pct: 25 },
+      '대전 청년 정책': { peak: 100, delta_pct: 20 }, '무재고 부업': { peak: 4, delta_pct: 90 },
+      '고양이 모래': { peak: 100, delta_pct: 10 }
+    };
+    const out = N.ctx.blogSeoPick_({ day: '2026-11-21', candidates: cands, trend: tr, docs: {}, mine: { ranks: {}, inflow: [], posts: [], recentTitles: [], pattern: null } });
+    ok('표본 적음 후보는 뒤로 밀린다', out.rows.every((r, n) => r.trend_state !== '표본 적음' || n === out.rows.length - 1), out.rows.map(r => r.trend_state));
+    const food = out.rows.filter(r => r.axis === 'food');
+    ok('같은 축 두 줄은 각도가 다르다', food.length === 2 && food[0].title !== food[1].title, food.map(r => r.title));
+    ok('순위가 없으면 "내 글 없음"을 쓰지 않는다', out.rows.every(r => r.reason.indexOf('내 글 없음') < 0), out.rows[0].reason);
+  }
+
   const meli = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'ppiyak_kimmary' }, { brand: 'ppiyak_kimmary' });
   ok('메리 트랙은 블로그를 쓰지 않는다고 알린다', meli.ok && meli.data.count === 0 && /블로그를 쓰지/.test(meli.data.fallback), meli.data && meli.data.fallback);
 }
