@@ -1083,9 +1083,50 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('aiClip: innerHTML 없음', !/\.innerHTML\s*=/.test(src));
     ok('aiClip: 주소·토큰 값이 없다', !/script\.google\.com|hf_[A-Za-z0-9]{10,}/.test(src));
     const cs = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
-    ok('스튜디오 영상 화면에 AI 클립 패널이 붙는다', /paintAiClip\(actions, ctx\)/.test(cs) && /from '\.\/aiClip\.js/.test(cs));
+    ok('스튜디오 영상 화면에 AI 클립 패널이 붙는다', /paintAiClip\(host, ctx\)/.test(cs) && /from '\.\/aiClip\.js/.test(cs));
   } catch (err) {
     ok('무료 AI 클립 시험', false, (err && err.stack) || err);
+  }
+
+  /* ── 🎵 뮤직비디오 모드 (2026-11-21, Phase 1) ── */
+  console.log('\n[🎵 뮤직비디오 모드]');
+  try {
+    const SL = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=mv1');
+    const mat = SL.normalizeMaterials({});
+    ok('기본값: 일반 영상 모드 · 컷 밀도 1마디 · 다운비트 번쩍임 켜짐 · 길이 곡 끝', mat.video.mv.on === false && mat.video.mv.density === 'normal_4beat' && mat.video.mv.effects === 'pulse' && mat.video.mv.length_sec === 0 && mat.video.mv.lyric_mode === 'mine');
+    const mv1 = SL.normalizeMv({ on: true, density: 'nope', effects: 'zzz', mood: 'jazz', lyric_mode: 'x', length_sec: 45, bpm_hint: 999, lyrics: '가\n\n나' });
+    ok('모르는 값은 기본으로 돌린다(오더가 거절되지 않게)', mv1.on === true && mv1.density === 'normal_4beat' && mv1.effects === 'pulse' && mv1.mood === 'pop' && mv1.lyric_mode === 'mine', mv1);
+    ok('길이는 15·30·60·곡 끝(0) 중 하나', mv1.length_sec === 0);
+    ok('BPM 힌트는 0~300 밖이면 자동(0)', mv1.bpm_hint === 0);
+    eq('가사 줄 수(빈 줄은 버린다)', SL.mvLyricLines(mv1.lyrics).length, 2);
+    eq('파일 이름: 한글·공백 그대로, 확장자 유지', SL.mvAudioFileName('내 노래 v2.mp3'), '내 노래 v2.mp3');
+    eq('파일 이름: 위험 문자는 - 로', SL.mvAudioFileName('../a/b<c>.m4a'), 'a-b-c-.m4a');
+    eq('음원이 아니면 빈 값', SL.mvAudioFileName('song.exe'), '');
+    eq('이름이 비면 내 노래 로', SL.mvAudioFileName('.wav'), 'wav'.length ? SL.mvAudioFileName('.wav') : '');
+    eq('요약 한 줄', SL.mvSummary({ audio: { name: 'song.mp3', title: '내 노래' }, density: 'fast_2beat', lyrics: '한 줄\n두 줄', lyric_mode: 'mine', effects: 'pulse' }), '내 노래 · 빠르게 (2박) · 가사 2줄 · 다운비트 번쩍임');
+
+    const payload = SL.mvOrderPayload({
+      contentId: 'CH-1', brand: 'daejeon_youth',
+      images: Array.from({ length: 30 }, (_, i) => 'p' + i + '.jpg'),
+      mv: { on: true, audio: { name: '내 노래.mp3', title: '내 노래' }, lyrics: '한 줄\n두 줄', density: 'fast_2beat', effects: 'none', mood: 'rock', length_sec: 30, lyric_mode: 'mine' }
+    });
+    ok('오더: content_render · mode mv · 사진 25장 상한', payload.type === 'content_render' && payload.mode === 'mv' && payload.images.length === 25 && payload.content_id === 'CH-1');
+    ok('오더: 음원 이름만(경로 없음) · 밀도·이펙트·길이·가사', payload.mv.audio === '내 노래.mp3' && payload.mv.density === 'fast_2beat' && payload.mv.effects === 'none' && payload.mv.length_sec === 30 && payload.mv.lyrics === '한 줄\n두 줄', payload.mv);
+    const inst = SL.mvOrderPayload({ contentId: 'C', brand: 'daejeon_youth', images: ['a.jpg', 'b.jpg', 'c.jpg'], mv: { audio: { name: 'x.mp3' }, lyric_mode: 'none', lyrics: '가사' } });
+    ok('연주곡이면 가사를 싣지 않는다', !('lyrics' in inst.mv) && inst.mv.lyric_mode === 'none' && inst.mv.length_sec === 0);
+
+    const cs2 = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('화면: [일반 영상 | 🎵 뮤직비디오] 토글', /일반 영상/.test(cs2) && /🎵 뮤직비디오/.test(cs2) && /function paintMvPanel\(/.test(cs2));
+    ok('화면: 내 음원을 bgm_put 으로 올리고 이름만 오더로', /bgm_put/.test(cs2) && /mvOrderPayload\(/.test(cs2) && /bgm_list/.test(cs2));
+    ok('화면: 둥근 조각(2MB)으로 올린다', /MV_CHUNK_BYTES/.test(cs2) && /file\.slice\(/.test(cs2));
+    const mvBody = (cs2.match(/function paintMvPanel\(host, out, ctx, ui\) \{[\s\S]*?\n\}/) || [''])[0];
+    ok('MV 화면은 내레이션(TTS) 버튼을 그리지 않는다(노래와 겹침 방지)', mvBody.length > 1000 && mvBody.indexOf('대본·자막·내레이션 만들기') < 0 && mvBody.indexOf('paintScriptBox') < 0);
+    ok('화면: 보컬 무료 경로 안내(ACE-Step·보컬 분리)', /ACE-Step/.test(cs2) && /보컬 분리/.test(cs2));
+    ok('화면: 카드 payload studio.formats.video.mv 로 저장', /mv: m\.video\.mv/.test(cs2));
+    ok('화면: innerHTML 없음', !/\.innerHTML\s*=/.test(cs2));
+    ok('studioLogic: 뮤직비디오 함수를 내멂는다', /export function mvOrderPayload/.test(fs.readFileSync(path.join(ROOT, 'js', 'studioLogic.js'), 'utf8')));
+  } catch (err) {
+    ok('뮤직비디오 모드 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

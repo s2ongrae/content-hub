@@ -248,6 +248,7 @@ const M1_HANDLERS = {
   bgm_list: handleBgmList_,
   bgm_fetch: handleBgmFetch_,
   bgm_delete: handleBgmDelete_,
+  bgm_put: handleBgmPut_,
   result_put: handleResultPut_,
   result_list: handleResultList_,
   result_fetch: handleResultFetch_,

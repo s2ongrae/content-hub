@@ -14,15 +14,16 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261121l';
-import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261121i';
+import { produceSection } from './produceView.js?v=20261121m';
+import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261121j';
 import {
   FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
   normalizeMaterials, emptyMaterials, materialSummary, hasMaterial, factsOf, autoOrderPhotos, photoRole,
   photoPlanFor, buildBlogKit, signKit, buildFeedCards, feedCaption, hashtagsOf, buildDraftRequest,
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
-  errorText, orderLine, titleOptions, firstPrice, FEED_CARDS
-} from './studioLogic.js?v=20261121g';
+  errorText, orderLine, titleOptions, firstPrice, FEED_CARDS,
+  MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
+} from './studioLogic.js?v=20261121h';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261121g';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261121g';
 import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261121a';
@@ -570,6 +571,7 @@ async function saveMaterialsToStudio(ctx, format, extra) {
     let next = mergeMaterialsIntoStudio(base, m);
     next = mergeFormat(next, format, Object.assign({
       length_sec: m.video.length_sec,
+      mv: m.video.mv,
       concept: m.concept,
       updated_at: new Date().toISOString()
     }, extra || {}));
@@ -807,6 +809,46 @@ function downloadBtn(h, filename, text, toast) {
 /* ────────────────────────── 영상 ────────────────────────── */
 
 function paintVideo(actions, out, ctx, ui) {
+  const { h } = ctx;
+  const host = h('div', { class: 'st-video' });
+  actions.appendChild(host);
+  const paint = () => {
+    host.replaceChildren();
+    paintVideoBody(host, out, ctx, ui);
+  };
+  ui.repaintVideo = paint;
+  paint();
+}
+
+/** 영상 화면 본문 — [일반 영상 | 🎵 뮤직비디오] 토글 하나로 갈아 끼운다(새 라우트 없음). */
+function paintVideoBody(host, out, ctx, ui) {
+  const { h } = ctx;
+  const m = mem.materials;
+  const mv = m.video.mv;
+  const setMv = (on) => {
+    if (m.video.mv.on === on) return;
+    m.video.mv.on = on;
+    saveMaterials();
+    if (ui && ui.repaintVideo) ui.repaintVideo();
+  };
+  const chip = (label, on, fn) => {
+    const b = h('button', { class: 'st-chip' + (on ? ' on' : ''), type: 'button', text: label });
+    b.addEventListener('click', fn);
+    return b;
+  };
+  host.appendChild(h('div', { class: 'st-field-row' },
+    h('span', { class: 'field-label', text: '모드' }),
+    h('div', { class: 'st-chips' },
+      chip('일반 영상', !mv.on, () => setMv(false)),
+      chip('🎵 뮤직비디오', mv.on, () => setMv(true)))));
+
+  if (mv.on) { paintMvPanel(host, out, ctx, ui); return; }
+  paintNormalVideo(host, out, ctx, ui);
+}
+
+/* ── 일반 영상 — 지금까지의 화면 그대로 ── */
+
+function paintNormalVideo(host, out, ctx, ui) {
   const { h, toast, api } = ctx;
   const m = mem.materials;
   const plan = photoPlanFor('video', { photos: m.photos, lengthSec: m.video.length_sec });
@@ -815,11 +857,11 @@ function paintVideo(actions, out, ctx, ui) {
   const renderBtn = h('button', { class: 'btn primary', type: 'button', text: '🎬 사진으로 완제품 렌더 (노트북)' });
   const stepsBtn = h('button', { class: 'btn sm', type: 'button', text: '영상 편집 단계(제작 스텝퍼) 열기' });
 
-  actions.appendChild(h('div', { class: 'row' }, scriptBtn, renderBtn));
-  actions.appendChild(h('div', { class: 'st-hint' },
+  host.appendChild(h('div', { class: 'row' }, scriptBtn, renderBtn));
+  host.appendChild(h('div', { class: 'st-hint' },
     h('span', { text: '이 길이에 사진 ' + plan.target + '장 · 지금 ' + plan.count + '장 — ' + (plan.enough ? (plan.meets_target ? '충분합니다' : plan.missing + '장 더 있으면 더 좋습니다') : ('최소 ' + plan.min + '장이 필요합니다(' + (plan.min - plan.count) + '장 더)')) }),
     h('span', { text: ' · 렌더는 1080×1920 30fps, 켄번즈(장당 3.0초 이상·자막 길이에 맞춰 늘어남), 자막 번인+내레이션 포함입니다.' })));
-  actions.appendChild(h('p', { class: 'st-hint', text: '영상이 이미 있으면 아래 [영상 편집 단계]에서 올리고 컷·자막·마무리를 하세요. 그 화면(제작 스텝퍼)은 그대로 살아 있습니다.' }));
+  host.appendChild(h('p', { class: 'st-hint', text: '영상이 이미 있으면 아래 [영상 편집 단계]에서 올리고 컷·자막·마무리를 하세요. 그 화면(제작 스텝퍼)은 그대로 살아 있습니다.' }));
 
   const stepsHost = h('div', { class: 'st-steps-host' });
   stepsHost.hidden = true;
@@ -830,11 +872,11 @@ function paintVideo(actions, out, ctx, ui) {
       await mountProduce(stepsHost, ctx);
     }
   });
-  actions.appendChild(stepsBtn);
-  actions.appendChild(stepsHost);
+  host.appendChild(stepsBtn);
+  host.appendChild(stepsHost);
 
   /* AI 클립(무료) — 구글 Flow·허깅페이스 프롬프트 빌더. 새 파일 js/aiClip.js 만 쓰고 style.css 는 건드리지 않는다. */
-  paintAiClip(actions, ctx);
+  paintAiClip(host, ctx);
 
   /* 대본·자막·내레이션(content_draft format:'video') */
   scriptBtn.addEventListener('click', async () => {
@@ -913,6 +955,235 @@ function paintVideo(actions, out, ctx, ui) {
   }
 }
 
+/* ────────────────────────── 🎵 뮤직비디오 모드 (Phase 1) ──────────────────────────
+ *  사진 + 음원(내 파일·보관 BGM) + 가사 + 비트 컷 + 카라오케. 유료 API 없음.
+ *  음원은 허브 _bgm 보관함에 올려 두고 이름만 오더에 싣는다(bgm_put → 노트북 bgm_fetch).
+ *  노래가 목소리라서 내레이션(TTS)과 자막 레이어는 끈다 — 가사 레이어만 쓴다.
+ */
+
+const MV_AUDIO_ACCEPT = '.mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav';
+
+/** 보관함의 음원 목록 — 내가 올린 파일과 무료 BGM 이 함께 온다. */
+async function loadBgmLibrary(api) {
+  const d = await api.post('bgm_list', {});
+  return Array.isArray(d && d.data && d.data.items) ? d.data.items : [];
+}
+
+function paintMvPanel(host, out, ctx, ui) {
+  const { h, toast, api } = ctx;
+  const m = mem.materials;
+  const mv = m.video.mv;
+  const photos = (m.photos || []).filter((p) => p.uploaded).map((p) => p.name);
+  const save = () => { saveMaterials(); ui.refreshSummary && ui.refreshSummary(); };
+
+  host.appendChild(h('p', { class: 'st-hint', text: '노래가 목소리라서 내레이션(목소리)은 끄고, 자막 대신 가사를 카라오케처럼 띄웁니다. 사진만으로 비트에 맞춰 컷을 굽고, 사진이 컷보다 적으면 돌려 씁니다(같은 사진이 3컷 안에 다시 나오지 않게).' }));
+  host.appendChild(h('p', { class: 'st-hint', text: '사진 ' + photos.length + '장 올라감' + (photos.length < 3 ? ' — 최소 3장이 필요합니다' : '') }));
+
+  /* ② 음원 */
+  host.appendChild(h('h3', { text: '② 음원' }));
+  const audioLine = h('p', { class: 'st-hint', text: mv.audio.name ? '고른 곡: ' + (mv.audio.title || mv.audio.name) : '아직 고르지 않았습니다' });
+  const srcRow = h('div', { class: 'st-chips' });
+  const setSource = (src) => {
+    mv.audio.source = src;
+    save();
+    if (ui && ui.repaintVideo) ui.repaintVideo();
+  };
+  [[ 'file', '내 파일'], ['library', '보관함에서 고르기']].forEach(([id, label]) => {
+    const b = h('button', { class: 'st-chip' + (mv.audio.source === id ? ' on' : ''), type: 'button', text: label });
+    b.addEventListener('click', () => setSource(id));
+    srcRow.appendChild(b);
+  });
+  host.appendChild(h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '가져오기' }), srcRow));
+
+  const progress = h('p', { class: 'st-hint', text: '' });
+  if (mv.audio.source === 'file') {
+    const input = h('input', { type: 'file', accept: MV_AUDIO_ACCEPT, style: 'display:none' });
+    const pick = h('button', { class: 'btn sm', type: 'button', text: '🎵 내 음원 올리기 (mp3·m4a·wav)' });
+    pick.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      const name = mvAudioFileName(file.name);
+      if (!name) { toast('mp3·m4a·wav 만 올릴 수 있습니다', 'err'); return; }
+      if (Number(file.size) > MV_AUDIO_MAX_BYTES) { toast('30MB 가 넘습니다 — mp3·m4a 로 바꿔 주세요', 'err'); return; }
+      pick.disabled = true;
+      try {
+        const parts = Math.max(1, Math.ceil(file.size / MV_CHUNK_BYTES));
+        for (let i = 0; i < parts; i++) {
+          const blob = file.slice(i * MV_CHUNK_BYTES, Math.min(file.size, (i + 1) * MV_CHUNK_BYTES));
+          const data = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+          const r = await api.post('bgm_put', {
+            name: name, index: i, parts: parts, total_size: file.size, data: data,
+            title: file.name.replace(/\.[^.]+$/, '').slice(0, 80)
+          }, null, { timeoutMs: 120000 });
+          progress.textContent = '올리는 중… ' + (i + 1) + '/' + parts;
+          if (i === parts - 1 && r && r.data && r.data.done === false) {
+            throw new Error('조각이 덜 올라갔습니다(' + r.data.received + '/' + parts + ')');
+          }
+        }
+        mv.audio = { name: name, title: file.name.replace(/\.[^.]+$/, '').slice(0, 80), source: 'file' };
+        save();
+        toast('음원을 허브 보관함에 올렸습니다', 'ok');
+        if (ui && ui.repaintVideo) ui.repaintVideo();
+      } catch (err) {
+        progress.textContent = '';
+        toast('음원 올리기 실패 — ' + errorText(err && err.code) + (err && err.message ? ' ' + String(err.message).slice(0, 80) : ''), 'err');
+      } finally { pick.disabled = false; }
+    });
+    host.appendChild(h('div', { class: 'row' }, pick, input));
+    host.appendChild(h('p', { class: 'st-hint', text: '내가 만든 노래(허깅페이스 ACE-Step·Suno 등)나 녹음 파일을 그대로 올리면 됩니다. mp3·m4a 25MB, wav 30MB 까지.' }));
+  } else {
+    const listHost = h('div', { class: 'st-chips' });
+    const loadBtn = h('button', { class: 'btn sm', type: 'button', text: '📂 보관함 목록 불러오기' });
+    loadBtn.addEventListener('click', async () => {
+      loadBtn.disabled = true;
+      try {
+        const items = await loadBgmLibrary(api);
+        listHost.replaceChildren();
+        if (!items.length) {
+          listHost.appendChild(h('span', { class: 'st-hint', text: '보관함이 비어 있습니다 — 내 음원을 올리거나, [영상 편집 단계] ⑥에서 무료 BGM을 골라 보관하세요.' }));
+        }
+        items.slice(0, 20).forEach((it) => {
+          const label = (it.title || it.name) + (it.source === 'user' ? ' · 내 파일' : (it.credit_required ? ' · 출처 표기' : ''));
+          const b = h('button', { class: 'st-chip' + (mv.audio.name === it.name ? ' on' : ''), type: 'button', text: label });
+          b.addEventListener('click', () => {
+            mv.audio = { name: it.name, title: it.title || it.name, source: 'library' };
+            save();
+            toast('곡을 골랐습니다: ' + (it.title || it.name), 'ok');
+            if (ui && ui.repaintVideo) ui.repaintVideo();
+          });
+          listHost.appendChild(b);
+        });
+      } catch (err) {
+        toast('목록을 불러오지 못했습니다 — ' + errorText(err && err.code), 'err');
+      } finally { loadBtn.disabled = false; }
+    });
+    host.appendChild(h('div', { class: 'row' }, loadBtn));
+    host.appendChild(listHost);
+    host.appendChild(h('p', { class: 'st-hint', text: '무료 BGM(CC0·퍼블릭 도메인·CC BY)도 여기에서 고릅니다. CC BY 곡은 영상 설명란에 출처 문구를 넣어야 하며, 그 문구는 마무리 보고에 함께 나옵니다.' }));
+  }
+  host.appendChild(audioLine);
+
+  /* ③ 가사 */
+  host.appendChild(h('h3', { text: '③ 가사' }));
+  const lyricChips = h('div', { class: 'st-chips' });
+  MV_LYRIC_MODES.forEach((lm) => {
+    const b = h('button', { class: 'st-chip' + (mv.lyric_mode === lm.id ? ' on' : ''), type: 'button', text: lm.label });
+    b.addEventListener('click', () => {
+      mv.lyric_mode = lm.id;
+      save();
+      if (ui && ui.repaintVideo) ui.repaintVideo();
+    });
+    lyricChips.appendChild(b);
+  });
+  host.appendChild(h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '종류' }), lyricChips));
+  if (mv.lyric_mode !== 'none') {
+    const ta = h('textarea', { class: 'textarea', rows: '8', placeholder: '한 줄에 한 마디씩 적으세요.\n예)\n대전 밤거리 불빛 아래\n우리 둘만의 노래를 불러' });
+    ta.value = mv.lyrics || '';
+    const count = h('p', { class: 'st-hint', text: '' });
+    const upd = () => { count.textContent = '가사 ' + mvLyricLines(ta.value).length + '줄 — 줄 하나가 한 마디 안팎에 붙습니다(곡 길이에 맞춰 나눕니다).'; };
+    ta.addEventListener('input', () => { mv.lyrics = ta.value; upd(); save(); });
+    upd();
+    host.appendChild(ta);
+    host.appendChild(count);
+    host.appendChild(h('p', { class: 'st-hint', text: 'AI 가사 자동 작성은 다음 단계에서 붙습니다. 지금은 AI 채팅에서 받은 가사를 그대로 붙여넣으면 됩니다. 한 줄 14자 안팎이 화면에서 읽기 좋습니다.' }));
+  } else {
+    host.appendChild(h('p', { class: 'st-hint', text: '연주곡으로 갑니다 — 가사·카라오케 없이 컷과 다운비트 이펙트만 들어갑니다.' }));
+  }
+
+  /* ④ 분위기 */
+  host.appendChild(h('h3', { text: '④ 분위기' }));
+  const moodRow = h('div', { class: 'st-chips' });
+  MV_MOODS.forEach((mo) => {
+    const b = h('button', { class: 'st-chip' + (mv.mood === mo.id ? ' on' : ''), type: 'button', text: mo.label });
+    b.addEventListener('click', () => {
+      mv.mood = mo.id; save();
+      moodRow.querySelectorAll('.st-chip').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+    });
+    moodRow.appendChild(b);
+  });
+  host.appendChild(h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '곡 분위기' }), moodRow));
+  host.appendChild(h('p', { class: 'st-hint', text: '지금은 고른 분위기를 기록·보고에만 씁니다(컷 밀도 추천에 참고). 곡 생성은 Phase 3.' }));
+
+  /* ⑤ 길이 · 컷 밀도 */
+  host.appendChild(h('h3', { text: '⑤ 길이 · 컷 밀도' }));
+  const lenRow = h('div', { class: 'st-chips' });
+  MV_LENGTHS.forEach((sec) => {
+    const b = h('button', { class: 'st-chip' + (mv.length_sec === sec ? ' on' : ''), type: 'button', text: sec === 0 ? '곡 끝까지' : sec + '초' });
+    b.addEventListener('click', () => {
+      mv.length_sec = sec; save();
+      lenRow.querySelectorAll('.st-chip').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+    });
+    lenRow.appendChild(b);
+  });
+  host.appendChild(h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '길이' }), lenRow));
+  const denRow = h('div', { class: 'st-chips' });
+  MV_DENSITIES.forEach((d) => {
+    const b = h('button', { class: 'st-chip' + (mv.density === d.id ? ' on' : ''), type: 'button', text: d.label });
+    b.addEventListener('click', () => {
+      mv.density = d.id; save();
+      denRow.querySelectorAll('.st-chip').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+    });
+    denRow.appendChild(b);
+  });
+  host.appendChild(h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '컷 밀도' }), denRow));
+
+  /* 이펙트 */
+  const eff = h('input', { type: 'checkbox' });
+  eff.checked = mv.effects === 'pulse';
+  eff.addEventListener('change', () => { mv.effects = eff.checked ? 'pulse' : 'none'; save(); });
+  host.appendChild(h('label', { class: 'st-field-row' },
+    h('span', { class: 'field-label', text: '이펙트' }),
+    h('span', { class: 'st-chips' }, h('label', { class: 'st-chip' + (mv.effects === 'pulse' ? ' on' : ''), style: 'display:inline-flex;gap:6px;align-items:center' }, eff, h('span', { text: '다운비트 번쩍임' })))));
+  host.appendChild(h('p', { class: 'st-hint', text: '번쩍임은 1마디 첫 박에만 넣습니다(매 박자·강한 플래시·글리치 없음). 끄면 컷만 남습니다.' }));
+
+  /* 보컬 무료 경로 안내 */
+  const guide = h('details', { class: 'panel' },
+    h('summary', { text: '🎤 노래(보컬)는 어디서 무료로 만들까 — 안내' }),
+    h('div', { class: 'st-hint' },
+      h('p', { text: '① 허깅페이스 ACE-Step Space — 설치 없이 웹에서 한국어 노래를 만들 수 있습니다(무료, 대기열 있음). 뽑은 파일을 위 [내 음원 올리기]로 올리면 끝.' }),
+      h('p', { text: '② 내 PC에서 ACE-Step 실행 — MIT 라이선스라 상업 이용 가능. NVIDIA VRAM 8GB 이상이면 3분 곡이 1분 안팎, CPU만이면 곡당 수 분~수십 분이라 권하지 않습니다.' }),
+      h('p', { text: '③ 이미 만든 곡(Suno 등)이 있으면 mp3 로 내려받아 그대로 올리면 됩니다 — 이 화면은 곡을 만들지 않고 굽기만 합니다.' }),
+      h('p', { text: '④ 노래에서 보컬만 떼고 싶으면 TuneSplit·Free.ai 같은 무료 보컬 분리 웹툴을 쓰고, 결과 mp3 를 올리세요.' }),
+      h('p', { text: '출처 표기: AI 로 만든 곡은 유튜브에서 “변경된 콘텐츠” 표시가 필요할 수 있습니다. 보관함의 CC BY 곡은 설명란에 출처 문구를 넣어야 합니다.' })));
+  host.appendChild(guide);
+
+  /* 렌더 */
+  const renderBtn = h('button', { class: 'btn primary', type: 'button', text: '🎵 뮤직비디오 렌더 (노트북)' });
+  host.appendChild(h('div', { class: 'row' }, renderBtn));
+  host.appendChild(h('p', { class: 'st-hint', text: '1080×1920 30fps · 하드컷(프레임 격자 스냅) · 가사 카라오케 · 음량 −14 LUFS. 노래는 이미 곡 길이 그대로 쓰고, 고른 길이까지만 자릅니다.' }));
+  renderBtn.addEventListener('click', async () => {
+    if (!mv.audio.name) { toast('음원을 먼저 고르세요', 'err'); return; }
+    if (photos.length < 3) { toast('사진이 ' + photos.length + '장입니다 — 최소 3장이 필요합니다', 'err'); return; }
+    renderBtn.disabled = true;
+    const label = renderBtn.textContent;
+    try {
+      const id = await ensureCard(ctx, 'video', ui);
+      const payload = mvOrderPayload({ contentId: id, brand: ctx.state.brand, images: photos, mv: mv });
+      mem.outHost = out;
+      await sendOrder(ctx, 'render-mv', payload, renderBtn, async () => {
+        try {
+          const asset = await api.post('asset_get', { content_id: id, kind: 'report_clean' });
+          const rep = asset && asset.data && asset.data.text ? JSON.parse(asset.data.text) : null;
+          paintRenderBox(out, ctx, rep, id);
+        } catch (e) {
+          paintRenderBox(out, ctx, null, id);
+        }
+      });
+    } catch (err) {
+      toast(errorText(err && err.code) + (err && err.message ? ' — ' + err.message : ''), 'err');
+    } finally { renderBtn.disabled = false; renderBtn.textContent = label; }
+  });
+
+  out.replaceChildren(h('div', { class: 'panel' },
+    h('h3', null, '결과'),
+    h('p', { class: 'st-hint', text: '렌더를 보내면 BPM·컷 수·박자 오차가 여기에 남습니다. 결과 영상은 카드 ④·⑥의 [만든 파일]에서 내려받습니다.' })));
+}
+
 async function mountProduce(host, ctx) {
   const { h, api, toast } = ctx;
   try {
@@ -964,6 +1235,17 @@ function paintRenderBox(out, ctx, rep, contentId) {
     box.appendChild(h('p', { class: 'st-hint', text: '렌더는 끝났지만 결과 보고를 아직 못 읽었습니다. 카드 ' + contentId + ' 의 제작 탭에서 결과를 확인하세요.' }));
   } else {
     box.appendChild(h('p', { class: 'st-hint', text: (rep.out || '') + ' · ' + (rep.width || '?') + '×' + (rep.height || '?') + ' · ' + (rep.duration ? Math.round(rep.duration) + '초' : '') + (rep.lufs !== null && rep.lufs !== undefined ? ' · ' + rep.lufs + ' LUFS' : '') }));
+    // 뮤직비디오 보고 — 박자에 붙었는지를 기계가 확인한 값을 그대로 보여 준다
+    if (rep.mv || rep.detected_bpm) {
+      const mvBits = [];
+      if (rep.detected_bpm) mvBits.push('BPM ' + rep.detected_bpm);
+      if (rep.cut_count) mvBits.push('컷 ' + rep.cut_count);
+      if (rep.max_snap_drift_ms !== undefined && rep.max_snap_drift_ms !== null) mvBits.push('박자 오차 최대 ' + rep.max_snap_drift_ms + 'ms');
+      if (rep.beat_fallback) mvBits.push('비트 감지를 못 해 2초 균등 컷으로 대체');
+      if (rep.lyrics_source) mvBits.push('가사 ' + (rep.lyrics_source === 'none' ? '없음(연주곡)' : rep.lyric_lines + '줄'));
+      if (mvBits.length) box.appendChild(h('p', { class: 'st-hint', text: '🎵 ' + mvBits.join(' · ') }));
+      if (rep.effects_used) box.appendChild(h('p', { class: 'st-hint', text: '이펙트: ' + rep.effects_used + (rep.scene_check ? ' · 장면 전환 검사 ' + rep.scene_check : '') }));
+    }
     if (rep.note) box.appendChild(h('p', { class: 'st-hint', text: rep.note }));
     const checks = Array.isArray(rep.checks) ? rep.checks : [];
     if (checks.length) {

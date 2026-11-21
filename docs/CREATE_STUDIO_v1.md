@@ -83,3 +83,34 @@ node test/run.js            # 프론트: studioLogic/studioCanvas 계산 + 세 �
 cd ../hub-agent/notebook-agent && node test/run.js   # 워커: draft(3중 잠금·버전 병합)·kenburns·렌더 회귀
 cd ../hub-agent && node gas/test/run.js              # 큐: content_draft LOW
 ```
+
+## 7. 🎵 뮤직비디오 모드 (Phase 1, 2026-11-21)
+
+`#/create/video` 안의 토글 하나 — 새 라우트를 만들지 않는다. 일반 영상 화면은 그대로 두고 MV 모드에서만 입력이 바뀐다.
+
+| 칸 | 입력 | 기본값 |
+|---|---|---|
+| ② 음원 | `[내 파일]`(mp3·m4a 25MB · wav 30MB, `bgm_put` 2MB 조각) / `[보관함에서 고르기]`(무료 BGM·내 파일, `bgm_list`) | 내 파일 |
+| ③ 가사 | 여러 줄 붙여넣기 / 가사 없음(연주곡) | 내가 쓴 가사 |
+| ④ 분위기 | 신나는 팝 · 감성 발라드 · 코믹·병맛 · 밴드·락 (기록·보고용, 곡 생성은 Phase 3) | 신나는 팝 |
+| ⑤ 길이·컷 밀도 | 15·30·60초·곡 끝까지 × 2박·1마디·2마디 | 곡 끝까지 · 1마디 |
+| 이펙트 | 다운비트 번쩍임 on/off | on |
+
+- **노래가 목소리라서 내레이션(TTS)·자막 레이어를 쓰지 않는다** — 가사 카라오케 레이어만.
+- 저장: `studio.formats.video.mv`(일반 템플릿과 격리). 카드가 없으면 다른 포맷과 같이 `create_content` 로 만든다.
+- 곡 파일은 큐로 오지 않는다 — `_bgm` 보관함에 올리고 **이름만** 오더에 싣는다. 노트북은 `bgm_fetch` 로 받는다.
+- 유료 API 없음(Phase 1). 보컬 생성(ACE-Step 등)은 화면 안내대로 사용자가 뽑아 mp3 로 올린다.
+
+### 오더 계약 (`content_render`, `mode:'mv'`)
+```json
+{ "content_id": "...", "brand": "daejeon_youth", "profile": "captions", "mode": "mv",
+  "images": ["사진01.jpg", "…"],
+  "mv": { "audio": "내 노래.mp3", "density": "normal_4beat", "bpm_hint": 0,
+          "lyrics": "한 줄\n두 줄", "effects": "pulse", "mood": "pop",
+          "length_sec": 0, "lyric_mode": "mine", "lines": 2 } }
+```
+- `density` ∈ `fast_2beat | normal_4beat | slow_1bar` · `effects` ∈ `pulse | none` · `mood` ∈ `pop | ballad | comic | rock`.
+- `length_sec` 0 = 곡 끝까지. `lyric_mode:'none'` 이면 가사를 버린다(연주곡).
+- 사진은 3~25장. Phase 1 은 사진만(영상 입력은 다음 단계).
+- 가사가 2,000자(또는 payload 3,500자)를 넘으면 `lyrics` 를 빼고 `payload_source:'drive'` 로 보낸다 — 노트북이 카드의 `studio.formats.video.mv` 에서 읽는다.
+- GAS 는 `isRealRenderOrder_` 가 `mode` 만 있어도 렌더 경로로 보내 검증에서 거절한다(옛 `claude_prompt` 경로로 새지 않게).

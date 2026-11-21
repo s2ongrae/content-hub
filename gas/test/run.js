@@ -346,6 +346,52 @@ ok('사진 25장 + 영상 8개 + 컷 150개 payload 도 큐 한도(4,000자) 안
   return JSON.stringify(r).length < 4000 && (r.payload_source === 'drive' || !r.captions);
 })(), '큐 payload 가 4,000자를 넘으면 payload_source 가 스스로 바뀌어야 한다');
 
+console.log('\n[8h-mv] 뮤직비디오 payload (2026-11-21 Phase 1)');
+{
+  const mvPhotos = ['p1.jpg', 'p2.jpg', 'p3.jpg', 'p4.jpg'];
+  const goodMv = {
+    type: 'content_render', content_id: 'CH-20261121-MV1', brand: 'daejeon_youth', mode: 'mv', images: mvPhotos,
+    mv: { audio: '내 노래.mp3', density: 'fast_2beat', effects: 'pulse', mood: 'pop', length_sec: 30, lyric_mode: 'mine', lyrics: '첫 줄\n둘째 줄' }
+  };
+  const beforeMv = A.env.fetched.length;
+  const oMv = callHandler(A.ctx, 'handleHubOrder_', null, goodMv, { brand: 'daejeon_youth' });
+  ok('뮤직비디오 오더 접수(큐 타입은 content_render)', oMv.ok && A.env.fetched.length === beforeMv + 1 && A.env.fetched[A.env.fetched.length - 1].body.type === 'content_render', oMv);
+  const pMv = A.env.fetched[A.env.fetched.length - 1].body.payload;
+  ok('payload: mode mv · 사진 이름 · 음원 이름만(경로 없음)', pMv.mode === 'mv' && pMv.images.join() === mvPhotos.join() && pMv.mv.audio === '내 노래.mp3' && pMv.profile === 'captions', pMv);
+  ok('payload: 가사 줄과 줄 수', pMv.mv.lyrics === '첫 줄\n둘째 줄' && pMv.mv.lines === 2 && pMv.mv.density === 'fast_2beat' && pMv.mv.length_sec === 30, pMv.mv);
+  ok('기본값: 밀도 1마디 · 이펙트 pulse · 길이 곡 끝 · 가사 모드 내 가사 · BPM 자동', (function () {
+    const r = A.ctx.hubRenderPayload_({ content_id: 'CH-1', brand: 'daejeon_youth', mode: 'mv', images: mvPhotos, mv: { audio: 'a.m4a' } });
+    return r.mv.density === 'normal_4beat' && r.mv.effects === 'pulse' && r.mv.length_sec === 0 && r.mv.lyric_mode === 'mine' && r.mv.bpm_hint === 0;
+  })());
+  ok('긴 가사는 큐에 안 싣고 payload_source:drive 로 보낸다(카드에서 읽게)', (function () {
+    const r = A.ctx.hubRenderPayload_({ content_id: 'CH-1', brand: 'daejeon_youth', mode: 'mv', images: mvPhotos, mv: { audio: 'a.mp3', lyrics: '가나다라마바사아자차카타파하 '.repeat(160) } });
+    return r.payload_source === 'drive' && !r.mv.lyrics && r.mv.lines === 1 && JSON.stringify(r).length <= 3500;
+  })());
+  ok('연주곡(lyric_mode none)은 가사를 버린다', (function () {
+    const r = A.ctx.hubRenderPayload_({ content_id: 'CH-1', brand: 'daejeon_youth', mode: 'mv', images: mvPhotos, mv: { audio: 'a.mp3', lyric_mode: 'none', lyrics: '가사' } });
+    return !r.mv.lyrics && r.mv.lines === 0;
+  })());
+  ok('내 음원 이름은 한글·공백·m4a 까지 받는다', (function () {
+    const r = A.ctx.hubRenderPayload_({ content_id: 'CH-1', brand: 'daejeon_youth', mode: 'mv', images: mvPhotos, mv: { audio: '내 노래 v2.m4a' } });
+    return r.mv.audio === '내 노래 v2.m4a';
+  })());
+  const nBeforeBad = A.env.fetched.length;
+  [
+    ['사진 2장', { images: ['a.jpg', 'b.jpg'], mv: { audio: 'a.mp3' } }],
+    ['음원 없음', { images: mvPhotos, mv: {} }],
+    ['음원 경로', { images: mvPhotos, mv: { audio: '../a.mp3' } }],
+    ['음원 확장자', { images: mvPhotos, mv: { audio: 'a.exe' } }],
+    ['밀도 값', { images: mvPhotos, mv: { audio: 'a.mp3', density: 'x' } }],
+    ['이펙트 값', { images: mvPhotos, mv: { audio: 'a.mp3', effects: 'flash' } }],
+    ['분위기 값', { images: mvPhotos, mv: { audio: 'a.mp3', mood: 'jazz' } }],
+    ['길이 범위', { images: mvPhotos, mv: { audio: 'a.mp3', length_sec: 999 } }],
+    ['BPM 범위', { images: mvPhotos, mv: { audio: 'a.mp3', bpm_hint: 900 } }],
+    ['영상까지 섞음', { images: mvPhotos, inputs: ['a.mp4'], mv: { audio: 'a.mp3' } }],
+    ['모르는 mode', { mode: 'mv2', images: mvPhotos, mv: { audio: 'a.mp3' } }]
+  ].forEach(([name, pl]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({ type: 'content_render', content_id: 'CH-20261121-MV1', brand: 'daejeon_youth', mode: 'mv' }, pl), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+  ok('거부된 뮤직비디오 오더는 큐를 부르지 않았다', A.env.fetched.length === nBeforeBad);
+}
+
 console.log('\n[8i] content_draft — 초안 생성(LOW · 파일 안 고침)');
 const nodeCrypto = require('crypto');
 const sha = (t) => nodeCrypto.createHash('sha256').update(String(t), 'utf8').digest('hex');
@@ -1519,6 +1565,68 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     const d1 = bdel({ name: 'calm-piano-1-0a1b2c3d.mp3' });
     ok('삭제: mp3 와 출처 json 을 함께 휴지통으로', d1.ok && d1.data.removed === 2 && bgmDir.live().length === 0 && blist().data.items.length === 0, d1);
     eq('삭제: 이름 검사', bdel({ name: '../x.mp3' }).code, 'ERR_VALIDATION_FAILED');
+  }
+
+  /* ── [V2] 내 음원 올리기 (gas/Bgm.gs bgm_put) — 뮤직비디오 모드 ── */
+  console.log('\n[V2] 내 음원 올리기 (bgm_put)');
+  {
+    const HMp = ev(U.ctx, 'M1_HANDLERS');
+    const authOf = (action, token) => callHandler(U.ctx, 'authenticateRequest_', null, { action, auth_token: token, client_id: 'bgmput-test' }, { allowAllBrand: true });
+    const bigW = (action, n) => '{"action":"' + action + '","payload":{"data":"' + 'A'.repeat(n) + '"}}';
+    const sizeW = (raw) => callHandler(U.ctx, 'assertRequestSizeWithinLimit_', raw).code;
+    ok('bgm_put 이 화이트리스트·핸들러에 있다', !!wl.bgm_put && wl.bgm_put.m1 === true && wl.bgm_put.mode === 'WRITE' && wl.bgm_put.noAudit === true && wl.bgm_put.longRunning === true && typeof HMp.bgm_put === 'function');
+    eq('bgm_put: 토큰이 없으면 거부', authOf('bgm_put', '').code, 'ERR_UNAUTHORIZED');
+    ok('bgm_put: 2.8MB 조각은 통과 · 3.6MB 는 거부(3.4MB 한도)', sizeW(bigW('bgm_put', 2800000)) === undefined && sizeW(bigW('bgm_put', 3600000)) === 'ERR_PAYLOAD_TOO_LARGE');
+
+    const put = (p) => callHandler(U.ctx, 'handleBgmPut_', null, p);
+    const blist2 = () => callHandler(U.ctx, 'handleBgmList_', null, {});
+    const bfetch2 = (p) => callHandler(U.ctx, 'handleBgmFetch_', null, p);
+    const bdel2 = (p) => callHandler(U.ctx, 'handleBgmDelete_', null, p);
+    const b64x = (buf) => Buffer.from(buf).toString('base64');
+    // mp3 머리글(ID3) + 데이터 3조각
+    const song = Buffer.concat([Buffer.from('ID3'), Buffer.from(Array.from({ length: 4400000 }, (_, i) => (i * 11) % 256))]);
+    const sParts = [song.subarray(0, 1500000), song.subarray(1500000, 3000000), song.subarray(3000000)];
+    const up1 = put({ name: '내 노래.mp3', index: 0, parts: 3, total_size: song.length, data: b64x(sParts[0]), title: '내 노래' });
+    ok('1조각: 아직 다 안 왔다(done:false)', up1.ok && up1.data.done === false && up1.data.received === 1, up1);
+    const up2 = put({ name: '내 노래.mp3', index: 1, parts: 3, total_size: song.length, data: b64x(sParts[1]) });
+    ok('2조각: 받은 수가 늘어난다(조각 파일은 목록에 안 보인다)', up2.ok && up2.data.received === 2 && blist2().data.items.length === 0, up2);
+    const up3 = put({ name: '내 노래.mp3', index: 2, parts: 3, total_size: song.length, data: b64x(sParts[2]) });
+    ok('3조각: 다 모이면 하나로 붙여 저장(done:true · 크기 일치)', up3.ok && up3.data.done === true && up3.data.bytes === song.length && up3.data.received === 3, up3);
+    const folder2 = ev(U.ctx, "uploadFolder_('_bgm', false)");
+    ok('조각 파일은 남지 않고 곡과 메타만 남는다', folder2.live().map(f => f.name).sort().join() === '내 노래.credit.json,내 노래.mp3', folder2.live().map(f => f.name));
+    const li2 = blist2();
+    ok('목록: 내 파일은 source:user · 출처 표기 없음 · 제목', li2.ok && li2.data.items.length === 1 && li2.data.items[0].source === 'user' && li2.data.items[0].credit_required === false && li2.data.items[0].title === '내 노래', li2.data && li2.data.items);
+    const gf = [0, 1, 2].map(i => bfetch2({ name: '내 노래.mp3', index: i }));
+    ok('받기: 노트북이 조각을 이어 붙이면 원본과 같다', gf.every(g => g.ok) && Buffer.compare(Buffer.concat(gf.map(g => Buffer.from(g.data.data, 'base64'))), song) === 0);
+
+    // 같은 이름을 다시 올리면 덮어쓴다
+    const song2 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(120100, 3)]);
+    const r0 = put({ name: '내 노래.mp3', index: 0, parts: 1, total_size: song2.length, data: b64x(song2) });
+    ok('다시 올리면 덮어쓴다(파일 하나·새 크기)', r0.ok && r0.data.done === true && folder2.live().filter(f => f.name === '내 노래.mp3').length === 1 && blist2().data.items[0].bytes === song2.length, r0);
+
+    // 거부들
+    const n2 = folder2.live().length;
+    eq('음원이 아닌 확장자 거부', put({ name: 'a.exe', index: 0, parts: 1, total_size: 200000, data: b64x(song2) }).code, 'ERR_VALIDATION_FAILED');
+    eq('경로가 든 이름 거부', put({ name: '../a.mp3', index: 0, parts: 1, total_size: 200000, data: b64x(song2) }).code, 'ERR_VALIDATION_FAILED');
+    const sizeBefore = blist2().data.items.find(x => x.name === '내 노래.mp3').bytes;
+    eq('알려 준 크기와 다르면 거부(조각은 치운다)', put({ name: '내 노래.mp3', index: 0, parts: 1, total_size: 999999, data: b64x(song2) }).code, 'ERR_VALIDATION_FAILED');
+    ok('크기 불일치 뒤 조각이 남지 않는다', folder2.live().filter(f => f.name.indexOf('내 노래.mp3.p') === 0).length === 0);
+    ok('실패한 재올리기는 멀쩡한 옛 곡을 지우지 않는다', blist2().data.items.some(x => x.name === '내 노래.mp3' && x.bytes === sizeBefore));
+    eq('mp3 머리글이 아니면 거부', put({ name: '가짜.mp3', index: 0, parts: 1, total_size: Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(120000)]).length, data: b64x(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(120000)])) }).code, 'ERR_VALIDATION_FAILED');
+    eq('조각 번호 범위 밖 거부', put({ name: '내 노래.mp3', index: 5, parts: 1, total_size: 200000, data: b64x(song2) }).code, 'ERR_VALIDATION_FAILED');
+    eq('빈 조각 거부', put({ name: '내 노래.mp3', index: 0, parts: 1, total_size: 200000, data: '' }).code, 'ERR_VALIDATION_FAILED');
+    eq('너무 작은 곡 거부', put({ name: '작음.mp3', index: 0, parts: 1, total_size: 1000, data: b64x(song2) }).code, 'ERR_VALIDATION_FAILED');
+    ok('거부된 올리기는 폴더를 늘리지 않는다', folder2.live().length === n2);
+
+    // m4a 머리글
+    const m4a = Buffer.concat([Buffer.from([0, 0, 0, 32]), Buffer.from('ftypM4A '), Buffer.alloc(120000, 1)]);
+    const rm4 = put({ name: 'voice memo.m4a', index: 0, parts: 1, total_size: m4a.length, data: b64x(m4a) });
+    ok('m4a 도 받는다(ftyp 머리글)', rm4.ok && rm4.data.done === true, rm4);
+
+    const dd = bdel2({ name: '내 노래.mp3' });
+    ok('삭제: 곡과 메타를 함께 휴지통으로', dd.ok && dd.data.removed === 2 && !blist2().data.items.some(x => x.name === '내 노래.mp3'), dd);
+    const dd2 = bdel2({ name: 'voice memo.m4a' });
+    ok('삭제: 한글·공백 이름도 된다', dd2.ok && dd2.data.removed === 2 && blist2().data.items.length === 0, dd2);
   }
 
   /* ── [W] 결과 파일 보관·받기 (gas/Result.gs) ── */

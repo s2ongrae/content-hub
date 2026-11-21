@@ -229,13 +229,24 @@ function hubRenderCues_(raw, label, withTone) {
 
 const RENDER_STAGES = ['transcribe', 'finish'];
 const RENDER_BGM_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|wav|m4a|aac)$/i;
+/* 뮤직비디오 모드(2026-11-21, Phase 1) — 사진 + 내 음원/보관 BGM + 가사 + 비트 컷.
+   허브 js/studioLogic.js · 노트북 lib/mv.js 와 같은 값이다. */
+const RENDER_MV_DENSITIES = ['fast_2beat', 'normal_4beat', 'slow_1bar'];
+const RENDER_MV_EFFECTS = ['pulse', 'none'];
+const RENDER_MV_MOODS = ['pop', 'ballad', 'comic', 'rock'];
+const RENDER_MV_LYRIC_MODES = ['mine', 'none'];
+const RENDER_MV_MIN_IMAGES = 3;
+const RENDER_MV_MAX_LYRICS = 2000;
+const RENDER_MV_AUDIO_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|m4a|wav)$/i;
 
 function isRealRenderOrder_(type, payload) {
   if (type !== 'content_render' || !payload) return false;
   // stage 가 적혀 있으면(모르는 값이어도) 진짜 렌더 경로로 보내 검증에서 거절한다 — 옛 claude_prompt 경로로 새지 않게
   // 사진만 있는 오더(images)도 진짜 렌더다 — inputs 가 없어도 claude_prompt 로 보내면 안 된다.
   //  images 키가 **있기만 해도**(배열이 아니어도) 렌더 경로로 보내 검증에서 거절한다 — 조용히 옛 길로 새지 않게.
-  return Array.isArray(payload.inputs) || payload.images !== undefined || String(payload.stage || '') !== '';
+  //  mode:'mv'(뮤직비디오)도 렌더다 — 모르는 mode 값도 같이 보내 거절한다.
+  const mode = String(payload.mode || '').trim();
+  return Array.isArray(payload.inputs) || payload.images !== undefined || String(payload.stage || '') !== '' || mode !== '';
 }
 
 /** 사진 파일 이름 목록 — 영상과 별개. 중복은 버리고 순서는 보존한다. */
@@ -256,6 +267,64 @@ function hubRenderImages_(raw) {
   return out;
 }
 
+/**
+ * 뮤직비디오 모드 payload(2026-11-21, Phase 1) — 사진 + 음원 이름 + 가사 + 컷 밀도.
+ *
+ *  계약(허브 js/createStudio.js · 노트북 lib/mv.js 와 같은 모양)
+ *   { content_id, brand, profile:'captions', mode:'mv', images:[…], mv:{ audio, density, bpm_hint, lyrics, effects, mood, length_sec, lyric_mode } }
+ *  · 유료 API 없음 — 음원은 _bgm 보관함(내 파일·무료 BGM) 이름만 실린다. 곡 파일 자체는 큐로 오지 않는다.
+ *  · 가사가 길면 큐 4,000자 한도에 걸리므로 그때만 lyrics 를 빼고 payload_source:'drive' 로 보낸다
+ *    (노트북이 카드 payload 의 studio.formats.video.mv 에서 읽는다 — 새 경로 없음).
+ */
+function hubRenderMvPayload_(payload, contentId, brand) {
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  const images = hubRenderImages_(payload.images);
+  if (images.length < RENDER_MV_MIN_IMAGES) {
+    throw bad('뮤직비디오는 사진이 ' + RENDER_MV_MIN_IMAGES + '장 이상 필요합니다(지금 ' + images.length + '장).');
+  }
+  // Phase 1 은 사진만 — 영상 컷을 섬는 것은 다음 단계다(모르는 입력을 조용히 버리지 않고 알린다).
+  if (payload.inputs !== undefined && payload.inputs !== null && payload.inputs !== '' && Array.isArray(payload.inputs) && payload.inputs.length) {
+    throw bad('뮤직비디오 모드는 지금 사진만 씁니다 — 영상은 [일반 영상]으로 렌더하세요.');
+  }
+  const mvIn = payload.mv && typeof payload.mv === 'object' ? payload.mv : {};
+  const audio = String(mvIn.audio || '').trim();
+  if (!RENDER_MV_AUDIO_RE.test(audio) || audio.indexOf('..') !== -1 || audio.charAt(0) === '.') {
+    throw bad('mv.audio 는 보관함의 음원 파일 이름(mp3·m4a·wav, 폴더·경로 금지)이어야 합니다.');
+  }
+  const density = mvIn.density === undefined || mvIn.density === null || mvIn.density === '' ? 'normal_4beat' : String(mvIn.density).trim().toLowerCase();
+  if (RENDER_MV_DENSITIES.indexOf(density) === -1) throw bad('mv.density 는 ' + RENDER_MV_DENSITIES.join(' · ') + ' 중 하나여야 합니다.');
+  const effects = mvIn.effects === undefined || mvIn.effects === null || mvIn.effects === '' ? 'pulse' : String(mvIn.effects).trim().toLowerCase();
+  if (RENDER_MV_EFFECTS.indexOf(effects) === -1) throw bad('mv.effects 는 ' + RENDER_MV_EFFECTS.join(' · ') + ' 중 하나여야 합니다.');
+  const mood = mvIn.mood === undefined || mvIn.mood === null || mvIn.mood === '' ? 'pop' : String(mvIn.mood).trim().toLowerCase();
+  if (RENDER_MV_MOODS.indexOf(mood) === -1) throw bad('mv.mood 는 ' + RENDER_MV_MOODS.join(' · ') + ' 중 하나여야 합니다.');
+  let lyricMode = mvIn.lyric_mode === undefined || mvIn.lyric_mode === null || mvIn.lyric_mode === '' ? 'mine' : String(mvIn.lyric_mode).trim().toLowerCase();
+  if (RENDER_MV_LYRIC_MODES.indexOf(lyricMode) === -1) throw bad('mv.lyric_mode 는 ' + RENDER_MV_LYRIC_MODES.join(' · ') + ' 중 하나여야 합니다.');
+  let bpmHint = 0;
+  if (mvIn.bpm_hint !== undefined && mvIn.bpm_hint !== null && mvIn.bpm_hint !== '') {
+    bpmHint = Number(mvIn.bpm_hint);
+    if (!isFinite(bpmHint) || bpmHint < 0 || bpmHint > 300) throw bad('mv.bpm_hint 는 0~300 사이 숫자여야 합니다(0=자동).');
+    bpmHint = Math.round(bpmHint * 10) / 10;
+  }
+  let lengthSec = 0;
+  if (mvIn.length_sec !== undefined && mvIn.length_sec !== null && mvIn.length_sec !== '') {
+    lengthSec = Number(mvIn.length_sec);
+    if (!isFinite(lengthSec) || lengthSec < 0 || lengthSec > 600) throw bad('mv.length_sec 는 0~600초여야 합니다(0=곡 끝까지).');
+    lengthSec = Math.round(lengthSec);
+  }
+  let lyrics = String(mvIn.lyrics === undefined || mvIn.lyrics === null ? '' : mvIn.lyrics).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim();
+  if (lyricMode === 'none') lyrics = '';
+  if (lyrics.length > 8000) throw bad('가사가 너무 깁니다(8,000자까지).');
+  const mv = { audio: audio, density: density, bpm_hint: bpmHint, effects: effects, mood: mood, length_sec: lengthSec, lyric_mode: lyricMode, lines: lyrics ? lyrics.split('\n').filter(function (s) { return s.trim(); }).length : 0 };
+  if (lyrics.length <= RENDER_MV_MAX_LYRICS) mv.lyrics = lyrics;
+  const out = { content_id: contentId, brand: brand, profile: 'captions', mode: 'mv', images: images, mv: mv };
+  if (lyrics.length > RENDER_MV_MAX_LYRICS) out.payload_source = 'drive';
+  if (JSON.stringify(out).length > RENDER_MAX_PAYLOAD_CHARS) {
+    delete out.mv.lyrics;
+    out.payload_source = 'drive';
+  }
+  return out;
+}
+
 /** 렌더 오더 payload 를 검사해 큐에 보낼 모양(고정 키 5개 이하)으로 돌려준다. 어긋나면 ERR_VALIDATION_FAILED. */
 function hubRenderPayload_(payload) {
   const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
@@ -263,6 +332,12 @@ function hubRenderPayload_(payload) {
   if (!RENDER_CONTENT_ID_RE.test(contentId)) throw bad('content_id 는 영문·숫자·_·- 40자 이내여야 합니다.');
   const brand = String(payload.brand || '');
   if (RENDER_BRANDS.indexOf(brand) === -1) throw bad('brand 가 올바르지 않습니다.');
+  // 뮤직비디오 모드(2026-11-21) — 일반 영상과 계약이 다르므로 앞에서 따로 검사한다.
+  const mode = String(payload.mode || '').trim().toLowerCase();
+  if (mode) {
+    if (mode !== 'mv') throw bad('mode 는 mv 하나입니다(일반 영상은 비워 두세요).');
+    return hubRenderMvPayload_(payload, contentId, brand);
+  }
   // 2·3단계(자막 초안·마무리)는 클린 마스터를 이어받으므로 원본 이름이 없다 — 옵션만 통과시킨다(모르는 필드는 버린다)
   const stage = String(payload.stage || '');
   if (stage) {

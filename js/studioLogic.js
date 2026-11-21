@@ -55,6 +55,148 @@ export const TONES = [
 ];
 export const VIDEO_LENGTHS = [15, 30, 60];
 
+/* ────────────────────────── 뮤직비디오 모드(2026-11-21, Phase 1) ──────────────────────────
+ *  영상 스튜디오 안의 토글 하나 — 새 라우트를 만들지 않는다(확정 설계 §3).
+ *  음원은 _bgm 보관함(내 파일·무료 BGM)의 **이름**만 오더에 실린다 — 파일은 허브가 받아 두고 노트북이 가져간다.
+ *  곡 생성(유료 API)은 Phase 3 이다. 여기서는 '이미 있는 곡'만 다룬다.
+ */
+export const MV_DENSITIES = [
+  { id: 'fast_2beat', label: '빠르게 (2박)' },
+  { id: 'normal_4beat', label: '기본 (1마디)' },
+  { id: 'slow_1bar', label: '느리게 (2마디)' }
+];
+export const MV_MOODS = [
+  { id: 'pop', label: '신나는 팝' },
+  { id: 'ballad', label: '감성 발라드' },
+  { id: 'comic', label: '코믹·병맛' },
+  { id: 'rock', label: '밴드·락' }
+];
+export const MV_LYRIC_MODES = [
+  { id: 'mine', label: '내가 쓴 가사' },
+  { id: 'none', label: '가사 없음(연주곡)' }
+];
+export const MV_LENGTHS = [15, 30, 60, 0];         // 0 = 곡 끝까지
+export const MV_AUDIO_EXT_RE = /\.(mp3|m4a|wav)$/i;
+export const MV_AUDIO_MAX_BYTES = 30 * 1024 * 1024;  // wav 3분이 30MB 안팎 — mp3·m4a 를 권한다
+export const MV_MAX_LYRICS = 8000;
+
+/** 뮤직비디오 상태의 기본값 — payload.studio.formats.video.mv 에 그대로 저장된다. */
+export function defaultMv() {
+  return {
+    on: false,
+    audio: { name: '', title: '', source: 'file' },   // source: file(내 파일) · library(보관함에서 고름)
+    lyrics: '',
+    lyric_mode: 'mine',
+    mood: 'pop',
+    density: 'normal_4beat',
+    effects: 'pulse',
+    length_sec: 0,
+    bpm_hint: 0
+  };
+}
+
+export function mvDensityLabel(id) {
+  const d = MV_DENSITIES.find((x) => x.id === id);
+  return d ? d.label : '기본 (1마디)';
+}
+export function mvMoodLabel(id) {
+  const m = MV_MOODS.find((x) => x.id === id);
+  return m ? m.label : '신나는 팝';
+}
+
+/** 저장된 값을 읽어 빠진 칸을 채운다(모르는 값은 기본으로 돌린다 — 오더가 거절되지 않게). */
+export function normalizeMv(raw) {
+  const base = defaultMv();
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const audio = o.audio && typeof o.audio === 'object' ? o.audio : {};
+  const out = Object.assign(base, {
+    on: o.on === true,
+    audio: {
+      name: String(audio.name || ''),
+      title: String(audio.title || ''),
+      source: ['file', 'library'].indexOf(String(audio.source)) >= 0 ? String(audio.source) : 'file'
+    },
+    lyrics: String(o.lyrics == null ? '' : o.lyrics).slice(0, MV_MAX_LYRICS),
+    lyric_mode: MV_LYRIC_MODES.map((x) => x.id).indexOf(String(o.lyric_mode)) >= 0 ? String(o.lyric_mode) : 'mine',
+    mood: MV_MOODS.map((x) => x.id).indexOf(String(o.mood)) >= 0 ? String(o.mood) : 'pop',
+    density: MV_DENSITIES.map((x) => x.id).indexOf(String(o.density)) >= 0 ? String(o.density) : 'normal_4beat',
+    effects: o.effects === 'none' ? 'none' : 'pulse'
+  });
+  const len = Number(o.length_sec);
+  out.length_sec = MV_LENGTHS.indexOf(len) >= 0 ? len : 0;
+  const bpm = Number(o.bpm_hint);
+  out.bpm_hint = Number.isFinite(bpm) && bpm > 0 && bpm <= 300 ? Math.round(bpm * 10) / 10 : 0;
+  if (!out.audio.name) out.audio.source = 'file';
+  return out;
+}
+
+/** 가사 줄만 — 빈 줄은 버리고 앞뒤 공백을 정리한다(카라오케 줄 수의 기준). */
+export function mvLyricLines(text) {
+  return String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+/** 올리기 조각 크기 — 서버 bgm_put 상한(2MB)과 같다. */
+export const MV_CHUNK_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 브라우저가 고른 파일 이름을 서버 규칙(한글·공백·._- , 80자)에 맞춘다.
+ *  · 음원(mp3·m4a·wav)이 아니면 ''를 돌려준다 — 화면이 그때 "올릴 수 없다"고 말한다.
+ */
+export function mvAudioFileName(name) {
+  const raw = String(name || '내 노래.mp3');
+  const extM = raw.match(/\.[^.]+$/);
+  const ext = extM ? extM[0].toLowerCase() : '.mp3';
+  if (!MV_AUDIO_EXT_RE.test(ext)) return '';
+  let base = raw.slice(0, raw.length - (extM ? extM[0].length : 0))
+    .replace(/[^A-Za-z0-9가-힣._ -]+/g, '-').replace(/-+/g, '-').replace(/\s+/g, ' ').trim()
+    .replace(/^[^A-Za-z0-9가-힣]+/, '').slice(0, 70).trim();
+  if (!base) base = '내 노래';
+  return base + ext;
+}
+
+/** 화면 한 줄 요약 — 음원·컷 밀도·가사 줄 수·이펙트. */
+export function mvSummary(mv) {
+  const m = normalizeMv(mv);
+  const lines = m.lyric_mode === 'none' ? 0 : mvLyricLines(m.lyrics).length;
+  return [
+    m.audio.name ? (m.audio.title || m.audio.name) : '음원 고르기 전',
+    mvDensityLabel(m.density),
+    m.lyric_mode === 'none' ? '가사 없음(연주곡)' : '가사 ' + lines + '줄',
+    m.effects === 'pulse' ? '다운비트 번쩍임' : '이펙트 없음'
+  ].join(' · ');
+}
+
+/**
+ * 뮤직비디오 content_render 오더 payload — GAS hubRenderMvPayload_ 와 같은 모양.
+ *  · 사진 이름만 싣는다(파일은 허브 드라이브에 이미 올라가 있다).
+ *  · 가사가 길면 그대로 싣는다 — GAS 가 큐 한도를 보고 lyrics 를 빼고 payload_source:'drive' 로 보낸다.
+ *  · 길이 0 = 곡 끝까지.
+ */
+export function mvOrderPayload(input) {
+  const i = input || {};
+  const mv = normalizeMv(i.mv);
+  const images = (Array.isArray(i.images) ? i.images : []).map(String).filter(Boolean).slice(0, 25);
+  const out = {
+    type: 'content_render',
+    content_id: String(i.contentId || ''),
+    brand: String(i.brand || ''),
+    mode: 'mv',
+    profile: 'captions',
+    images: images,
+    mv: {
+      audio: mv.audio.name,
+      density: mv.density,
+      bpm_hint: mv.bpm_hint,
+      effects: mv.effects,
+      mood: mv.mood,
+      length_sec: mv.length_sec,
+      lyric_mode: mv.lyric_mode
+    }
+  };
+  if (mv.lyric_mode !== 'none' && String(mv.lyrics).trim()) out.mv.lyrics = mv.lyrics;
+  return out;
+}
+
 export function conceptKindLabel(id) {
   const k = CONCEPT_KINDS.find((x) => x.id === id);
   return k ? k.label : '맛집 리뷰';
@@ -85,7 +227,7 @@ export function emptyMaterials() {
       tel: '', address: '', region_dong: '', category: ''
     },
     concept: defaultConcept(),
-    video: { length_sec: 30 }
+    video: { length_sec: 30, mv: defaultMv() }
   };
 }
 
@@ -102,6 +244,7 @@ export function normalizeMaterials(raw) {
   };
   const len = Number(out.video.length_sec);
   out.video.length_sec = VIDEO_LENGTHS.indexOf(len) >= 0 ? len : 30;
+  out.video.mv = normalizeMv(out.video.mv);
   if (CONCEPT_KINDS.map((k) => k.id).indexOf(out.concept.kind) < 0) out.concept.kind = 'review';
   if (TONES.map((t) => t.id).indexOf(out.concept.tone) < 0) out.concept.tone = 'plain';
   Object.keys(out.content).forEach((k) => { out.content[k] = out.content[k] == null ? '' : String(out.content[k]); });
@@ -641,6 +784,7 @@ export function materialsFromStudio(studio) {
   if (Array.isArray(s.media)) out.photos = s.media.filter((x) => x && (x.kind === 'photo' || x.kind === 'PHOTO' || !x.kind)).map(normalizePhoto);
   const v = (s.formats && s.formats.video) || null;
   if (v && v.length_sec) out.video.length_sec = Number(v.length_sec) || 30;
+  if (v && v.mv) out.video.mv = normalizeMv(v.mv);
   return normalizeMaterials(out);
 }
 

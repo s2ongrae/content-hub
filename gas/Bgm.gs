@@ -13,12 +13,16 @@
  *  보안: 서버가 가져오는 주소는 (1) Openverse API 주소 (2) Openverse 가 알려 준 곡 주소가 *.storage.jamendo.com 모양일 때뿐.
  *  브라우저가 보낸 주소는 쓰지 않는다 — 곡 id(UUID)만 받아 서버가 직접 조회한다.
  *
- *  액션 5개 (Auth.gs 화이트리스트와 Code.gs M1_HANDLERS 에 등록)
+ *  액션 6개 (Auth.gs 화이트리스트와 Code.gs M1_HANDLERS 에 등록)
  *   · bgm_search  키워드로 찾기(결과 12곡, 6시간 캐시)
  *   · bgm_pick    한 곡을 내려받아 보관(이름 = 영문 slug + id 앞 8자 .mp3)
- *   · bgm_list    보관한 곡 목록(이름·크기·출처 문구)
+ *   · bgm_put     **내 음원 올리기**(2026-11-21, 뮤직비디오 모드) — 2MB 조각으로 올려 같은 보관함에 둔다
+ *   · bgm_list    보관한 곡 목록(이름·크기·출처 문구·내 파일 여부)
  *   · bgm_fetch   곡 조각을 base64 로(노트북용, 2MB 조각)
  *   · bgm_delete  보관한 곡 하나 휴지통으로
+ *
+ *  내 음원(bgm_put)은 뮤직비디오 모드에서 쓴다 — 허깅페이스 ACE-Step·Suno·내 녹음 등에서 뽑은
+ *  mp3·m4a(25MB)·wav(30MB)를 그대로 올린다. 노트북은 이름만 받아 bgm_fetch 로 가져간다(경로 없음).
  */
 
 const BGM_FOLDER_ID_ = '_bgm';
@@ -26,9 +30,15 @@ const BGM_API_URL = 'https://api.openverse.org/v1/audio/';
 const BGM_LICENSE_LABELS = { cc0: 'CC0 1.0', pdm: '퍼블릭 도메인', by: 'CC BY' };
 const BGM_AUDIO_URL_RE = /^https:\/\/[a-z0-9-]+\.storage\.jamendo\.com\/\?trackid=\d+&format=mp3\d?$/;
 const BGM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const BGM_NAME_RE_SERVER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.mp3$/;
+/* 보관함 파일 이름 — 내려받은 BGM(영문 slug)과 내가 올린 음원(한글·공백 허용) 둘 다.
+   조각 파일은 '<이름>.p00of03' 모양이라 이 규칙(끝이 mp3·m4a·wav)에 걸리지 않는다. */
+const BGM_NAME_RE_SERVER = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|m4a|wav)$/;
+const BGM_EXT_RE = /\.(mp3|m4a|wav)$/i;
+const BGM_MIME = { mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav' };
 const BGM_PART_BYTES = 2 * 1024 * 1024;
 const BGM_MAX_BYTES = 25 * 1024 * 1024;
+const BGM_PUT_MAX_PARTS = 16;                       // 16 × 2MB = 32MB
+const BGM_PUT_MAX_BYTES = 30 * 1024 * 1024;         // wav 3분이 30MB 안팎이다
 const BGM_MIN_BYTES = 100 * 1024;
 const BGM_MIN_SEC = 30;
 const BGM_MAX_SEC = 600;
@@ -114,7 +124,7 @@ function bgmSlug_(title) {
 }
 
 function bgmName_(it) { return bgmSlug_(it.title) + '-' + it.id.slice(0, 8) + '.mp3'; }
-function bgmMetaName_(name) { return name.replace(/\.mp3$/, '') + '.credit.json'; }
+function bgmMetaName_(name) { return String(name).replace(BGM_EXT_RE, '') + '.credit.json'; }
 
 function bgmNameOf_(payload) {
   const n = String((payload && payload.name) || '');
@@ -180,6 +190,149 @@ function bgmMetaOf_(folder, name) {
   try { return JSON.parse(f.getBlob().getDataAsString()); } catch (err) { return null; }
 }
 
+/* ------------------------------------------------------------------ *
+ * 내 음원 올리기 (2026-11-21, 뮤직비디오 모드) — 2MB 조각으로 받아 하나로 붙인다
+ *
+ *  브라우저가 보내는 것: { name, index, parts, total_size, data(base64) }
+ *   · name 은 사용자가 고른 파일 이름이다(한글·공백 허용). 경로는 안 받는다(이름만).
+ *   · 조각은 '<이름>.p00of03' 모양으로 _bgm 폴더에 잠시 둔다 — 목록 규칙(끝이 mp3·m4a·wav)에 걸리지 않는다.
+ *   · 마지막 조각까지 다 오면 순서대로 붙여 최종 파일 하나로 만든다(크기·머리글 확인).
+ *   · 0번 조각은 '새로 올리기 시작' — 같은 이름의 옛 파일·조각을 먼저 치운다(다시 올리면 덮어쓴다).
+ *   · 메타(<이름>.credit.json)에 source:'user' 를 남긴다 — 화면이 '내 파일'로 보여 주고, 출처 표기는 필요 없다.
+ * ------------------------------------------------------------------ */
+const BGM_MAGIC_OK = { mp3: true, m4a: true, wav: true };
+
+function bgmPutName_(payload) {
+  const raw = String((payload && payload.name) || '');
+  const name = raw.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!BGM_NAME_RE_SERVER.test(name) || name.indexOf('..') !== -1 || name.charAt(0) === '.') {
+    throw bgmBad_('음원 파일 이름은 mp3·m4a·wav 이고, 폴더·경로가 없는 이름이어야 해요(80자 이내).', { name: raw.slice(0, 40) });
+  }
+  return name;
+}
+
+function bgmPartName_(name, index, parts) {
+  const two = function (n) { const s = String(n); return s.length < 2 ? '0' + s : s; };
+  return name + '.p' + two(index) + 'of' + two(parts);
+}
+
+function bgmPutParts_(folder, name) {
+  const out = [];
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (fileTrashed_(f)) continue;
+    const n = String(f.getName() || '');
+    if (n.indexOf(name + '.p') !== 0) continue;
+    const m = /^(.*)\.p(\d{2})of(\d{2})$/.exec(n);
+    if (!m) continue;
+    out.push({ file: f, name: n, index: Number(m[2]), parts: Number(m[3]) });
+  }
+  return out;
+}
+
+function bgmTrashParts_(list) {
+  let n = 0;
+  (list || []).forEach(function (p) { try { p.file.setTrashed(true); n++; } catch (err) { /* 이미 지워짐 */ } });
+  return n;
+}
+
+function bgmLooksAudio_(bytes, ext) {
+  if (!bytes || bytes.length < 4) return false;
+  const b0 = bytes[0] & 255, b1 = bytes[1] & 255, b2 = bytes[2] & 255, b3 = bytes[3] & 255;
+  if (ext === 'wav') return b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46;   // RIFF
+  if (ext === 'm4a') {
+    // ISO 기본 파일 형식: 4~8바이트가 'ftyp'
+    return bytes.length > 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+  }
+  // mp3: ID3 머리글 또는 프레임 동기(0xFF 0xEx)
+  return (b0 === 0x49 && b1 === 0x44 && b2 === 0x33) || (b0 === 0xFF && (b1 & 0xE0) === 0xE0);
+}
+
+function handleBgmPut_(ss, payload) {
+  const name = bgmPutName_(payload);
+  const ext = (BGM_EXT_RE.exec(name) || [])[0].slice(1).toLowerCase();
+  const parts = Math.floor(Number(payload && payload.parts));
+  if (!isFinite(parts) || parts < 1 || parts > BGM_PUT_MAX_PARTS) throw bgmBad_('parts 는 1~' + BGM_PUT_MAX_PARTS + ' 이어야 해요.');
+  const index = Math.floor(Number(payload && payload.index));
+  if (!isFinite(index) || index < 0 || index >= parts) throw bgmBad_('index 는 0~' + (parts - 1) + ' 사이여야 해요.');
+  const totalSize = Math.floor(Number(payload && payload.total_size));
+  if (!isFinite(totalSize) || totalSize < BGM_MIN_BYTES || totalSize > BGM_PUT_MAX_BYTES) {
+    throw bgmBad_('음원 크기는 100KB~' + Math.round(BGM_PUT_MAX_BYTES / 1048576) + 'MB 까지예요.');
+  }
+  if (ext === 'wav' && totalSize > BGM_PUT_MAX_BYTES) throw bgmBad_('wav 는 30MB 까지예요 — mp3·m4a 로 바꿔 올려 주세요.');
+  if (ext !== 'wav' && totalSize > BGM_MAX_BYTES) throw bgmBad_('mp3·m4a 는 25MB 까지예요.');
+  const b64 = String((payload && payload.data) || '');
+  if (!b64 || !/^[A-Za-z0-9+\/=]+$/.test(b64)) throw bgmBad_('data 는 base64 문자열이어야 해요.');
+  const bytes = Utilities.base64Decode(b64);
+  if (!bytes || !bytes.length) throw bgmBad_('빈 조각은 올릴 수 없어요.');
+  if (bytes.length > BGM_PART_BYTES) throw bgmBad_('조각이 너무 커요(최대 2MB).', { bytes: bytes.length });
+
+  const folder = bgmFolder_(true);
+  const existing = bgmPutParts_(folder, name);
+  if (index === 0) {
+    // 새로 올리기 시작 — 같은 이름의 **옛 조각**만 치운다. 이미 보관된 완성 곡은 다 올라올 때까지 그대로 둔다
+    // (중간에 실패해도 멀쩡한 옛 곡을 잃지 않게).
+    bgmTrashParts_(existing);
+  } else {
+    // 같은 번호·다른 조각 수의 옛 조각만 치운다(나머지 조각은 그대로 둔다).
+    bgmTrashParts_(existing.filter(function (p) { return p.index === index || p.parts !== parts; }));
+  }
+  folder.createFile(Utilities.newBlob(bytes, 'application/octet-stream', bgmPartName_(name, index, parts)));
+
+  const now = bgmPutParts_(folder, name).filter(function (p) { return p.parts === parts; });
+  const seen = {};
+  now.forEach(function (p) { seen[p.index] = true; });
+  const received = Object.keys(seen).length;
+  if (received < parts) return { name: name, index: index, parts: parts, received: received, done: false };
+
+  // 다 모였다 — 순서대로 붙여 하나로 만든다.
+  //  · push.apply 는 원소가 많으면 스택이 넘친다(실측: 3MB 에서 Maximum call stack) → 인덱스로 채운다.
+  const chunks = [];
+  let sum = 0;
+  for (let i = 0; i < parts; i++) {
+    const p = now.find(function (x) { return x.index === i; });
+    const chunk = p.file.getBlob().getBytes();
+    chunks.push(chunk);
+    sum += chunk.length;
+    if (sum > BGM_PUT_MAX_BYTES) throw bgmBad_('이어 붙인 크기가 한도을 넘어요.');
+  }
+  let buf;
+  if (chunks.length === 1) buf = chunks[0];
+  else {
+    buf = new Array(sum);
+    let off = 0;
+    for (let c = 0; c < chunks.length; c++) {
+      const ch = chunks[c];
+      for (let k = 0; k < ch.length; k++) buf[off + k] = ch[k];
+      off += ch.length;
+    }
+  }
+  if (buf.length !== totalSize) {
+    bgmTrashParts_(bgmPutParts_(folder, name));
+    throw bgmBad_('받은 크기(' + buf.length + '바이트)가 알려 준 크기(' + totalSize + ')와 달라요. 처음부터 다시 올려 주세요.',
+      { received: buf.length, expected: totalSize });
+  }
+  if (!bgmLooksAudio_(buf, ext)) {
+    bgmTrashParts_(bgmPutParts_(folder, name));
+    throw bgmBad_('받은 파일이 ' + ext + ' 음원이 아니에요(머리글이 다름).');
+  }
+  [name, bgmMetaName_(name)].forEach(function (n) {
+    const old = folder.getFilesByName(n);
+    while (old.hasNext()) { try { old.next().setTrashed(true); } catch (err) { /* 이미 지워짐 */ } }
+  });
+  folder.createFile(Utilities.newBlob(buf, BGM_MIME[ext] || 'audio/mpeg', name));
+  const title = bgmClean_(payload && payload.title, 80) || name.replace(BGM_EXT_RE, '');
+  const meta = {
+    name: name, title: title, creator: '내 파일', license: 'user', license_label: '내 파일',
+    credit_required: false, credit: '', source: 'user', duration_sec: 0,
+    bytes: buf.length, saved_at: formatKstIso_(new Date())
+  };
+  folder.createFile(bgmMetaName_(name), JSON.stringify(meta), 'application/json');
+  bgmTrashParts_(bgmPutParts_(folder, name));
+  return { name: name, bytes: buf.length, parts: parts, received: parts, done: true, title: title };
+}
+
 function handleBgmList_(ss, payload) {
   const folder = bgmFolder_(false);
   if (!folder) return { items: [] };
@@ -196,7 +349,8 @@ function handleBgmList_(ss, payload) {
     items.push({
       name: n, bytes: Number(f.getSize()) || 0, parts: Math.max(1, Math.ceil((Number(f.getSize()) || 0) / BGM_PART_BYTES)),
       title: String(meta.title || ''), creator: String(meta.creator || ''), license_label: String(meta.license_label || ''),
-      credit_required: meta.credit_required === true, credit: String(meta.credit || ''), duration_sec: Number(meta.duration_sec) || 0
+      credit_required: meta.credit_required === true, credit: String(meta.credit || ''), duration_sec: Number(meta.duration_sec) || 0,
+      source: String(meta.source || 'openverse')   // 'user' = 내가 올린 음원(출처 표기 없음)
     });
   }
   items.sort(function (a, b) { return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); });
@@ -222,6 +376,7 @@ function handleBgmDelete_(ss, payload) {
   const folder = bgmFolder_(false);
   if (!folder) return { name: name, removed: 0 };
   let removed = 0;
+  removed += bgmTrashParts_(bgmPutParts_(folder, name));
   [name, bgmMetaName_(name)].forEach(function (n) {
     const it = folder.getFilesByName(n);
     while (it.hasNext()) { try { it.next().setTrashed(true); removed++; } catch (err) { /* 이미 지워짐 */ } }
