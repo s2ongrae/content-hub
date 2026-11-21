@@ -358,6 +358,18 @@ function hubRenderPayload_(payload) {
     if (RENDER_TEMPLATES.indexOf(tm) === -1) throw bad('template 은 ' + RENDER_TEMPLATES.join(' · ') + ' 중 하나여야 합니다.');
     out.template = tm;
   }
+  // 오프닝 훅 위치·유지시간 — 'none'·'ppiyak_kimmary' 템플릿은 훅이 없어 조용히 버린다
+  const hookOff = out.template === 'none' || out.template === 'ppiyak_kimmary';
+  if (payload.hook_pos !== undefined && payload.hook_pos !== null && payload.hook_pos !== '') {
+    const hp = String(payload.hook_pos).trim().toLowerCase();
+    if (hp !== 'center' && hp !== 'top') throw bad('hook_pos 는 center·top 중 하나여야 합니다.');
+    if (!hookOff) out.hook_pos = hp;
+  }
+  if (payload.hook_hold !== undefined && payload.hook_hold !== null && payload.hook_hold !== '') {
+    const hh = Number(payload.hook_hold);
+    if (!isFinite(hh) || hh < 1.0 || hh > 4.0) throw bad('hook_hold 는 1.0~4.0초 사이 숫자여야 합니다.');
+    if (!hookOff) out.hook_hold = Math.round(hh * 10) / 10;
+  }
   Object.keys(RENDER_TEMPLATE_TEXT).forEach(function (k) {
     const v = payload[k];
     if (v === undefined || v === null || v === '') return;
