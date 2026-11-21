@@ -40,7 +40,8 @@
     res.textContent = '측정 중…';
     var f = document.createElement('iframe');
     f.width = String(W);
-    f.src = '../#/' + route;
+    // 캐시를 피해서 싣는다 — GitHub Pages 의 HTML 은 몇 분 캐시되므로 ?wc= 를 붙이지 않으면 옛 번들이 그대로 뜬다(점검용)
+    f.src = '../?wc=' + Date.now() + '#/' + route;
     box.appendChild(h);
     box.appendChild(f);
     box.appendChild(res);
