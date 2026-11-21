@@ -561,11 +561,12 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
   .sidebar.is-rail .side-title { visibility: hidden; height: 4px; margin: 6px 0 0; overflow: hidden; }
   .sidebar.is-rail em { display: none; }
   .sidebar.is-rail .side-item, .sidebar.is-rail .side-toggle { justify-content: center; padding-left: 0; padding-right: 0; }
-  /* 본문은 사이드바 오른쪽 남은 폭 안에서 가운데 — 아주 넓은 화면에서 오른쪽만 비지 않게 */
-  main { padding: 14px 16px 40px; max-width: 1440px; margin-left: max(232px, calc((100vw - 1440px) / 2 + 116px)); }
-  .sidebar.is-rail ~ main { margin-left: max(64px, calc((100vw - 1440px) / 2 + 32px)); }
-  .banners { margin-left: max(232px, calc((100vw - 1440px) / 2 + 116px)); }
-  .sidebar.is-rail ~ .banners { margin-left: max(64px, calc((100vw - 1440px) / 2 + 32px)); }
+  /* 본문은 사이드바 오른쪽 남은 폭 안에서 가운데 — 아주 넓은 화면에서 오른쪽만 비지 않게
+     (100% 는 스크롤바를 뺀 실제 폭이라 100vw 보다 정확하다) */
+  main { padding: 14px 16px 40px; max-width: 1440px; margin-left: max(232px, calc((100% - 1440px) / 2 + 116px)); }
+  .sidebar.is-rail ~ main { margin-left: max(64px, calc((100% - 1440px) / 2 + 32px)); }
+  .banners { margin-left: max(232px, calc((100% - 1440px) / 2 + 116px)); }
+  .sidebar.is-rail ~ .banners { margin-left: max(64px, calc((100% - 1440px) / 2 + 32px)); }
   .page-head h1 { font-size: 23px; }
   .appbar { padding: 10px 16px; }
   .brand-chip { font-size: 13.5px; }
