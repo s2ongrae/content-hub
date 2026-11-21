@@ -166,7 +166,7 @@ a { color: var(--accent-2); }
 /* ───────────── 탭 ───────────── */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
-  display: grid; grid-template-columns: repeat(10, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   gap: 2px; padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--bg-soft) 92%, transparent);
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
@@ -182,6 +182,19 @@ a { color: var(--accent-2); }
 .tab span { font-size: 17px; line-height: 1.1; }
 .tab em { font-style: normal; }
 .tab[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+
+/* 사이드바는 900px 이상에서만(아래 데스크톱 블록), 폰에서는 숨김 */
+.sidebar { display: none; }
+.more-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.more-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 4px; min-height: var(--tap); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px; color: var(--tx-2);
+  font-size: 12.5px; font-weight: 600;
+}
+.more-item span { font-size: 20px; line-height: 1.1; }
+.more-item em { font-style: normal; }
+.more-item[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
 
 /* ───────────── 배너 ───────────── */
 .banners { display: grid; gap: 8px; padding: 0 12px; }
@@ -521,15 +534,35 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
   .brands { flex: 0 1 440px; }
   .brand-chip { padding: 4px 16px; }
   .appbar-tools { margin-left: auto; }
-  .tabbar {
-    position: sticky; top: 55px; bottom: auto;
-    display: flex; justify-content: center; gap: 6px;
-    padding: 10px 16px 0; background: transparent; backdrop-filter: none;
-    border-top: 0; border-bottom: 0; max-width: 1240px; margin: 0 auto;
+  .tabbar { display: none; }
+  .sidebar {
+    position: fixed; top: 55px; bottom: 0; left: 0; width: 232px; z-index: 40;
+    display: flex; flex-direction: column; gap: 14px; overflow-y: auto; overflow-x: hidden;
+    padding: 12px 10px 16px; background: var(--bg-soft); border-right: 1px solid var(--line-soft);
+    transition: width .18s ease;
   }
-  .tab { flex-direction: row; gap: 7px; padding: 7px 14px; min-height: 38px; font-size: 13px; }
-  .tab span { font-size: 15px; }
-  main { padding: 14px 16px 40px; }
+  .side-title { font-size: 11px; font-weight: 700; color: var(--tx-3); margin: 0 8px 4px; letter-spacing: .04em; }
+  .side-group { display: flex; flex-direction: column; gap: 2px; }
+  .side-bottom { margin-top: auto; border-top: 1px solid var(--line-soft); padding-top: 10px; }
+  .side-item, .side-toggle {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 8px 12px; min-height: 38px; background: transparent; border: 0; border-radius: 10px;
+    color: var(--tx-2); font-size: 13.5px; font-weight: 600; text-align: left;
+    transition: color .15s, background .15s;
+  }
+  .side-item span, .side-toggle span { font-size: 16px; line-height: 1; width: 20px; text-align: center; flex: 0 0 auto; }
+  .side-item em, .side-toggle em { font-style: normal; white-space: nowrap; }
+  .side-item:hover, .side-toggle:hover { background: var(--surface); color: var(--tx); }
+  .side-item[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+  .side-toggle { color: var(--tx-3); font-size: 12px; }
+  .sidebar.is-rail { width: 64px; }
+  .sidebar.is-rail .side-title, .sidebar.is-rail em { display: none; }
+  .sidebar.is-rail .side-item, .sidebar.is-rail .side-toggle { justify-content: center; padding: 8px 0; }
+  main { padding: 14px 16px 40px; max-width: 1440px; margin: 0 0 0 232px; }
+  .sidebar.is-rail ~ main { margin-left: 64px; }
+  .banners { margin-left: 232px; }
+  .sidebar.is-rail ~ .banners { margin-left: 64px; }
+  .board { grid-template-columns: repeat(auto-fill, minmax(260px, 320px)); }
   .page-head h1 { font-size: 23px; }
   .appbar { padding: 10px 16px; }
   .brand-chip { font-size: 13.5px; }
