@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/style.css?v=m2-24">
+<link rel="stylesheet" href="css/style.css?v=m2-25">
 <link rel="stylesheet" href="css/studio.css?v=20261121a">
 </head>
 <body>
@@ -51,13 +51,53 @@
   <button type="button" class="tab" data-route="approve" aria-label="빠른 승인" title="카드 한 장씩 읽고 바로 승인"><span aria-hidden="true">✅</span><em>승인</em></button>
   <button type="button" class="tab" data-route="create" aria-label="제작 스튜디오" title="재료를 넣으면 블로그·영상·피드 완성본이 나옵니다"><span aria-hidden="true">＋</span><em>제작</em></button>
   <button type="button" class="tab" data-route="perf" aria-label="성과분석" title="이번 주 유효조회·당월 리워드·당근 달성률"><span aria-hidden="true">📈</span><em>성과</em></button>
-  <button type="button" class="tab" data-route="blog" aria-label="내 블로그" title="네이버 블로그 방문자·글 반응·검색 순위"><span aria-hidden="true">📝</span><em>블로그</em></button>
-  <button type="button" class="tab" data-route="review" aria-label="원고 검수" title="올리기 전에 빠진 것 확인"><span aria-hidden="true">🗒</span><em>검수</em></button>
-  <button type="button" class="tab" data-route="lint" aria-label="발행 전 린터" title="상위노출 8항목으로 초안을 채점"><span aria-hidden="true">🔍</span><em>점검</em></button>
-  <button type="button" class="tab" data-route="series" aria-label="연재 모음" title="같은 주제로 이어지는 편 관리"><span aria-hidden="true">🎬</span><em>연재</em></button>
-  <button type="button" class="tab" data-route="knowhow" aria-label="참고 노하우" title="잘 된 글의 비결 모아두기"><span aria-hidden="true">💡</span><em>참고</em></button>
-  <button type="button" class="tab" data-route="ops" aria-label="앱 관리" title="연결·백업·시트 점검"><span aria-hidden="true">🛠</span><em>관리</em></button>
+  <button type="button" class="tab" id="btn-more" aria-label="더보기 메뉴" title="블로그·검수·점검·연재·참고·관리"><span aria-hidden="true">☰</span><em>더보기</em></button>
 </nav>
+
+<nav class="sidebar" id="sidebar" aria-label="전체 메뉴">
+  <button type="button" class="side-toggle" id="btn-rail" aria-label="메뉴 접기" title="메뉴 접기·펼치기"><span aria-hidden="true">«</span><em>접기</em></button>
+  <div class="side-group">
+    <p class="side-title">매일</p>
+    <button type="button" class="side-item" data-route="board" aria-label="진행 현황" title="전체 진행 단계를 한눈에"><span aria-hidden="true">▦</span><em>현황</em></button>
+    <button type="button" class="side-item" data-route="approve" aria-label="빠른 승인" title="카드 한 장씩 읽고 바로 승인"><span aria-hidden="true">✅</span><em>승인</em></button>
+    <button type="button" class="side-item" data-route="create" aria-label="제작 스튜디오" title="재료를 넣으면 블로그·영상·피드 완성본이 나옵니다"><span aria-hidden="true">＋</span><em>제작</em></button>
+  </div>
+  <div class="side-group">
+    <p class="side-title">분석</p>
+    <button type="button" class="side-item" data-route="perf" aria-label="성과분석" title="이번 주 유효조회·당월 리워드·당근 달성률"><span aria-hidden="true">📈</span><em>성과</em></button>
+    <button type="button" class="side-item" data-route="blog" aria-label="내 블로그" title="네이버 블로그 방문자·글 반응·검색 순위"><span aria-hidden="true">📝</span><em>블로그</em></button>
+  </div>
+  <div class="side-group">
+    <p class="side-title">품질</p>
+    <button type="button" class="side-item" data-route="review" aria-label="원고 검수" title="올리기 전에 빠진 것 확인"><span aria-hidden="true">🗒</span><em>검수</em></button>
+    <button type="button" class="side-item" data-route="lint" aria-label="발행 전 린터" title="상위노출 8항목으로 초안을 채점"><span aria-hidden="true">🔍</span><em>점검</em></button>
+  </div>
+  <div class="side-group">
+    <p class="side-title">자산</p>
+    <button type="button" class="side-item" data-route="series" aria-label="연재 모음" title="같은 주제로 이어지는 편 관리"><span aria-hidden="true">🎬</span><em>연재</em></button>
+    <button type="button" class="side-item" data-route="knowhow" aria-label="참고 노하우" title="잘 된 글의 비결 모아두기"><span aria-hidden="true">💡</span><em>참고</em></button>
+  </div>
+  <div class="side-group side-bottom">
+    <button type="button" class="side-item" data-route="ops" aria-label="앱 관리" title="연결·백업·시트 점검"><span aria-hidden="true">🛠</span><em>관리</em></button>
+  </div>
+</nav>
+
+<dialog id="more-sheet" class="sheet">
+  <div class="sheet-card">
+    <header class="sheet-head">
+      <h2>더보기</h2>
+      <button type="button" class="icon-btn" data-close="more-sheet" aria-label="닫기">✕</button>
+    </header>
+    <div class="sheet-body more-grid">
+      <button type="button" class="more-item" data-route="blog" aria-label="내 블로그"><span aria-hidden="true">📝</span><em>블로그</em></button>
+      <button type="button" class="more-item" data-route="review" aria-label="원고 검수"><span aria-hidden="true">🗒</span><em>검수</em></button>
+      <button type="button" class="more-item" data-route="lint" aria-label="발행 전 린터"><span aria-hidden="true">🔍</span><em>점검</em></button>
+      <button type="button" class="more-item" data-route="series" aria-label="연재 모음"><span aria-hidden="true">🎬</span><em>연재</em></button>
+      <button type="button" class="more-item" data-route="knowhow" aria-label="참고 노하우"><span aria-hidden="true">💡</span><em>참고</em></button>
+      <button type="button" class="more-item" data-route="ops" aria-label="앱 관리"><span aria-hidden="true">🛠</span><em>관리</em></button>
+    </div>
+  </div>
+</dialog>
 
 <div id="banners" class="banners" aria-live="polite"></div>
 

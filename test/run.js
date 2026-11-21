@@ -266,7 +266,12 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('innerHTML/outerHTML/insertAdjacentHTML 0건', newFiles.filter((f) => /\.js$/.test(f)).every((f) => !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(src[f])));
     ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', newFiles.every((f) => !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(src[f])));
     ok('index.html 이 새 app.js 버전을 부른다', /js\/app\.js\?v=\d+[a-z]/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
-    ok('하단 탭이 늘지 않았다(10개)', (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/class="tab"/g) || []).length === 10);
+    /* 2026-11-21 레이아웃 개편: 하단 5칸 · 사이드바 10개 */
+    const navHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    ok('하단 탭은 5칸으로 줄었다', (navHtml.match(/class="tab"/g) || []).length === 5);
+    ok('사이드바 메뉴는 10개', (navHtml.match(/class="side-item"/g) || []).length === 10);
+    ok('라우트 10개가 그대로 있다', ['board','approve','create','perf','blog','review','lint','series','knowhow','ops'].every((r) => navHtml.indexOf('data-route="' + r + '"') >= 0));
+    ok('더보기 시트에 6개 항목', (navHtml.match(/class="more-item"/g) || []).length === 6);
   } catch (err) {
     ok('트랙 채널 계약 시험', false, (err && err.stack) || err);
   }

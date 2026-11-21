@@ -248,6 +248,10 @@ const M1_HANDLERS = {
   bgm_list: handleBgmList_,
   bgm_fetch: handleBgmFetch_,
   bgm_delete: handleBgmDelete_,
+  result_put: handleResultPut_,
+  result_list: handleResultList_,
+  result_fetch: handleResultFetch_,
+  result_delete: handleResultDelete_,
   asset_put: handleAssetPut_,
   asset_get: handleAssetGet_,
   // 내 블로그 보기 (2026-11-19) — gas/Blog.gs
