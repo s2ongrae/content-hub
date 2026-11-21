@@ -14,7 +14,7 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261121m';
+import { produceSection } from './produceView.js?v=20261121n';
 import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261121j';
 import {
   FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
@@ -44,7 +44,8 @@ const mem = {
   poll: {},
   kit: null,
   draft: null,
-  feedFilter: 'none'
+  feedFilter: 'none',
+  mvLinked: false
 };
 
 function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -122,6 +123,11 @@ export function renderCreateStudio(main, ctx, opts) {
   }
 
   loadMaterials(brand);
+  // 딥링크: #/create/video?mv=1 이면 뮤직비디오 모드로 바로 연다(점검·북마크용). 한 번만 적용한다.
+  if (format === 'video' && !mem.mvLinked && /(?:^|[?#&])mv=1(?:&|$)/.test(String(location.hash || ''))) {
+    mem.materials.video.mv.on = true;
+    mem.mvLinked = true;
+  }
   if (!format) return renderChooser(main, ctx);
   return renderFormat(main, ctx, format);
 }
