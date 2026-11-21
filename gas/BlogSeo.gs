@@ -115,9 +115,19 @@ function blogSeoSheet_(ss) {
 
 function blogSeoRowsOfDay_(ss, day) {
   // 시트는 '2026-11-21' 문자열을 Date 로 바꿔 돌려줄 때가 있다 → 같은 키로 맞춘다(dayKey_, Blog.gs).
-  return readSheetAsObjects_(ss, BLOG_SEO_SHEET_)
+  // 같은 제목이 여러 번 쌓였으면 한 줄만 남긴다(저장이 겹쳐도 화면은 10줄).
+  const seen = {};
+  const out = [];
+  readSheetAsObjects_(ss, BLOG_SEO_SHEET_)
     .filter(function (r) { return dayKey_(r.day) === day && String(r.title) !== ''; })
-    .sort(function (a, b) { return (Number(a.rank) || 99) - (Number(b.rank) || 99); });
+    .sort(function (a, b) { return (Number(a.rank) || 99) - (Number(b.rank) || 99); })
+    .forEach(function (r) {
+      const key = String(r.title) + '|' + String(r.keyword);
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push(r);
+    });
+  return out.slice(0, BLOG_SEO_COUNT_);
 }
 
 /** 그날 줄만 갈아 끼운다(같은 날 두 번 만들어도 10줄). 다른 날 줄은 그대로 둔다. */
@@ -154,6 +164,10 @@ function blogSeoSave_(ss, day, rows) {
       matrix.push(padded[i] || new Array(width).fill(''));
     }
     sheet.getRange(1, 1, matrix.length, width).setValues(matrix);
+    // 남는 옛 줄은 실제로 지운다(빈 값만 덮으면 시트가 계속 불어난다).
+    if (last > matrix.length && typeof sheet.deleteRows === 'function') {
+      try { sheet.deleteRows(matrix.length + 1, last - matrix.length); } catch (e) { /* 못 지워도 위 setValues 가 값을 지운다 */ }
+    }
   });
 }
 
