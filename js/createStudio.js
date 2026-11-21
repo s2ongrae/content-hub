@@ -824,7 +824,8 @@ function paintVideo(actions, out, ctx, ui) {
         brand: ctx.state.brand,
         images: names.slice(0, 25),
         profile: 'captions',
-        sub_style: 'auto'
+        sub_style: 'auto',
+        template: 'auto',
       };
       if (draft && Array.isArray(draft.captions) && draft.captions.length) {
         payload.captions = draft.captions;

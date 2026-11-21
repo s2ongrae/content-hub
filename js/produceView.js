@@ -30,6 +30,7 @@ import {
 } from './produceLogic.js?v=20261121g';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261121g';
 import { readStudio, mergeFormat } from './studioLogic.js?v=20261121g';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint } from './videoTemplate.js?v=20261121g';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -708,7 +709,8 @@ export function produceSection(ctx) {
         captions: capRes.cues.length ? capRes.cues : undefined,
         narration: state.narrate ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
         burnSubtitles: state.burn, subStyle: state.sub_style,
-        narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined
+        narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined,
+        template: state.template, title: state.title, badge: state.badge, hook: state.hook, outro: state.outro
       });
       return { cr, b };
     };
@@ -747,6 +749,29 @@ export function produceSection(ctx) {
       (capRes.errors.length || narRes.errors.length)
         ? h('span', { class: 'pr-check-s', text: '카드 자막·내레이션에 문제가 있어요: ' + (capRes.errors[0] || narRes.errors[0]) })
         : null));
+
+    // 채널 템플릿(2026-11-21) — 상단 뱃지·2줄 제목·오프닝 훅·아웃트로. ASS 한 장에 자막과 함께 굽는다.
+    const tHint = templateHint(brand, state.template);
+    const tInput = (key, label, ph, max) => h('label', { class: 'pr-field' },
+      h('span', { class: 'pr-label', text: label }),
+      h('input', { class: 'pr-in', type: 'text', maxlength: String(max), 'aria-label': label,
+        value: state[key] || '', placeholder: ph || '',
+        oninput: (e) => { const v = e.target.value; change((st) => { st[key] = v; }); } }));
+    const tState = state.template === 'none'
+      ? '템플릿 없이 자막만 굽습니다(예전 동작).'
+      : ('트랙 기본값 — 뱃지 ' + (tHint && tHint.badge ? tHint.badge : '대전 청년') + ' · 아웃트로 ' + (tHint && tHint.outro ? tHint.outro : '다음 코스는? 구독') + '. 비운 칸은 기본값을 써요.');
+    box.append(h('div', { class: 'pr-field' },
+      h('span', { class: 'pr-label', text: '채널 템플릿 (뱃지 · 2줄 제목 · 오프닝 훅 · 아웃트로)' }),
+      h('select', { class: 'pr-sel', 'aria-label': '채널 템플릿',
+        onchange: (e) => change((st) => { st.template = e.target.value; }) },
+        ...TEMPLATE_IDS.map((id) => h('option', { value: id, selected: state.template === id ? '' : null, text: TEMPLATE_LABELS[id] }))),
+      h('div', { class: 'pr-two' },
+        tInput('title', '2줄 임팩트 제목 (한 줄 10자)', tHint && tHint.title ? tHint.title : '예: 천장에 매달린 건', 40),
+        tInput('badge', '카테고리 뱃지', tHint && tHint.badge ? tHint.badge : '예: 제주 · 서커스', 14)),
+      h('div', { class: 'pr-two' },
+        tInput('hook', '오프닝 훅 (0~1.5초)', tHint && tHint.hook ? tHint.hook : '예: 천 두 장뿐', 16),
+        tInput('outro', '아웃트로 (마지막 1초)', tHint && tHint.outro ? tHint.outro : '예: 다음 코스는? 구독', 24)),
+      h('span', { class: 'pr-check-s', text: tState })));
 
     box.append(...orderBlock('render', {
       sendText: '노트북에 렌더 오더 보내기',

@@ -289,7 +289,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
 
     /* 오더 payload 는 계약 키만 */
     const okP = L.buildRenderPayload({ contentId: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', cropX: 0.5 });
-    ok('payload 계약 v1', okP.ok && same(okP.payload, { content_id: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', crop_x: 0.5 }), okP);
+    ok('payload 계약 v1', okP.ok && same(okP.payload, { content_id: 'CH-1', brand: 'ppiyak_kimmary', inputs: ['a.mp4'], profile: 'bgm', crop_x: 0.5, template: 'auto' }), okP);
     ok('crop_x 가 비면 키를 만들지 않는다', !('crop_x' in L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cropX: '' }).payload));
     const fitP = L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], fit: ' BLUR ' });
     ok('fit 은 소문자로 payload 에 실린다', fitP.ok && fitP.payload.fit === 'blur', fitP);
@@ -376,7 +376,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('컷이 없으면 빈 목록(오더에 cuts 키가 없다)', same(L.cutsForOrder(L.defaultState(), ['a.mp4']), { ok: true, cuts: [] }) && !('cuts' in L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [] }).payload));
     ok('영상이 없는데 컷이 있으면 오류', L.cutsForOrder(stC, []).ok === false);
     ok('컷 151곳은 거부', !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: Array.from({ length: 151 }, (_, i) => [i * 2, i * 2 + 1]) }).ok && L.cutsForOrder(L.normalizeState({ inputs: ['a.mp4'], cut_list: Array.from({ length: 150 }, (_, i) => ({ type: 'DEAD', from: i * 2, to: i * 2 + 1, on: true })) }), ['a.mp4']).cuts.length === 150);
-    ok('payload 에 cuts 를 싣는다(계약 키 + cuts)', same(L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [[1, 2]] }).payload, { content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', cuts: [[1, 2]] }));
+    ok('payload 에 cuts 를 싣는다(계약 키 + cuts)', same(L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: [[1, 2]] }).payload, { content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', cuts: [[1, 2]], template: 'auto' }));
     ok('cuts 값 검사: 역순·음수·파일 번호 범위 밖·모양', [[[2, 1]], [[-1, 1]], [[1, 2, 3]], [['a', 2]], [[1]]].every((c) => !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: c }).ok));
     ok('영상 1개인데 파일 번호가 붙은 컷·영상 둘인데 번호 없는 컷은 거부', !L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4', 'b.mp4'], cuts: [[1, 2]] }).ok);
     ok('cuts 150개 payload 는 큐 한도(4000자)에 들어간다', JSON.stringify(Object.assign({ type: 'content_render' }, L.buildRenderPayload({ contentId: 'C'.repeat(40), brand: 'ppiyak_kimmary', inputs: ['01_외관.mp4', '02_메뉴판.mp4'], profile: 'bgm', cropX: 0.123, cuts: Array.from({ length: 150 }, (_, i) => [1000 + i * 2.5, 1001.5 + i * 2.5, 1]) }).payload)).length < 4000);
@@ -928,6 +928,47 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('blog: 데이터랩은 한 요청에 묶어 부른다(키워드별 따로 부르지 않는다)', /groups: kws\.map\(/.test(bv));
   } catch (err) {
     ok('키워드 트렌드 시험', false, (err && err.stack) || err);
+  }
+
+  /* ── 채널 시그니처 영상 템플릿(2026-11-21) ── */
+  console.log('\n[채널 영상 템플릿]');
+  try {
+    const { pathToFileURL } = require('url');
+    const PL = await import(pathToFileURL(path.join(ROOT, 'js', 'produceLogic.js')).href + '?v=test-template');
+    const VT = await import(pathToFileURL(path.join(ROOT, 'js', 'videoTemplate.js')).href + '?v=test-template');
+    const base = { contentId: 'C-TPL', brand: 'daejeon_youth', inputs: ['a.mp4'] };
+
+    const auto = PL.buildRenderPayload(base);
+    ok('template 은 기본 auto 로 실린다', auto.ok && auto.payload.template === 'auto', auto.payload);
+    const full = PL.buildRenderPayload(Object.assign({}, base, {
+      template: 'daejeon_youth', title: '천장에 매달린 건\n천 두 장뿐', badge: '제주 · 서커스', hook: '천 두 장뿐', outro: '다음 코스는? 구독'
+    }));
+    ok('템플릿 문구가 오더에 실린다', full.ok && full.payload.template === 'daejeon_youth' && full.payload.hook === '천 두 장뿐' && full.payload.badge === '제주 · 서커스', full.payload);
+    const bad = PL.buildRenderPayload(Object.assign({}, base, { template: 'x' }));
+    ok('모르는 템플릿은 거절', !bad.ok && /템플릿/.test(bad.errors[0]), bad.errors);
+    const none = PL.buildRenderPayload(Object.assign({}, base, { template: 'none', title: '가' }));
+    ok('none 이면 문구를 싣지 않는다', none.ok && none.payload.template === 'none' && none.payload.title === undefined);
+    const long = PL.buildRenderPayload(Object.assign({}, base, { title: '가'.repeat(60), badge: '나'.repeat(30) }));
+    ok('문구는 길이 상한에서 자른다(40·14자)', long.payload.title.length === 40 && long.payload.badge.length === 14);
+    ok('템플릿 필드가 붙어도 큐 한도(4000자) 안', JSON.stringify(Object.assign({ type: 'content_render' }, PL.buildRenderPayload(Object.assign({}, base, {
+      cuts: Array.from({ length: 150 }, (_, i) => [1000 + i * 2.5, 1001.5 + i * 2.5, 0]),
+      template: 'daejeon_youth', title: '천장에 매달린 건', badge: '제주 · 서커스', hook: '천 두 장뿐', outro: '다음 코스는? 구독'
+    })).payload)).length < 4000);
+    const st = PL.normalizeState({ template: 'ppiyak_kimmary', title: '메리', hook: '이불빨래', badge: '', outro: '' });
+    ok('상태에 템플릿 선택·문구가 남는다', st.template === 'ppiyak_kimmary' && st.title === '메리' && st.hook === '이불빨래');
+    ok('상태의 모르는 템플릿은 auto', PL.normalizeState({ template: 'zzz' }).template === 'auto');
+
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'video_template.json'), 'utf8'));
+    ok('시드: 두 트랙의 강조색·뱃지가 정의돼 있다', seed.brands.daejeon_youth.accent === '#FF7A1A' && seed.brands.ppiyak_kimmary.accent === '#E08A56' && seed.brands.daejeon_youth.badge_text === '대전 청년');
+    ok('시드: 안전영역·자막 수치가 노트북과 같다', seed.common.safe_zone.top === 240 && seed.common.caption.cpl === 13 && seed.common.caption.size === 68);
+    ok('videoTemplate 의 id 목록이 시드와 같다', JSON.stringify(VT.TEMPLATE_IDS) === JSON.stringify(['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary']));
+
+    const orders = fs.readFileSync(path.join(ROOT, 'gas', 'Orders.gs'), 'utf8');
+    ok('GAS: 템플릿 4종을 검사하고 통과시킨다', /RENDER_TEMPLATES = \['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary'\]/.test(orders) && /out\.template = tm/.test(orders) && /out\[k\] = t/.test(orders));
+    const pv = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
+    ok('제작 ④ 화면에 템플릿 칸이 있다', /채널 템플릿/.test(pv) && /template: state\.template/.test(pv));
+  } catch (err) {
+    ok('채널 영상 템플릿 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

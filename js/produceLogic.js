@@ -11,6 +11,7 @@
  */
 
 import { tcToSec } from './yt/edl.js?v=20261121g';
+import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -86,7 +87,7 @@ export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', b
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', outro: '' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -110,6 +111,11 @@ export function normalizeState(raw) {
   s.narrate = raw.narrate === true;                  // 내레이션은 명시적으로 켜야 한다
   s.sub_style = SUB_STYLES.indexOf(String(raw.sub_style || '')) >= 0 ? String(raw.sub_style) : 'auto';
   s.voice = typeof raw.voice === 'string' && /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/.test(raw.voice) ? raw.voice : '';
+  // 채널 템플릿(2026-11-21) — 고른 값·문구를 상태에 남겨 새로고침해도 유지한다.
+  s.template = TEMPLATE_IDS.indexOf(String(raw.template || '')) >= 0 ? String(raw.template) : 'auto';
+  ['title', 'badge', 'hook', 'outro'].forEach((k) => {
+    if (typeof raw[k] === 'string') s[k] = raw[k].slice(0, k === 'title' ? 40 : (k === 'badge' ? 14 : (k === 'hook' ? 16 : 24)));
+  });
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
@@ -274,7 +280,7 @@ export function normalizeCues(raw, label, opts) {
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, outro }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -326,6 +332,11 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   }
   if (narrate === true) payload.narrate = true;
   if (voice) payload.voice = String(voice);
+  // 채널 시그니처 템플릿 — template 은 'auto' 도 늘 싣는다(노트북이 브랜드 기본을 고른다).
+  const tf = buildTemplateFields({ template, title, badge, hook, outro });
+  errors.push(...tf.errors);
+  if (!tf.ok) return { ok: false, errors };
+  if (tf.ok) Object.assign(payload, tf.fields);
   const willBurn = burnSubtitles !== false && (cap.cues.length > 0 || source === 'drive');
   if (!willBurn && burnSubtitles === false && (cap.cues.length > 0 || source === 'drive')) payload.burn_subtitles = false;
   else if (willBurn && sub !== 'auto') payload.sub_style = sub;
@@ -335,7 +346,7 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
     delete payload.narration;
     payload.payload_source = 'drive';
   }
-  return { ok: true, payload, notes: { cues: cap.cues.length, narration: nar.cues.length, source: payload.payload_source || 'inline', burn: willBurn } };
+  return { ok: true, payload, notes: { cues: cap.cues.length, narration: nar.cues.length, source: payload.payload_source || 'inline', burn: willBurn, template: payload.template } };
 }
 
 /**

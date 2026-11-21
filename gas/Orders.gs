@@ -196,6 +196,9 @@ const RENDER_MAX_CUE_TEXT = 200;
 const RENDER_CUES_INLINE = 40;
 const RENDER_MAX_PAYLOAD_CHARS = 3500;   // 큐 4,000자 한도 — 넘으면 payload_source:'drive' 로 바꿔 보낸다(설계 §7.2)
 const RENDER_SUB_STYLES = ['auto', 'shorts', 'long'];
+/* 채널 시그니처 템플릿(2026-11-21) — 허브 js/videoTemplate.js · 노트북 lib/template.js 와 같은 값. */
+const RENDER_TEMPLATES = ['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary'];
+const RENDER_TEMPLATE_TEXT = { title: 40, badge: 14, hook: 16, outro: 24 };
 const RENDER_VOICE_RE = /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/;
 
 /** 자막·내레이션 큐 검사 → 큐 payload 용 짧은 모양([start,end,text] · 내레이션은 [start,end,text,tone]). */
@@ -349,6 +352,19 @@ function hubRenderPayload_(payload) {
     if (!RENDER_VOICE_RE.test(String(payload.voice))) throw bad('voice 는 edge-tts 보이스 이름(예: ko-KR-SunHiNeural)이어야 합니다.');
     out.voice = String(payload.voice);
   }
+  // ── 채널 템플릿 — template 은 'auto' 도 통과시킨다(노트북이 브랜드 기본을 고른다) ──
+  if (payload.template !== undefined && payload.template !== null && payload.template !== '') {
+    const tm = String(payload.template).trim().toLowerCase();
+    if (RENDER_TEMPLATES.indexOf(tm) === -1) throw bad('template 은 ' + RENDER_TEMPLATES.join(' · ') + ' 중 하나여야 합니다.');
+    out.template = tm;
+  }
+  Object.keys(RENDER_TEMPLATE_TEXT).forEach(function (k) {
+    const v = payload[k];
+    if (v === undefined || v === null || v === '') return;
+    if (typeof v !== 'string') throw bad(k + ' 는 문자열이어야 합니다.');
+    const t = v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, RENDER_TEMPLATE_TEXT[k]);
+    if (t) out[k] = t;
+  });
   if (payload.burn_subtitles !== undefined && payload.burn_subtitles !== null && payload.burn_subtitles !== '' && typeof payload.burn_subtitles !== 'boolean') throw bad('burn_subtitles 는 true·false 여야 합니다.');
   if (payload.burn_subtitles === false) out.burn_subtitles = false;
   if (payload.narrate === true) out.narrate = true;
