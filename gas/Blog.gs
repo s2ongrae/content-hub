@@ -7,7 +7,9 @@
  *   ① blog_sync        : 글 목록(제목·카테고리·발행일·댓글·공감·사진 수) + 최근 5일 방문자 수 → 시트 누적
  *   ② list_blog_stats  : 시트에 쌓인 것 → 화면용 묶음(글별 7일 증가분 · 방문자 추이 · 키워드 순위)
  *   ③ blog_post_body   : 발행된 글 1개 본문을 줄글로 바꿔 돌려준다 → 화면이 린터(8항목)로 채점
- *   ④ blog_rank_check  : 네이버 검색 오픈API(블로그 검색)로 키워드별 내 글 순위(상위 100) → Rank_Log
+ *   ④ blog_rank_check  : 네이버 검색 API(블로그 검색)로 키워드별 내 글 순위(상위 100) → Rank_Log
+ *                         키는 두 창구를 모두 받는다 — NAVER API HUB(NCP, 2026-07-31부터 신규 발급은 이쪽만)
+ *                         와 옛 개발자센터 키(2027-06-30 지원 종료). 자세한 규칙은 naverBlogSearch_ 참고.
  *
  * 쓰는 공개 주소(모두 GET, 로그인 불필요)
  *   · m.blog.naver.com/api/blogs/{id}/post-list   글 목록 + commentCnt · sympathyCnt · thumbnailCount
@@ -18,7 +20,8 @@
  * 방문자 수는 네이버가 '최근 5일'만 준다. 하루 한 번 blogDailySync() 트리거가 돌면 시트에 계속 쌓인다
  * (편집기에서 installBlogDailyTrigger() 1회 실행).
  *
- * 비밀: 검색 오픈API 키는 스크립트 속성 NAVER_CLIENT_ID · NAVER_CLIENT_SECRET 에만 둔다(저장소·시트 금지).
+ * 비밀: 검색 API 키는 스크립트 속성 NAVER_CLIENT_ID · NAVER_CLIENT_SECRET 에만 둔다(저장소·시트 금지).
+ *       어느 창구 키인지는 NAVER_API_MODE = 'hub' | 'legacy' 로 알려 준다(비우면 자동 판별).
  */
 
 /** 브랜드 → 블로그 아이디. 김메리 트랙은 블로그를 쓰지 않는다(SKIPPED, 2026-11-16 확정). */
@@ -525,9 +528,11 @@ function handleBlogRankCheck_(ss, payload, ctx) {
   const secret = props.getProperty('NAVER_CLIENT_SECRET');
   if (!id || !secret) {
     throw createAppError_('ERR_NO_NAVER_KEY',
-      '검색 순위를 보려면 네이버 개발자센터에서 \'검색\' API 키를 받아 Apps Script 스크립트 속성에 '
-      + 'NAVER_CLIENT_ID · NAVER_CLIENT_SECRET 으로 넣어 주세요(무료, 하루 25,000회).');
+      '검색 순위를 보려면 네이버 검색 API 키를 받아 Apps Script 스크립트 속성에 '
+      + 'NAVER_CLIENT_ID · NAVER_CLIENT_SECRET 으로 넣어 주세요'
+      + '(NAVER API HUB · 무료, 하루 25,000건).');
   }
+  const apiMode = String(props.getProperty('NAVER_API_MODE') || '').toLowerCase();
   const raw = Array.isArray(payload.keywords) ? payload.keywords : String(payload.keywords || '').split(/[,\n]/);
   const keywords = [];
   raw.forEach(function (k) {
@@ -537,22 +542,21 @@ function handleBlogRankCheck_(ss, payload, ctx) {
   if (!keywords.length) throw createAppError_('ERR_VALIDATION_FAILED', '확인할 키워드를 하나 이상 적어 주세요.');
   if (keywords.length > BLOG_RANK_MAX_KEYWORDS_) keywords.length = BLOG_RANK_MAX_KEYWORDS_;
 
+  let usedMode = '';
   const results = keywords.map(function (kw) {
-    const url = 'https://openapi.naver.com/v1/search/blog.json?query=' + encodeURIComponent(kw)
-      + '&display=' + BLOG_RANK_DEPTH_ + '&start=1&sort=sim';
-    let res;
+    let got;
     try {
-      res = UrlFetchApp.fetch(url, {
-        method: 'get', muteHttpExceptions: true,
-        headers: { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret }
-      });
+      got = naverBlogSearch_(kw, id, secret, apiMode);
     } catch (err) {
       return { keyword: kw, rank: null, error: '연결 실패' };
     }
+    const res = got.res;
     const code = res.getResponseCode();
-    if (code === 401 || code === 403) {
+    // 어느 창구든 키를 거절했고 마지막 답도 200이 아니면 → 키 문제로 본다(창구 주소가 틀린 게 아니라).
+    if (code === 401 || code === 403 || (got.authCodes.length && code !== 200)) {
       throw createAppError_('ERR_NO_NAVER_KEY', '네이버 검색 API 키가 맞지 않거나 \'검색\' API 사용 신청이 안 되어 있습니다(HTTP ' + code + ').');
     }
+    if (!usedMode) usedMode = got.mode;
     if (code !== 200) return { keyword: kw, rank: null, error: 'HTTP ' + code };
     let j;
     try { j = JSON.parse(res.getContentText()); } catch (e) { return { keyword: kw, rank: null, error: '형식 오류' }; }
@@ -579,7 +583,38 @@ function handleBlogRankCheck_(ss, payload, ctx) {
     if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
   });
 
-  return { blog_id: blogId, checked_at: stamp, depth: BLOG_RANK_DEPTH_, results: results };
+  return { blog_id: blogId, checked_at: stamp, depth: BLOG_RANK_DEPTH_, api_mode: usedMode, results: results };
+}
+
+/**
+ * 네이버 블로그 검색 1회 호출 — 두 창구를 모두 지원한다.
+ *   · hub    : NAVER API HUB(NCP) 키   naverapihub.apigw.ntruss.com/search/v1/blog
+ *              헤더 X-NCP-APIGW-API-KEY-ID · X-NCP-APIGW-API-KEY, 파라미터 format=json
+ *   · legacy : 옛 개발자센터 키          openapi.naver.com/v1/search/blog.json
+ *              헤더 X-Naver-Client-Id · X-Naver-Client-Secret (2027-06-30 지원 종료)
+ * mode 가 비어 있으면 legacy 로 먼저 보내고 401·403 이면 hub 로 한 번 더 보낸다(어느 키인지 몰라도 되게).
+ * 응답 본문·파라미터(query·display·start·sort)는 두 창구가 같아서 파싱은 그대로 쓴다.
+ */
+function naverBlogSearch_(kw, id, secret, mode) {
+  const q = 'query=' + encodeURIComponent(kw) + '&display=' + BLOG_RANK_DEPTH_ + '&start=1&sort=sim';
+  let order = ['legacy', 'hub'];
+  if (mode === 'hub') order = ['hub'];
+  else if (mode === 'legacy') order = ['legacy'];
+  let last = null, lastMode = '', authCodes = [];
+  for (let i = 0; i < order.length; i++) {
+    const kind = order[i];
+    const spec = kind === 'hub'
+      ? { url: 'https://naverapihub.apigw.ntruss.com/search/v1/blog?' + q + '&format=json',
+          headers: { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret } }
+      : { url: 'https://openapi.naver.com/v1/search/blog.json?' + q,
+          headers: { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret } };
+    last = UrlFetchApp.fetch(spec.url, { method: 'get', muteHttpExceptions: true, headers: spec.headers });
+    lastMode = kind;
+    const code = last.getResponseCode();
+    if (code === 401 || code === 403) { authCodes.push(code); continue; }  // 키가 이 창구 것이 아니다 → 다음 창구
+    break;  // 200 이든 다른 오류든 이 창구의 답을 그대로 쓴다
+  }
+  return { res: last, mode: lastMode, authCodes: authCodes };
 }
 
 /* ------------------------------------------------------------------ *
