@@ -5,6 +5,7 @@
  * + D+7 승자(🏆)·D+14 리프레시(🔄) 배지 + 최근 기록.
  *
  * 서브탭 [전체 | 유튜브 | 인스타]: 전체는 아래 기존 화면, 유튜브·인스타는 js/channelView.js(채널 목록·상세 드릴다운).
+ * 전체 탭에는 자동 수집(js/analyticsView.js) 아래에 쇼츠 3지표 진단(js/perfDiagnosis.js)이 붙는다.
  * 입력 채널(수동 입력함·오늘 입력할 숫자)은 그 카드 트랙의 채널셋만 보인다(js/trackChannels.js).
  *
  * 데이터: GAS list_metrics / record_metrics (Metrics 시트). 서버가 아직 그 액션을 모르면
@@ -16,8 +17,9 @@
  *  · 리프레시: D+14 검색유입이 D+7의 70% 이하로 떨어짐.
  */
 
-import { renderAnalyticsPanel } from './analyticsView.js?v=20261119o';
-import { renderChannelView } from './channelView.js?v=20261119o';
+import { renderAnalyticsPanel } from './analyticsView.js?v=20261121q';
+import { renderChannelView } from './channelView.js?v=20261121q';
+import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261121q';
 import { trackChannelsOf } from './trackChannels.js?v=20261119o';
 
 const PERF_CHANNELS = ['blog', 'shorts', 'reels', 'clip', 'daangn'];
@@ -268,6 +270,11 @@ export function renderPerfView(main, ctx) {
 
   /* ①-2 유튜브·인스타 자동 수집 (js/analyticsView.js) — 블로그·클립 영역은 건드리지 않는다 */
   renderAnalyticsPanel(main, ctx);
+
+  /* ①-3 쇼츠 3지표 진단 (js/perfDiagnosis.js) — 영상별 조회·평균 시청률·반응률 + 병목 처방 */
+  const dxHost = h('div');
+  main.appendChild(dxHost);
+  renderDiagnosisPanel(dxHost, ctx, rows);
 
   /* ② 오늘 입력할 숫자 */
   main.appendChild(dueSection(h, { state, api, rows, name, onSaved: () => ctx.renderRoute(), toast, friendlyError }));

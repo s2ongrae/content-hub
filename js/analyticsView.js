@@ -10,6 +10,8 @@
  *  · 서버가 아직 그 액션을 모르면(재배포 전) 화면은 그대로 그리고 '서버 준비 중'만 조용히 알린다.
  *  · 수익은 실제 값만 보여 준다 — YouTube 가 보고한 수익(YPP)과 사람이 확정한 협찬·제휴액.
  *    출처가 없는 금액은 세지 않고, 조회수로 다시 계산한 추정치는 만들지 않는다. 인스타는 정산 개념이 없다.
+ *  · 노출·시청시간·평균 시청률은 YouTube Analytics(OAuth)가 줄 때만 채워진다 → 0이면 '수집 안 됨'이다.
+ *    화면은 이 값을 '있는 그대로' 넘기고, 없는 값을 추정해 채우지 않는다(js/perfDiagnosis.js 가 판단).
  */
 
 import { isTrackRow } from './trackChannels.js?v=20261119o';
@@ -84,11 +86,14 @@ function normalizeRow(r) {
     collected_at: String(r.collected_at || ''),
     collected_date: String(r.collected_date || r.collected_at || '').slice(0, 10),
     views: n(r.views),
+    impressions: n(r.impressions),
     reach: n(r.reach),
     likes: n(r.likes),
     comments: n(r.comments),
     shares: n(r.shares),
     saves: n(r.saves),
+    watch_time_sec: n(r.watch_time_sec),
+    avg_view_pct: n(r.avg_view_pct),
     subscribers: n(r.subscribers),
     revenue_krw: n(r.revenue_krw),
     revenue_source: String(r.revenue_source || ''),

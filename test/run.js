@@ -1219,6 +1219,110 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('뮤직비디오 모드 시험', false, (err && err.stack) || err);
   }
 
+  /* ── 📊 쇼츠 3지표 진단 (2026-11-21, #/perf) ── */
+  console.log('\n[📊 쇼츠 3지표 진단]');
+  try {
+    const D = await import('file://' + path.join(ROOT, 'js', 'perfDiagnosis.js') + '?v=test-dx');
+    const near = (a, b) => Math.abs(Number(a) - Number(b)) < 0.001;
+
+    /* ① 지표 계산 — 있는 값만 쓴다 */
+    ok('반응률 = (좋아요+댓글+공유)÷조회', near(D.reactionPct({ views: 1000, likes: 40, comments: 5, shares: 5 }), 5));
+    ok('조회 0이면 반응률 null(0%로 속이지 않음)', D.reactionPct({ views: 0, likes: 9 }) === null);
+    ok('중위수(홀수) 20 · 표본 3', D.medianInfo([10, 20, 30]).value === 20 && D.medianInfo([10, 20, 30]).n === 3);
+    ok('중위수(짝수) 15 · 표본 2', D.medianInfo([10, 20]).value === 15);
+    ok('중위수 표본 없음 → null', D.medianInfo([]).value === null && D.medianInfo([]).n === 0);
+    ok('발행 경과일 11일', D.dayAge('2026-11-10', '2026-11-21') === 11 && D.dayAge('2026-11-21', '2026-11-21') === 0);
+    ok('발행일 모르면 null', D.dayAge('', '2026-11-21') === null && D.dayAge('어제', '2026-11-21') === null);
+
+    /* ② 조회수 기준 변경(8/24) 구분 — 옛 영상은 비교에서 뺀다 */
+    ok('8/24 전 = old', D.eraOf('2026-08-23') === 'old' && D.eraOf('2026-08-24') === 'current');
+    ok('발행일 모르면 era unknown', D.eraOf('') === 'unknown');
+
+    /* ③ 평균 시청률 — 실제 값만, 없으면 null */
+    ok('유튜브가 준 평균 시청률을 그대로', near(D.retentionOf({ avg_view_pct: 62.4, views: 100 }, {}).pct, 62.4));
+    ok('시청시간÷조회÷길이로 계산(37.0%)', near(D.retentionOf({ watch_time_sec: 1000, views: 100, duration_sec: 27 }, {}).pct, 37.037) && D.retentionOf({ watch_time_sec: 1000, views: 100, duration_sec: 27 }, {}).source === 'watch_time');
+    const dwellCtx = { dwellByContent: { C1: 15 }, shortsCountByContent: { C1: 1 }, metaById: { v1: { duration_sec: 30 } } };
+    ok('입력한 시청 지속 15초÷30초 = 50%', near(D.retentionOf({ content_id: 'C1', external_id: 'v1', views: 100 }, dwellCtx).pct, 50) && D.retentionOf({ content_id: 'C1', external_id: 'v1', views: 100 }, dwellCtx).source === 'dwell');
+    ok('같은 카드에 쇼츠가 2편이면 카드 입력을 붙이지 않는다', D.retentionOf({ content_id: 'C1', external_id: 'v1', views: 100 }, Object.assign({}, dwellCtx, { shortsCountByContent: { C1: 2 } })) === null);
+    ok('길이를 모르면 계산하지 않는다', D.retentionOf({ content_id: 'C1', external_id: 'v9', views: 100 }, Object.assign({}, dwellCtx, { metaById: {} })) === null);
+    ok('아무 값도 없으면 null(추정 금지)', D.retentionOf({ views: 100 }, {}) === null);
+    ok('비율 66.7% → 27초 영상이면 18초', D.dwellSecFromPct(66.7, 27) === 18);
+    ok('비율이 0·100 초과·길이 없음이면 0(저장하지 않음)', D.dwellSecFromPct(0, 30) === 0 && D.dwellSecFromPct(120, 30) === 0 && D.dwellSecFromPct(50, 0) === 0);
+    ok('비율 → 초 → 비율 왕복이 그대로', near(D.dwellSecFromPct(62.5, 40) / 40 * 100, 62.5));
+
+    /* ④ 병목 판정 — 우리 채널 중위수 비교 */
+    const mk = (o) => Object.assign({ channel: 'shorts', likes: 0, comments: 0, shares: 0 }, o);
+    const metaOf = (o) => {
+      const m = {};
+      Object.keys(o).forEach((k) => { m[k] = { duration_sec: 30, published_at: o[k] }; });
+      return m;
+    };
+    const published = { a: '2026-11-10', b: '2026-11-10', c: '2026-11-10', d: '2026-11-10', e: '2026-11-10', f: '2026-11-10', g: '2026-11-10', h: '2026-11-21', i: '2026-08-01', j: '2026-11-10' };
+    const vids = [
+      mk({ external_id: 'a', content_id: 'Ca', views: 1000, likes: 40, comments: 5, shares: 5 }),
+      mk({ external_id: 'b', content_id: 'Cb', views: 900, likes: 36, comments: 4, shares: 4 }),
+      mk({ external_id: 'c', content_id: 'Cc', views: 800, likes: 32, comments: 4, shares: 4 }),
+      mk({ external_id: 'e', content_id: 'Ce', views: 300, likes: 15, comments: 0, shares: 0 }),
+      mk({ external_id: 'f', content_id: 'Cf', views: 600, likes: 30, comments: 0, shares: 0 }),
+      mk({ external_id: 'g', content_id: 'Cg', views: 500, likes: 2, comments: 0, shares: 0 }),
+      mk({ external_id: 'j', content_id: 'Cj', views: 100, likes: 5, comments: 0, shares: 0 }),
+      mk({ external_id: 'h', content_id: 'Ch', views: 700, likes: 35, comments: 0, shares: 0 }),
+      mk({ external_id: 'i', content_id: 'Ci', views: 99999, likes: 1, comments: 0, shares: 0 })
+    ];
+    const dwell = { Ca: 27, Cb: 26, Cc: 25, Ce: 10, Cf: 0, Cg: 27, Cj: 27, Ch: 27, Ci: 27 };
+    const counts = { Ca: 1, Cb: 1, Cc: 1, Ce: 1, Cf: 1, Cg: 1, Cj: 1, Ch: 1, Ci: 1 };
+    const res = D.diagnoseVideos(vids, { today: '2026-11-21', metaById: metaOf(published), dwellByContent: dwell, shortsCountByContent: counts });
+    const by = {};
+    res.items.forEach((v) => { by[v.external_id] = v; });
+    ok('시청률 낮은 영상 = 첫 장면 병목', by.e.bottleneck === 'early', by.e);
+    ok('첫 장면 처방은 첫 1~2초를 짚는다', /첫 1~2초/.test(by.e.prescription), by.e.prescription);
+    ok('끝까지 보는데 반응 없으면 = 엔딩 병목', by.g.bottleneck === 'ending', by.g);
+    ok('엔딩 처방은 저장·공유 한 줄과 루프를 짚는다', /저장·공유/.test(by.g.prescription) && /루프/.test(by.g.prescription));
+    ok('반응·시청률 좋은데 조회 적으면 = 노출·첫 장면', by.j.bottleneck === 'reach', by.j);
+    ok('세 지표 다 좋으면 = 유지', by.a.bottleneck === 'keep' && by.b.bottleneck === 'keep' && by.c.bottleneck === 'keep');
+    ok('시청 지속 미입력 = 측정 필요', by.f.bottleneck === 'measure' && /스튜디오/.test(by.f.prescription), by.f);
+    ok('미입력이어도 반응률이 낮으면 그 사실을 같이 적는다', /반응률도 우리 중위수/.test(by.f.prescription) === false || /반응률/.test(by.f.prescription));
+    ok('발행 3일 안이면 판단 보류', by.h.bottleneck === 'wait' && /D\+3/.test(by.h.prescription), by.h);
+    ok('8/24 이전 영상은 기준 이전으로 분리', by.i.bottleneck === 'old_era' && /8\/24/.test(by.i.prescription), by.i);
+    ok('옛 영상(조회 99,999)은 조회 중위수에서 빠진다', res.basis.views.value === 650, res.basis.views.value);
+    ok('옛 영상은 시청률 중위수에서도 빠진다', res.basis.retention.n === 7, res.basis.retention.n);
+    ok('반응률 중위수 = 5%', near(res.basis.reaction.value, 5), res.basis.reaction.value);
+    ok('판단이 필요한 카드가 먼저 온다(측정 필요 → 병목 → 유지 → 보류)', res.items[0].bottleneck === 'measure'
+      && ['early', 'ending'].every((k) => res.items.slice(1, 3).map((v) => v.bottleneck).indexOf(k) >= 0)
+      && res.items.slice(4, 7).every((v) => v.bottleneck === 'keep'), res.items.map((v) => v.bottleneck));
+    ok('집계 전(조회 0)은 맨 뒤', res.items.filter((v) => v.bottleneck === 'no_data').length === 0 && D.diagnoseVideos([mk({ external_id: 'z', views: 0 })], { today: '2026-11-21' }).items[0].bottleneck === 'no_data');
+
+    /* 표본이 3편 미만이면 비교하지 않는다 */
+    const few = D.diagnoseVideos([
+      mk({ external_id: 'a', content_id: 'Ca', views: 100, likes: 10 }),
+      mk({ external_id: 'b', content_id: 'Cb', views: 100, likes: 10 })
+    ], { today: '2026-11-21', metaById: metaOf({ a: '2026-11-10', b: '2026-11-10' }), dwellByContent: { Ca: 27, Cb: 27 }, shortsCountByContent: { Ca: 1, Cb: 1 } });
+    ok('측정 2편으로는 병목을 단정하지 않는다', few.items.every((v) => v.bottleneck === 'insufficient'), few.items.map((v) => v.bottleneck));
+    ok('표본 부족 처방은 3편을 쌓으라고 한다', /3편/.test(few.items[0].prescription));
+
+    /* ⑤ 입력 반영 — Metrics 행에서 카드별 시청 지속을 뽑는다 */
+    const dw = D.dwellByContent([
+      { channel: 'shorts', content_id: 'Ca', avg_dwell_sec: 10, measured_at: '2026-11-18' },
+      { channel: 'shorts', content_id: 'Ca', avg_dwell_sec: 27, measured_at: '2026-11-20' },
+      { channel: 'blog', content_id: 'Ca', avg_dwell_sec: 99, measured_at: '2026-11-20' },
+      { channel: 'shorts', content_id: 'Cb', avg_dwell_sec: 0, measured_at: '2026-11-20' }
+    ]);
+    ok('카드별 시청 지속은 가장 최근 기록 · 0은 버린다', dw.Ca === 27 && !('Cb' in dw), dw);
+    ok('카드별 쇼츠 편수를 센다', D.shortsCountByContent([{ content_id: 'Ca' }, { content_id: 'Ca' }, { content_id: '' }]).Ca === 2);
+
+    /* ⑥ 화면·코드 규칙 */
+    ok('패널 제목·미수집 고지', D.PANEL_TITLE.indexOf('3지표') >= 0 && /추정하지 않습니다/.test(D.PANEL_NOTE) && /8\/24/.test(D.PANEL_NOTE));
+    const pds = fs.readFileSync(path.join(ROOT, 'js', 'perfDiagnosis.js'), 'utf8');
+    const pfv = fs.readFileSync(path.join(ROOT, 'js', 'perfView.js'), 'utf8');
+    ok('진단: innerHTML 0건', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(pds));
+    ok('진단: 주소·토큰 값이 없다', !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(pds));
+    ok('#/perf 전체 탭이 진단 패널을 부른다', /renderDiagnosisPanel\(dxHost, ctx, rows\)/.test(pfv) && /from '\.\/perfDiagnosis\.js/.test(pfv));
+    ok('자동 수집은 노출·시청시간·평균 시청률을 버리지 않는다', /impressions: n\(r\.impressions\)/.test(fs.readFileSync(path.join(ROOT, 'js', 'analyticsView.js'), 'utf8'))
+      && /avg_view_pct: n\(r\.avg_view_pct\)/.test(fs.readFileSync(path.join(ROOT, 'js', 'analyticsView.js'), 'utf8')));
+  } catch (err) {
+    ok('쇼츠 3지표 진단 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();

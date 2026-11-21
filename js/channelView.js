@@ -11,7 +11,7 @@
  * 외부 썸네일은 CSP(img-src 'self' data:)가 막아서 그리지 않는다 — 제목·숫자만.
  */
 
-import { getAnalytics } from './analyticsView.js?v=20261119o';
+import { getAnalytics } from './analyticsView.js?v=20261121q';
 import { trackChannelsOf, CHANNEL_LABEL } from './trackChannels.js?v=20261119o';
 
 /* 소스별로 이 화면이 다루는 표면 */
