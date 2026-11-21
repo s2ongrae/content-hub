@@ -486,6 +486,9 @@ export function reportIsFresh(text, sentAt) {
   return fin >= sent - 120000;
 }
 
+/** 허브에 올라온 결과 파일(노트북이 올린 최종 영상·커버) 이름 규칙 — gas/Result.gs 와 같다. */
+export const RESULT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(mp4|jpg)$/;
+
 /** BGM 찾기 빠른 검색어 — 곡 제목·태그가 영어라 영어 한 단어로 찾는다(여러 단어는 전부 들어간 곡만 나와서 결과가 적다. 실측 2026-11-21). */
 export const BGM_QUICK_TERMS = [
   { label: '잔잔한', q: 'calm' }, { label: '편안한', q: 'relaxing' }, { label: '밝은', q: 'happy' }, { label: '신나는', q: 'energetic' },

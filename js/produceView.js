@@ -26,7 +26,7 @@ import {
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
-  buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery
+  buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE
 } from './produceLogic.js?v=20261121i';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261121i';
 import { readStudio, mergeFormat } from './studioLogic.js?v=20261121i';
@@ -835,6 +835,7 @@ export function produceSection(ctx) {
       }
       if (r.report.cuts && r.report.cuts.applied) box.appendChild(note('컷 ' + r.report.cuts.applied + '곳 · ' + r.report.cuts.removed_seconds + '초를 잘랐어요.'));
       if (r.report.out) box.appendChild(note('결과 파일: ' + r.report.out + ' (노트북 out/' + contentId + '/)'));
+      box.appendChild(resultFiles());
     }
   }
 
@@ -1015,6 +1016,135 @@ export function produceSection(ctx) {
     paintAna();
   }
 
+
+  /* ── 만든 파일 받기(④ 결과·⑥ 마무리) — gas/Result.gs ──
+   *  노트북이 렌더 뒤에 최종 영상·커버를 허브(드라이브 비공개 폴더)에 올려 둔다. 여기서 2MB 조각을 받아 브라우저에서 이어 붙인다. */
+  const resultMem = { id: '', items: null, err: '', busy: '', show: {}, urls: {} };
+  function resultReset() {
+    Object.keys(resultMem.urls).forEach((k) => { try { URL.revokeObjectURL(resultMem.urls[k]); } catch (e) { /* 이미 해제됨 */ } });
+    resultMem.id = contentId; resultMem.items = null; resultMem.err = ''; resultMem.busy = ''; resultMem.show = {}; resultMem.urls = {};
+  }
+  function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function resultErrText(err) {
+    const code = err && err.code;
+    if (isNotDeployedCode(code)) return '서버(GAS)에 결과 파일 보관 기능이 아직 없어요. 새 버전으로 배포하면 켜져요.';
+    if (code === 'ERR_NO_CONFIG') return '연결 설정이 없어요. ⚙︎ 에서 GAS 주소와 토큰을 넣어 주세요.';
+    return (err && err.message) || '알 수 없는 오류';
+  }
+  async function fetchResultBlob(it, onProgress) {
+    const chunks = [];
+    let total = 0;
+    for (let i = 0; i < it.parts; i++) {
+      const res = await api.post('result_fetch', { content_id: contentId, name: it.name, index: i, parts: it.parts });
+      const bytes = b64ToBytes(String((res && res.data && res.data.data) || ''));
+      chunks.push(bytes); total += bytes.length;
+      if (onProgress) onProgress(i + 1, it.parts);
+    }
+    if (total !== it.size) throw new Error('받은 크기가 달라요(' + total + ' / ' + it.size + ') — 다시 눌러 주세요.');
+    return new Blob(chunks, { type: it.kind === 'image' ? 'image/jpeg' : 'video/mp4' });
+  }
+  async function blobUrlOf(it, onProgress) {
+    if (resultMem.urls[it.name]) return resultMem.urls[it.name];
+    const url = URL.createObjectURL(await fetchResultBlob(it, onProgress));
+    resultMem.urls[it.name] = url;
+    return url;
+  }
+
+  function resultFiles() {
+    if (resultMem.id !== contentId) resultReset();
+    const host = h('div', { class: 'pr-res' });
+    const alive = () => host.isConnected;
+    const body = h('div', { class: 'pr-res-body', 'aria-live': 'polite' });
+
+    async function load() {
+      resultMem.err = '';
+      try {
+        const res = await api.post('result_list', { content_id: contentId });
+        const items = (res && res.data && Array.isArray(res.data.items)) ? res.data.items : [];
+        resultMem.items = items.filter((x) => x && RESULT_NAME_RE.test(String(x.name)));
+      } catch (err) { resultMem.items = []; resultMem.err = resultErrText(err); }
+      if (alive()) paint();
+      // 커버 같은 작은 그림은 미리 받아 둔다
+      (resultMem.items || []).filter((x) => x.kind === 'image' && x.complete && x.size <= 2 * 1024 * 1024 && !resultMem.urls[x.name]).forEach(async (x) => {
+        try { await blobUrlOf(x); if (alive()) paint(); } catch (e) { /* 그림이 안 떠도 받기는 된다 */ }
+      });
+    }
+
+    function paint() {
+      const rows = [];
+      if (resultMem.err) rows.push(h('p', { class: 'hint', text: resultMem.err }));
+      if (resultMem.items === null) rows.push(h('p', { class: 'hint', text: '허브에 올라온 파일을 확인하는 중…' }));
+      else if (!resultMem.items.length && !resultMem.err) rows.push(h('p', { class: 'hint', text: '허브에 올라온 파일이 아직 없어요. 노트북이 렌더 뒤에 올려 두면 여기에 나와요(옛 결과는 노트북 폴더에만 있어요).' }));
+      (resultMem.items || []).forEach((it) => {
+        const busy = resultMem.busy === it.name;
+        const info = [formatBytes(it.size), it.updated_at ? new Date(it.updated_at).toLocaleString('ko-KR') : '', it.complete ? '' : '덜 올라옴(' + it.parts_found + '/' + it.parts + '조각)'].filter(Boolean).join(' · ');
+        const dl = h('button', { class: 'btn sm primary', type: 'button', text: busy ? (resultMem.busyText || '받는 중…') : '내려받기' });
+        if (!it.complete || resultMem.busy) dl.setAttribute('disabled', '');
+        dl.addEventListener('click', async () => {
+          resultMem.busy = it.name; resultMem.busyText = '받는 중…'; paint();
+          try {
+            const url = await blobUrlOf(it, (i, n) => { resultMem.busyText = '받는 중 ' + i + '/' + n; if (alive()) paint(); });
+            const a = document.createElement('a');
+            a.href = url; a.download = it.name; a.rel = 'noopener';
+            document.body.appendChild(a); a.click(); a.remove();
+            toast('내려받았어요 — ' + it.name, 'ok');
+          } catch (err) { toast('받지 못했어요 — ' + resultErrText(err), 'err'); }
+          resultMem.busy = ''; if (alive()) paint();
+        });
+        const actions = [dl];
+        if (it.kind === 'video' && it.complete) {
+          const view = h('button', { class: 'btn sm', type: 'button', text: resultMem.show[it.name] ? '보기 닫기' : '여기서 보기' });
+          if (resultMem.busy && !resultMem.show[it.name]) view.setAttribute('disabled', '');
+          view.addEventListener('click', async () => {
+            if (resultMem.show[it.name]) { resultMem.show[it.name] = false; paint(); return; }
+            resultMem.busy = it.name; resultMem.busyText = '받는 중…'; paint();
+            try {
+              await blobUrlOf(it, (i, n) => { resultMem.busyText = '받는 중 ' + i + '/' + n; if (alive()) paint(); });
+              resultMem.show[it.name] = true;
+            } catch (err) { toast('불러오지 못했어요 — ' + resultErrText(err), 'err'); }
+            resultMem.busy = ''; if (alive()) paint();
+          });
+          actions.push(view);
+        }
+        const del = h('button', { class: 'btn sm', type: 'button', text: '지우기' });
+        if (resultMem.busy) del.setAttribute('disabled', '');
+        del.addEventListener('click', async () => {
+          if (!window.confirm('허브에서 이 파일을 지울까요? (노트북 폴더의 원본은 그대로예요)\n' + it.name)) return;
+          del.setAttribute('disabled', '');
+          try {
+            await api.post('result_delete', { content_id: contentId, name: it.name });
+            if (resultMem.urls[it.name]) { try { URL.revokeObjectURL(resultMem.urls[it.name]); } catch (e) { /* 무시 */ } delete resultMem.urls[it.name]; }
+            delete resultMem.show[it.name];
+            toast('허브에서 지웠어요', 'ok');
+            resultMem.items = null; paint(); load();
+          } catch (err) { del.removeAttribute('disabled'); toast('지우지 못했어요 — ' + resultErrText(err), 'err'); }
+        });
+        actions.push(del);
+        const kids = [h('div', { class: 'pr-bgm-row' },
+          h('div', { class: 'pr-bgm-info' }, h('strong', { text: it.name }), h('span', { class: 'hint', text: info })),
+          h('div', { class: 'pr-row' }, ...actions))];
+        if (it.kind === 'image' && resultMem.urls[it.name]) kids.push(h('img', { class: 'pr-res-thumb', src: resultMem.urls[it.name], alt: '커버 미리보기' }));
+        if (it.kind === 'video' && resultMem.show[it.name] && resultMem.urls[it.name]) kids.push(h('video', { class: 'pr-res-video', src: resultMem.urls[it.name], controls: true, playsinline: true, preload: 'metadata' }));
+        rows.push(h('div', { class: 'pr-res-item' }, ...kids));
+      });
+      body.replaceChildren(...rows);
+    }
+
+    host.append(
+      h('h4', { class: 'pr-h4', text: '만든 파일 (허브에 보관)' }),
+      note('노트북이 렌더 뒤에 올려 둔 파일이에요. 폰에서도 여기서 바로 받거나 볼 수 있어요. 필요 없으면 지워도 돼요(노트북 폴더의 원본은 그대로).'),
+      body,
+      h('div', { class: 'pr-row' }, h('button', { class: 'btn sm', type: 'button', text: '목록 새로고침', onclick: () => { resultMem.items = null; paint(); load(); } })));
+    paint();
+    if (resultMem.items === null) load();
+    else (resultMem.items || []).filter((x) => x.kind === 'image' && x.complete && x.size <= 2 * 1024 * 1024 && !resultMem.urls[x.name]).forEach(async (x) => { try { await blobUrlOf(x); if (alive()) paint(); } catch (e) { /* 무시 */ } });
+    return host;
+  }
 
   /* ── ⑥ 무료 BGM 찾기·고르기 — gas/Bgm.gs (Openverse 색인의 Jamendo 곡, CC0·퍼블릭 도메인·CC BY 만) ──
    *  곡은 서버가 드라이브 보관함(_bgm)에 내려받아 두고, 노트북은 오더에 실린 곡 '이름'으로 허브에서 받아 간다. */
@@ -1266,6 +1396,7 @@ export function produceSection(ctx) {
       if (fr.bgm && fr.bgm.credit) box.appendChild(creditBox(fr.bgm.credit, fr.bgm.credit_required === true));
       if (fr.out) box.appendChild(h('div', { class: 'pr-warnbox' }, h('strong', { text: '결과 파일: ' }), h('code', { text: (fr.out_dir || ('out/' + contentId)) + '\\' + fr.out }),
         fr.cover ? h('span', { text: ' · 커버 ' + fr.cover }) : null));
+      box.appendChild(resultFiles());
     }
   }
 
