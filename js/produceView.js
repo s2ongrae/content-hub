@@ -19,18 +19,18 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121n';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121n';
+import { buildEDL } from './yt/edl.js?v=20261121r';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121r';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE
-} from './produceLogic.js?v=20261121n';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261121n';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261121n';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD } from './videoTemplate.js?v=20261121n';
+} from './produceLogic.js?v=20261121r';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261121r';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261121r';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261121r';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -696,6 +696,19 @@ export function produceSection(ctx) {
   /** 단계 라벨만 갱신(입력 중인 칸을 지키려고 목록 전체를 다시 그리지 않는다) */
 
   /* ── ④ 클린 마스터 ── */
+  /** 질문형 훅 상태 한 줄(막지 않고 이유만) — 10편 중 7편 질문형, '?'로 끝나는 8~11자. */
+  function hookLine(st) {
+    const c = checkHookForm(st.hook);
+    const sub = String(st.hook_sub || '').trim();
+    const parts = [];
+    if (c.form === 'question') parts.push('질문형 ' + c.chars + '자' + (c.ok ? ' ✓' : ''));
+    else if (c.form === 'statement') parts.push('단언형 — ' + HOOK_QUESTION.cycle + '편 중 ' + Math.round(HOOK_QUESTION.cycle * HOOK_QUESTION.ratio) + '편은 질문형이 좋아요');
+    else parts.push('훅을 넣으면 첫 1초를 글자로 잠급니다');
+    if (c.form === 'question' && !c.ok && c.warnings.length) parts.push(c.warnings[0]);
+    parts.push(sub ? '보조 "' + sub + '" ' + sub.length + '/6자' : '보조 글자를 비우면 질문만 나갑니다');
+    return h('span', { class: 'pr-check-s', text: parts.join(' · ') });
+  }
+
   function bodyRender(box) {
     const cutRes = cutsForOrder(state, state.inputs);
     // 완제품 옵션 — 카드에 저장된 자막·내레이션을 오더에 실어 노트북이 번인·TTS·덕킹까지 마친다.
@@ -710,8 +723,9 @@ export function produceSection(ctx) {
         narration: state.narrate ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
         burnSubtitles: state.burn, subStyle: state.sub_style,
         narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined,
-        template: state.template, title: state.title, badge: state.badge, hook: state.hook, outro: state.outro,
-        hookPos: state.hook_pos, hookHold: state.hook_hold
+        template: state.template, title: state.title, badge: state.badge, hook: state.hook, hookSub: state.hook_sub, outro: state.outro,
+        hookPos: state.hook_pos, hookHold: state.hook_hold,
+        frameLock: state.frame_lock, frameLockImage: state.frame_lock_image, frameLockSeconds: state.frame_lock_seconds
       });
       return { cr, b };
     };
@@ -772,8 +786,11 @@ export function produceSection(ctx) {
         tInput('title', '2줄 임팩트 제목 (한 줄 10자)', tHint && tHint.title ? tHint.title : '예: 천장에 매달린 건', 40),
         tInput('badge', '카테고리 뱃지', tHint && tHint.badge ? tHint.badge : '예: 제주 · 서커스', 14)),
       h('div', { class: 'pr-two' },
-        tInput('hook', '오프닝 훅 (0~' + hookHoldShown + '초 · 화면 ' + (hookPosShown === 'top' ? '상단' : '중앙') + ')', tHint && tHint.hook ? tHint.hook : '예: 천 두 장뿐', 16),
+        tInput('hook', '오프닝 훅 (0~' + hookHoldShown + '초 · 화면 ' + (hookPosShown === 'top' ? '상단' : '중앙') + ') · 질문형', tHint && tHint.hook ? tHint.hook : '예: 이 가격 실화냐?', 16),
         tInput('outro', '아웃트로 (마지막 1초)', tHint && tHint.outro ? tHint.outro : '예: 다음 코스는? 구독', 24)),
+      // 무음 보조 글자 — 질문 바로 아래 6자. 소리를 꺼도 첫 1초에 결과 예고가 읽힌다.
+      tInput('hook_sub', '무음 보조 글자 (질문 아래 6자)', tHint && tHint.hook_sub ? tHint.hook_sub : '예: 끝까지 보셈', 6),
+      hookLine(state),
       state.template === 'none' ? null : h('div', { class: 'pr-two' },
         h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '훅 위치' }),
           h('select', { class: 'pr-sel', 'aria-label': '훅 위치', onchange: (e) => change((st) => { st.hook_pos = e.target.value; }) },
@@ -782,6 +799,22 @@ export function produceSection(ctx) {
           h('select', { class: 'pr-sel', 'aria-label': '훅 유지시간', onchange: (e) => change((st) => { st.hook_hold = Number(e.target.value); }) },
             ...HOOK_HOLDS.map((v) => h('option', { value: String(v), selected: hookHoldShown === v ? '' : null, text: v.toFixed(1) + '초' }))))),
       h('span', { class: 'pr-check-s', text: tState })));
+
+    // 첫 프레임 잠금(2026-11-21) — AI 클립을 이어 붙일 때 얼굴·장면이 흔들리는 것을 막는다.
+    //   기준 사진을 '참고'가 아니라 0.0초 첫 프레임으로 박고, 앞 클립 마지막 프레임을 다음 클립 첫 프레임으로 잇는다.
+    const lockSec = typeof state.frame_lock_seconds === 'number' ? state.frame_lock_seconds : 0.04;
+    box.append(h('div', { class: 'pr-field' },
+      h('span', { class: 'pr-label', text: '첫 프레임 잠금 (AI 클립 이어 붙이기)' }),
+      check('첫 프레임을 잠그기', state.frame_lock === true, (v) => change((st) => { st.frame_lock = v; }),
+        '기준 사진을 0.0초 첫 프레임으로 박고, 둘째 클립부터는 앞 클립 마지막 프레임으로 이어 붙여요. 클립마다 재인코딩이 한 번 더 들어가요(컷당 2초 안쪽)'),
+      state.frame_lock === true ? h('div', { class: 'pr-two' },
+        tInput('frame_lock_image', '기준 사진 파일 이름 (inbox · 비우면 잇기만)', '예: mary_front.jpg', 80),
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '정지 길이(1프레임=0.04초)' }),
+          h('select', { class: 'pr-sel', 'aria-label': '첫 프레임 정지 길이', onchange: (e) => change((st) => { st.frame_lock_seconds = Number(e.target.value); }) },
+            ...[0.04, 0.1, 0.2, 0.5].map((v) => h('option', { value: String(v), selected: Math.abs(lockSec - v) < 0.001 ? '' : null, text: v.toFixed(2) + '초' }))))) : null,
+      h('span', { class: 'pr-check-s', text: state.frame_lock === true
+        ? '잠갔는데 0.0초에 보일 훅이 없으면 소용없어요 — 오프닝 훅이나 보조 글자를 같이 넣어 주세요.'
+        : '여러 AI 클립을 이어 붙일 때만 켜세요. 일반 촬영본 한 개면 켜지 않아도 돼요.' })));
 
     box.append(...orderBlock('render', {
       sendText: '노트북에 렌더 오더 보내기',

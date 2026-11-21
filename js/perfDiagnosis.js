@@ -445,7 +445,7 @@ function videoCard(h, ctx, v, basis, host) {
   card.appendChild(head);
 
   const tiles = h('div', { style: 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px' });
-  const tile = (label, value, sub, dim) => h('div', { style: 'background:var(--bg-2,rgba(255,255,255,.03));border-radius:9px;padding:7px 8px;min-width:0' },
+  const tile = (label, value, sub, dim) => h('div', { style: 'background:rgba(148,163,184,.10);border-radius:9px;padding:7px 8px;min-width:0' },
     h('div', { style: 'font-size:10px;font-weight:700;color:var(--tx-3);white-space:nowrap', text: label }),
     h('div', { style: 'font-size:15px;font-weight:820;margin-top:2px;font-variant-numeric:tabular-nums;' + (dim ? 'color:var(--tx-3)' : ''), text: value }),
     h('div', { style: 'font-size:9.5px;color:var(--tx-3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', text: sub || '' }));
@@ -462,7 +462,7 @@ function videoCard(h, ctx, v, basis, host) {
   card.appendChild(tiles);
 
   const verdict = h('div', { style: 'margin-top:8px;font-size:11.5px;line-height:1.45;color:var(--tx-2)' },
-    h('b', { style: 'color:var(--tx);margin-right:6px', text: v.label }),
+    h('b', { style: 'display:inline-block;color:var(--tx);margin-right:7px', text: v.label }),
     h('span', { text: v.prescription }));
   card.appendChild(verdict);
   if (v.detail) {

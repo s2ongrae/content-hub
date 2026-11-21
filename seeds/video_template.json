@@ -11,7 +11,11 @@
     "font": "Pretendard",
     "caption": { "size": 68, "cpl": 13, "lines": 2, "margin_v": 501, "outline": 3, "shadow": 1, "fade": [80, 60] },
     "punch": { "size": 76, "pop_ms": 100 },
-    "hook": { "pos": "center", "hold_s": 2.4, "y_center": 860, "y_top": 470, "size": 96, "box_pad": 24, "max_box_w": 880, "min_size": 60, "title_hold_s": 2.6 },
+    "hook": { "pos": "center", "hold_s": 2.4, "y_center": 860, "y_top": 470, "size": 96, "box_pad": 24, "max_box_w": 880, "min_size": 60, "title_hold_s": 2.6,
+      "question": { "ratio": 0.7, "cycle": 10, "min_chars": 8, "max_chars": 11, "end": "?",
+        "note": "10편 중 7편은 '?'로 끝나는 8~11자 질문. 나머지 3편만 단언형. 막지 않고 경고만 한다(무음 시청자를 첫 1초에 잡는 규칙)." },
+      "sub": { "max_chars": 6, "size": 36, "gap_y": 20, "pad_x": 18, "pad_y": 10, "back": "&H88000000", "color": "#FFFFFF", "from_s": 0.2,
+        "note": "질문 박스 바로 아래 반투명 검정 박스+흰 글씨. 소리를 꺼도 첫 1초에 '무엇을 답하는 영상인지' 결과 예고 6자 이내(예: 끝까지 보셈)." } },
     "header": { "note": "제목 끝 = hook.hold_s + hook.title_hold_s", "hold_until": 5.0, "title_size": 80, "title_cpl": 10, "badge_size": 48, "badge_height": 78, "slim_size": 32, "slim_height": 58, "y": 244, "x": 100 },
     "outro": { "seconds": 1.2, "size": 40, "underline": true },
     "tts": { "hype": { "rate": "+20%", "pitch": "+7Hz", "volume": "+12%" }, "calm": { "rate": "+8%", "pitch": "+0Hz", "volume": "+0%" } },
@@ -48,6 +52,16 @@
     "title": 40,
     "badge": 14,
     "hook": 16,
+    "hook_sub": 6,
     "outro": 24
+  },
+  "frame_lock": {
+    "note": "첫 프레임 잠금 — 레퍼런스 사진을 '참고'가 아니라 클립 첫 프레임으로 박고, 앞 클립 마지막 프레임을 다음 클립 첫 프레임으로 이어 붙인다(hub-agent lib/framelock.js). 토큰 0·컷당 2초 안쪽.",
+    "keys": ["frame_lock", "frame_lock_image", "frame_lock_seconds"],
+    "default_seconds": 0.04,
+    "min_seconds": 0.02,
+    "max_seconds": 0.5,
+    "fps": 30,
+    "check": "잠갔는데 0.0초에 보여 줄 훅(질문·보조 글자)이 없으면 넘김은 그대로다 — report 에 경고로 남긴다."
   }
 }

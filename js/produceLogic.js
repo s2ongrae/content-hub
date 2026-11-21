@@ -10,8 +10,8 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261121n';
-import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261121n';
+import { tcToSec } from './yt/edl.js?v=20261121r';
+import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261121r';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -21,6 +21,9 @@ export const MAX_CUTS = 150;                 // 노트북·GAS 와 같은 값(�
 export const MAX_CUT_SPAN_S = 3600;
 export const FITS = ['crop', 'blur', 'pad'];  // 프레이밍 — 노트북 lib/render.js · GAS RENDER_FITS 와 같은 값
 export const SUB_STYLES = ['auto', 'shorts', 'long'];   // 자막 스타일 — 180초 기준 자동
+// 첫 프레임 잠금(2026-11-21) — 노트북 lib/framelock.js 와 같은 값. 기본 1프레임(0.04초).
+export const FRAME_LOCK_SECONDS = { min: 0.02, max: 0.5, default: 0.04 };
+export const FRAME_LOCK_IMAGE_RE = /\.(jpe?g|png|webp)$/i;
 /* 완제품(2026-11-20): 자막 번인·내레이션. 큐가 많으면 큐 payload(4,000자)를 넘으므로 40큐까지 인라인,
    그보다 많으면 payload_source:'drive' 로 보내고 노트북이 카드 payload(production)에서 읽는다. */
 export const MAX_CUES_INLINE = 40;
@@ -87,7 +90,7 @@ export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', b
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', outro: '', hook_pos: '', hook_hold: '' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -116,6 +119,12 @@ export function normalizeState(raw) {
   ['title', 'badge', 'hook', 'outro'].forEach((k) => {
     if (typeof raw[k] === 'string') s[k] = raw[k].slice(0, k === 'title' ? 40 : (k === 'badge' ? 14 : (k === 'hook' ? 16 : 24)));
   });
+  // 무음 보조 글자(2026-11-21) — 질문 훅 바로 아래 6자 이내.
+  if (typeof raw.hook_sub === 'string') s.hook_sub = raw.hook_sub.slice(0, 6);
+  // 첫 프레임 잠금 — 켰을 때만 사진·길이를 싣는다(기본 1프레임 0.04초).
+  s.frame_lock = raw.frame_lock === true;
+  if (typeof raw.frame_lock_image === 'string') s.frame_lock_image = raw.frame_lock_image.slice(0, 80);
+  s.frame_lock_seconds = Number.isFinite(Number(raw.frame_lock_seconds)) && Number(raw.frame_lock_seconds) >= FRAME_LOCK_SECONDS.min && Number(raw.frame_lock_seconds) <= FRAME_LOCK_SECONDS.max ? Math.round(Number(raw.frame_lock_seconds) * 100) / 100 : '';
   s.hook_pos = raw.hook_pos === 'center' || raw.hook_pos === 'top' ? raw.hook_pos : '';
   s.hook_hold = typeof raw.hook_hold === 'number' && raw.hook_hold >= 1 && raw.hook_hold <= 4 ? Math.round(raw.hook_hold * 10) / 10 : '';
   if (raw.review && typeof raw.review === 'object') {
@@ -282,7 +291,7 @@ export function normalizeCues(raw, label, opts) {
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, outro, hookPos, hookHold }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -335,10 +344,25 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   if (narrate === true) payload.narrate = true;
   if (voice) payload.voice = String(voice);
   // 채널 시그니처 템플릿 — template 은 'auto' 도 늘 싣는다(노트북이 브랜드 기본을 고른다).
-  const tf = buildTemplateFields({ template, title, badge, hook, outro, hookPos, hookHold });
+  const tf = buildTemplateFields({ template, title, badge, hook, hook_sub: hookSub, outro, hookPos, hookHold });
   errors.push(...tf.errors);
   if (!tf.ok) return { ok: false, errors };
   if (tf.ok) Object.assign(payload, tf.fields);
+  // 첫 프레임 잠금(2026-11-21) — 켰을 때만 싣는다. 사진 이름은 inbox 의 사진(jpg·png·webp)만.
+  if (frameLock === true) {
+    payload.frame_lock = true;
+    const img = String(frameLockImage || '').trim();
+    if (img) {
+      if (!FRAME_LOCK_IMAGE_RE.test(img) || img.indexOf('..') >= 0) errors.push('첫 프레임 사진은 jpg·png·webp 파일 이름만 적어 주세요(폴더 경로 불가)');
+      else payload.frame_lock_image = img;
+    }
+    if (frameLockSeconds !== '' && frameLockSeconds != null) {
+      const n = Number(frameLockSeconds);
+      if (!Number.isFinite(n) || n < FRAME_LOCK_SECONDS.min || n > FRAME_LOCK_SECONDS.max) errors.push('첫 프레임 정지 길이는 ' + FRAME_LOCK_SECONDS.min + '~' + FRAME_LOCK_SECONDS.max + '초 사이예요');
+      else payload.frame_lock_seconds = Math.round(n * 100) / 100;
+    }
+  }
+  if (errors.length) return { ok: false, errors };
   const willBurn = burnSubtitles !== false && (cap.cues.length > 0 || source === 'drive');
   if (!willBurn && burnSubtitles === false && (cap.cues.length > 0 || source === 'drive')) payload.burn_subtitles = false;
   else if (willBurn && sub !== 'auto') payload.sub_style = sub;

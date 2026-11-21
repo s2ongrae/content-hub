@@ -13,11 +13,13 @@ export const HOOK_POSITIONS = [{ id: 'center', label: '중앙' }, { id: 'top', l
 export const HOOK_HOLDS = [1.5, 2.0, 2.4, 3.0];
 export const DEFAULT_HOOK_POS = 'center';
 export const DEFAULT_HOOK_HOLD = 2.4;
-export const TEMPLATE_LIMITS = { title: 40, badge: 14, hook: 16, outro: 24 };
+export const TEMPLATE_LIMITS = { title: 40, badge: 14, hook: 16, hook_sub: 6, outro: 24 };
+// 질문형 훅 70% — 노트북 lib/template.js 와 같은 값(10편 중 7편 질문형, '?'로 끝나는 8~11자).
+export const HOOK_QUESTION = { ratio: 0.7, cycle: 10, min: 8, max: 11, end: '?' };
 // 트랙별 기본값 — '자동'을 골랐을 때 화면에 미리 보여 준다.
 export const TEMPLATE_DEFAULTS = {
-  daejeon_youth: { badge: '지역 · 카테고리', hook: '핵심 키워드', outro: '다음 코스는? 구독' },
-  ppiyak_kimmary: { badge: '', hook: '', outro: '메리 더 보기' }
+  daejeon_youth: { badge: '지역 · 카테고리', hook: '이 가격 실화냐?', hook_sub: '끝까지 보셈', outro: '다음 코스는? 구독' },
+  ppiyak_kimmary: { badge: '', hook: '', hook_sub: '', outro: '메리 더 보기' }
 };
 
 const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
@@ -28,17 +30,45 @@ export function trimTemplateText(value, max) {
   return s.length > max ? s.slice(0, max).trim() : s;
 }
 
+/** 훅이 질문형인가 — '?'(전각 '？' 포함)로 끝나면 질문형. */
+export function isQuestionHook(text) {
+  const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  return /[?？]$/.test(s);
+}
+
+/** 편 번호로 훅 형태를 정한다 — 10편 중 7편 질문형(70%), 나머지 3편 단언형. 번호를 모르면 질문형. */
+export function hookFormFor(seq) {
+  const n = Math.floor(Number(seq));
+  if (!isFinite(n) || n <= 0) return 'question';
+  return ((n - 1) % HOOK_QUESTION.cycle) < Math.round(HOOK_QUESTION.cycle * HOOK_QUESTION.ratio) ? 'question' : 'statement';
+}
+
+/** 훅 문구를 질문형 규칙과 대조한다(막지 않고 화면에 이유를 보여 준다). */
+export function checkHookForm(text) {
+  const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  const chars = s.length;
+  const form = isQuestionHook(s) ? 'question' : 'statement';
+  const warnings = [];
+  if (!s) return { form: 'none', chars: 0, ok: false, warnings: ['첫 1초에 질문 한 줄을 넣어 주세요 — 훅 10편 중 7편은 질문형이에요.'] };
+  if (form === 'statement') warnings.push('질문형을 권해요 — "?"로 끝나는 ' + HOOK_QUESTION.min + '~' + HOOK_QUESTION.max + '자 질문이 무음 시청자를 잡아요.');
+  else {
+    if (chars > HOOK_QUESTION.max) warnings.push('질문은 ' + HOOK_QUESTION.max + '자 이내가 좋아요(지금 ' + chars + '자 — 글자가 줄어요).');
+    if (chars < HOOK_QUESTION.min) warnings.push('질문이 ' + HOOK_QUESTION.min + '자보다 짧아요(지금 ' + chars + '자).');
+  }
+  return { form, chars, ok: form === 'question' && chars >= HOOK_QUESTION.min && chars <= HOOK_QUESTION.max, warnings };
+}
+
 /**
  * 오더에 실을 템플릿 칸. template 은 항상 싣는다('auto' 포함) — 노트북이 브랜드 기본을 고른다.
  * 반환: { ok, fields, errors }
  */
-export function buildTemplateFields({ template, title, badge, hook, outro, hookPos, hookHold } = {}) {
+export function buildTemplateFields({ template, title, badge, hook, hook_sub: hookSub, outro, hookPos, hookHold } = {}) {
   const errors = [];
   const t = String(template == null || template === '' ? 'auto' : template).trim().toLowerCase();
   if (TEMPLATE_IDS.indexOf(t) < 0) errors.push('템플릿은 ' + TEMPLATE_IDS.join(' · ') + ' 중 하나여야 해요');
   const fields = { template: t };
   if (t !== 'none') {
-    const vals = { title, badge, hook, outro };
+    const vals = { title, badge, hook, hook_sub: hookSub, outro };
     Object.keys(TEMPLATE_LIMITS).forEach((k) => {
       const v = trimTemplateText(vals[k], TEMPLATE_LIMITS[k]);
       if (v) fields[k] = v;

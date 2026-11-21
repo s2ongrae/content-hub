@@ -198,7 +198,7 @@ const RENDER_MAX_PAYLOAD_CHARS = 3500;   // 큐 4,000자 한도 — 넘으면 pa
 const RENDER_SUB_STYLES = ['auto', 'shorts', 'long'];
 /* 채널 시그니처 템플릿(2026-11-21) — 허브 js/videoTemplate.js · 노트북 lib/template.js 와 같은 값. */
 const RENDER_TEMPLATES = ['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary'];
-const RENDER_TEMPLATE_TEXT = { title: 40, badge: 14, hook: 16, outro: 24 };
+const RENDER_TEMPLATE_TEXT = { title: 40, badge: 14, hook: 16, hook_sub: 6, outro: 24 };
 const RENDER_VOICE_RE = /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/;
 
 /** 자막·내레이션 큐 검사 → 큐 payload 용 짧은 모양([start,end,text] · 내레이션은 [start,end,text,tone]). */
@@ -444,6 +444,28 @@ function hubRenderPayload_(payload) {
     const hh = Number(payload.hook_hold);
     if (!isFinite(hh) || hh < 1.0 || hh > 4.0) throw bad('hook_hold 는 1.0~4.0초 사이 숫자여야 합니다.');
     if (!hookOff) out.hook_hold = Math.round(hh * 10) / 10;
+  }
+  // 첫 프레임 잠금(2026-11-21) — 기준 사진을 0.0초 첫 프레임으로, 앞 클립 마지막 프레임을 다음 클립 첫 프레임으로.
+  //   노트북 lib/framelock.js 와 같은 값. 끔(false)이면 사진·길이를 조용히 버린다(숨은 동작 없음).
+  if (payload.frame_lock !== undefined && payload.frame_lock !== null && payload.frame_lock !== '') {
+    if (typeof payload.frame_lock !== 'boolean') throw bad('frame_lock 은 true·false 여야 합니다.');
+    if (payload.frame_lock === true) {
+      out.frame_lock = true;
+      const img = payload.frame_lock_image;
+      if (img !== undefined && img !== null && img !== '') {
+        const n = String(img);
+        if (!/\.(jpe?g|png|webp)$/i.test(n) || n.indexOf('..') !== -1 || n.indexOf('/') !== -1 || n.indexOf('\\') !== -1) {
+          throw bad('frame_lock_image 는 사진 파일 이름이어야 합니다(jpg·jpeg·png·webp, 폴더 금지).');
+        }
+        out.frame_lock_image = n;
+      }
+      const ls = payload.frame_lock_seconds;
+      if (ls !== undefined && ls !== null && ls !== '') {
+        const v = Number(ls);
+        if (!isFinite(v) || v < 0.02 || v > 0.5) throw bad('frame_lock_seconds 는 0.02~0.5초 사이 숫자여야 합니다.');
+        out.frame_lock_seconds = Math.round(v * 100) / 100;
+      }
+    }
   }
   Object.keys(RENDER_TEMPLATE_TEXT).forEach(function (k) {
     const v = payload[k];
