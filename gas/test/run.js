@@ -2264,6 +2264,17 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
     ok('순위가 없으면 "내 글 없음"을 쓰지 않는다', out.rows.every(r => r.reason.indexOf('내 글 없음') < 0), out.rows[0].reason);
   }
 
+  /* 시트에 같은 줄이 겹쳐 쌓여도 화면은 10줄 */
+  {
+    const sh = ss.getSheetByName('Blog_Seo_Titles');
+    const first = sh.rows[1].slice();
+    sh.rows.push(first.slice(), first.slice());
+    const dup = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'daejeon_youth' }, { brand: 'daejeon_youth' });
+    ok('겹쳐 쌓인 줄은 한 번만 돌려준다(최대 10)', dup.ok && dup.data.count <= 10, dup.data && dup.data.count);
+    const titles = (dup.data.rows || []).map(r => r.title + '|' + r.keyword);
+    ok('같은 제목이 두 번 나오지 않는다', new Set(titles).size === titles.length, titles);
+  }
+
   const meli = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'ppiyak_kimmary' }, { brand: 'ppiyak_kimmary' });
   ok('메리 트랙은 블로그를 쓰지 않는다고 알린다', meli.ok && meli.data.count === 0 && /블로그를 쓰지/.test(meli.data.fallback), meli.data && meli.data.fallback);
 }
