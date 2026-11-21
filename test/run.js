@@ -1097,6 +1097,10 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('상태의 범위 밖 잠금 길이는 버린다', PL.normalizeState({ frame_lock: true, frame_lock_seconds: 9 }).frame_lock_seconds === '');
     ok('제작 ④ 화면에 무음 보조 글자·첫 프레임 잠금 칸이 있다', /무음 보조 글자/.test(pv) && /첫 프레임 잠금/.test(pv) && /hookSub: state\.hook_sub/.test(pv) && /frameLock: state\.frame_lock/.test(pv));
     ok('GAS: hook_sub·frame_lock 을 검사해 넘긴다', /hook_sub: 6/.test(orders) && /out\.frame_lock = true/.test(orders) && /frame_lock_seconds 는 0\.02~0\.5/.test(orders));
+    // 대본 AI 가 뽑은 질문형 훅 → 제작 스텝퍼 훅 칸(2026-11-21)
+    const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('대본 결과의 훅·보조 글자를 카드 production 에 남긴다', /hook: draft\.hook \|\| null/.test(csSrc) && /hook_sub: draft\.hook_sub \|\| null/.test(csSrc));
+    ok('스텝퍼 훅 칸이 비었을 때만 대본 훅으로 채운다(내 값은 안 덮는다)', /if \(draft\.hook && !String\(vs\.hook \|\| ''\)\.trim\(\)\) preset\.hook = draft\.hook/.test(csSrc) && /saveMaterialsToStudio\(ctx, 'video', preset\)/.test(csSrc));
   } catch (err) {
     ok('채널 영상 템플릿 시험', false, (err && err.stack) || err);
   }

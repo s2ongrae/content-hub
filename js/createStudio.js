@@ -926,9 +926,19 @@ function paintNormalVideo(host, out, ctx, ui) {
           // ④ 완제품 오더가 자막을 굽도록 production 에 넣는다(USER 대본은 그대로)
           const production = Object.assign({}, payload.production || {}, {
             captions: draft.captions || [], narration: draft.narration || [], script: draft.script || null,
+            // 대본 AI 가 뽑은 질문형 훅·무음 보조 글자(2026-11-21) — 제작 스텝퍼가 이어받는다.
+            hook: draft.hook || null, hook_sub: draft.hook_sub || null,
             from: 'studio-draft', updated_at: new Date().toISOString()
           });
           await api.updateContent({ content_id: id, expected_version: res.data.version, patch: { production: production }, patch_mode: 'deep' }).catch(() => {});
+          // 제작 스텝퍼의 훅 칸이 비어 있으면 대본이 뽑은 훅으로 채운다(내가 쓴 값이 있으면 그게 이긴다 — 덮지 않는다).
+          try {
+            const vs = readStudio(payload).formats.video || {};
+            const preset = {};
+            if (draft.hook && !String(vs.hook || '').trim()) preset.hook = draft.hook;
+            if (draft.hook_sub && !String(vs.hook_sub || '').trim()) preset.hook_sub = draft.hook_sub;
+            if (Object.keys(preset).length) await saveMaterialsToStudio(ctx, 'video', preset);
+          } catch (e) { /* 훅 자동 채우기는 실패해도 대본 저장은 끝난 상태다 */ }
           mem.draft = draft;
           paintScriptBox(out, ctx, draft, m);
           toast('대본·자막을 카드에 담았습니다', 'ok');
