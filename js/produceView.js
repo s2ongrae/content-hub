@@ -19,16 +19,16 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121b';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121b';
+import { buildEDL } from './yt/edl.js?v=20261121c';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121c';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
-  buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE
-} from './produceLogic.js?v=20261121b';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261121b';
+  buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery
+} from './produceLogic.js?v=20261121c';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261121c';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -981,6 +981,160 @@ export function produceSection(ctx) {
   }
 
 
+  /* ── ⑥ 무료 BGM 찾기·고르기 — gas/Bgm.gs (Openverse 색인의 Jamendo 곡, CC0·퍼블릭 도메인·CC BY 만) ──
+   *  곡은 서버가 드라이브 보관함(_bgm)에 내려받아 두고, 노트북은 오더에 실린 곡 '이름'으로 허브에서 받아 간다. */
+  const bgmMem = { q: '', res: null, saved: null, busy: false, msg: '', picking: '' };
+  let bgmAudio = null;
+  let bgmPlaying = '';
+  function stopBgmAudio() {
+    if (bgmAudio) { try { bgmAudio.pause(); } catch (e) { /* 이미 멈춤 */ } bgmAudio = null; }
+    bgmPlaying = '';
+  }
+  function bgmErrText(err) {
+    const code = err && err.code;
+    if (isNotDeployedCode(code)) return '서버(GAS)에 BGM 찾기 기능이 아직 없어요. 새 버전으로 배포하면 켜져요.';
+    if (code === 'ERR_NO_CONFIG') return '연결 설정이 없어요. ⚙︎ 에서 GAS 주소와 토큰을 넣어 주세요.';
+    return (err && err.message) || '알 수 없는 오류';
+  }
+  function useBgm(name, credit, required) {
+    change((s) => { s.make.bgm = name; s.make.bgm_credit = String(credit || '').slice(0, 500); s.make.bgm_cr = !!required && !!credit; });
+    paintList();
+  }
+  /** 영상 설명란에 넣을 출처 문구 상자(CC BY 는 꼭 넣어야 한다). */
+  function creditBox(credit, required) {
+    return h('div', { class: 'pr-warnbox' },
+      h('strong', { text: required ? 'BGM 출처 표기가 필요해요 — ' : 'BGM 출처(표기 안 해도 되지만 넣어도 좋아요) — ' }),
+      h('span', { text: required ? '영상 설명란에 아래 문구를 그대로 넣어 주세요(CC BY 라이선스 조건).' : '' }),
+      h('code', { class: 'pr-credit', text: credit }),
+      h('div', { class: 'pr-row' }, h('button', { class: 'btn sm', type: 'button', text: '출처 문구 복사', onclick: () => copyText(credit, '출처 문구를 복사했어요') })));
+  }
+
+  function bgmFinder() {
+    const m = state.make;
+    const host = h('div', { class: 'pr-bgm' });
+    const input = h('input', { class: 'pr-in', type: 'text', maxlength: '40', placeholder: '찾을 말 — 영어가 잘 맞아요 (예: calm piano)', 'aria-label': 'BGM 검색어', value: bgmMem.q });
+    const goBtn = h('button', { class: 'btn sm primary', type: 'button', text: 'BGM 찾기' });
+    const out = h('div', { class: 'pr-bgm-out', 'aria-live': 'polite' });
+    const savedHost = h('div', { class: 'pr-bgm-saved' });
+    const alive = () => host.isConnected && openStep === 'make';
+
+    async function runSearch(q0) {
+      const q = cleanBgmQuery(q0 !== undefined ? q0 : input.value);
+      if (!q) { bgmMem.msg = '찾을 말을 적어 주세요(예: calm piano).'; paintOut(); return; }
+      bgmMem.q = q; input.value = q; bgmMem.busy = true; bgmMem.msg = '찾는 중…'; stopBgmAudio(); paintOut();
+      try {
+        const res = await api.post('bgm_search', { q });
+        bgmMem.res = (res && res.data) || null;
+        bgmMem.msg = bgmMem.res && bgmMem.res.items && bgmMem.res.items.length ? '' : '조건에 맞는 곡이 없어요 — 다른 말로 찾아 보세요.';
+      } catch (err) { bgmMem.msg = '찾지 못했어요 — ' + bgmErrText(err); }
+      bgmMem.busy = false;
+      if (alive()) paintOut();
+    }
+
+    function paintOut() {
+      if (bgmMem.busy) goBtn.setAttribute('disabled', ''); else goBtn.removeAttribute('disabled');
+      const rows = [];
+      if (bgmMem.msg) rows.push(h('p', { class: 'hint', text: bgmMem.msg }));
+      const items = bgmMem.res && Array.isArray(bgmMem.res.items) ? bgmMem.res.items : [];
+      items.forEach((it) => {
+        const prev = h('button', { class: 'btn sm', type: 'button', text: bgmPlaying === it.id ? '■ 멈춤' : '▶ 미리듣기' });
+        prev.addEventListener('click', () => {
+          if (bgmPlaying === it.id) { stopBgmAudio(); paintOut(); return; }
+          stopBgmAudio();
+          const a = document.createElement('audio');
+          a.src = it.preview_url;
+          a.preload = 'none';
+          a.addEventListener('ended', () => { stopBgmAudio(); if (alive()) paintOut(); });
+          a.addEventListener('error', () => { stopBgmAudio(); bgmMem.msg = '미리듣기를 열지 못했어요 — 곡은 그래도 고를 수 있어요.'; if (alive()) paintOut(); });
+          bgmAudio = a;
+          bgmPlaying = it.id;
+          const pr = a.play();
+          if (pr && typeof pr.catch === 'function') pr.catch(() => { stopBgmAudio(); if (alive()) paintOut(); });
+          paintOut();
+        });
+        const useBtn = h('button', { class: 'btn sm primary', type: 'button', text: bgmMem.picking === it.id ? '가져오는 중…' : '이 곡 쓰기' });
+        if (bgmMem.picking) useBtn.setAttribute('disabled', '');
+        useBtn.addEventListener('click', async () => {
+          if (bgmMem.picking) return;
+          bgmMem.picking = it.id; stopBgmAudio(); bgmMem.msg = '곡을 가져오는 중이에요(몇 초 걸려요)…'; paintOut();
+          try {
+            const res = await api.post('bgm_pick', { id: it.id });
+            const d = (res && res.data) || {};
+            const name = String(d.name || '');
+            if (!BGM_NAME_RE.test(name)) throw new Error('서버가 돌려준 곡 이름이 이상해요.');
+            bgmMem.picking = ''; bgmMem.msg = ''; bgmMem.saved = null;   // 보관함 목록은 다시 읽는다
+            toast('BGM 을 골랐어요', 'ok');
+            useBgm(name, String(d.credit || it.credit || ''), it.credit_required === true);
+          } catch (err) {
+            bgmMem.picking = ''; bgmMem.msg = '곡을 가져오지 못했어요 — ' + bgmErrText(err);
+            if (alive()) paintOut();
+          }
+        });
+        const meta = [it.creator, fmtDuration(it.duration_sec), it.license_label].concat((it.genres || []).slice(0, 2)).filter(Boolean).join(' · ');
+        rows.push(h('div', { class: 'pr-bgm-row' },
+          h('div', { class: 'pr-bgm-info' }, h('strong', { text: it.title }),
+            h('span', { class: 'hint', text: meta + (it.credit_required ? ' · 출처 표기 필요' : ' · 표기 불필요') })),
+          h('div', { class: 'pr-row' }, prev, useBtn)));
+      });
+      out.replaceChildren(...rows);
+    }
+
+    async function loadSaved() {
+      try {
+        const res = await api.post('bgm_list', {});
+        bgmMem.saved = (res && res.data && Array.isArray(res.data.items)) ? res.data.items : [];
+      } catch (err) { bgmMem.saved = []; }
+      if (alive()) paintSaved();
+    }
+    function paintSaved() {
+      if (bgmMem.saved === null) { savedHost.replaceChildren(h('p', { class: 'hint', text: '보관함을 불러오는 중…' })); return; }
+      if (!bgmMem.saved.length) { savedHost.replaceChildren(); return; }
+      const rows = [h('h4', { class: 'pr-h4', text: '내 BGM 보관함 (한 번 고른 곡)' })];
+      bgmMem.saved.forEach((it) => {
+        const useBtn = h('button', { class: 'btn sm primary', type: 'button', text: it.name === m.bgm ? '쓰는 중' : '쓰기', onclick: () => useBgm(it.name, it.credit, it.credit_required === true) });
+        if (it.name === m.bgm) useBtn.setAttribute('disabled', '');
+        const delBtn = h('button', { class: 'btn sm', type: 'button', text: '지우기', onclick: async () => {
+          if (!window.confirm('보관함에서 이 곡을 지울까요?\n' + (it.title || it.name))) return;
+          delBtn.setAttribute('disabled', '');
+          try {
+            await api.post('bgm_delete', { name: it.name });
+            bgmMem.saved = bgmMem.saved.filter((x) => x.name !== it.name);
+            if (state.make.bgm === it.name) change((s) => { s.make.bgm = ''; s.make.bgm_credit = ''; s.make.bgm_cr = false; });
+            toast('보관함에서 지웠어요', 'ok');
+            paintList();
+          } catch (err) { delBtn.removeAttribute('disabled'); toast('지우지 못했어요 — ' + bgmErrText(err), 'err'); }
+        } });
+        rows.push(h('div', { class: 'pr-bgm-row' },
+          h('div', { class: 'pr-bgm-info' }, h('strong', { text: it.title || it.name }),
+            h('span', { class: 'hint', text: [it.creator, it.duration_sec ? fmtDuration(it.duration_sec) : '', it.license_label].filter(Boolean).join(' · ') + (it.credit_required ? ' · 출처 표기 필요' : '') })),
+          h('div', { class: 'pr-row' }, useBtn, delBtn)));
+      });
+      savedHost.replaceChildren(...rows);
+    }
+
+    goBtn.addEventListener('click', () => runSearch());
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
+    const chips = h('div', { class: 'pr-bgm-chips' },
+      ...BGM_QUICK_TERMS.map((t) => h('button', { class: 'btn sm', type: 'button', text: t.label, title: t.q, onclick: () => runSearch(t.q) })));
+
+    host.append(
+      h('h4', { class: 'pr-h4', text: '무료 BGM 찾기' }),
+      note('영상에 써도 되는 곡만 보여요(CC0·퍼블릭 도메인·CC BY). CC BY 곡은 영상 설명란에 출처를 적어야 하고, 그 문구는 곡을 고르면 만들어 드려요.'),
+      h('div', { class: 'pr-row' }, input, goBtn),
+      chips, out, savedHost);
+    if (m.bgm) {
+      host.append(h('p', { class: 'pr-bgm-now', text: '지금 고른 곡: ' + m.bgm }));
+      if (m.bgm_credit) host.append(creditBox(m.bgm_credit, m.bgm_cr === true));
+      host.append(h('div', { class: 'pr-row' }, h('button', { class: 'btn sm', type: 'button', text: 'BGM 빼기', onclick: () => {
+        change((s) => { s.make.bgm = ''; s.make.bgm_credit = ''; s.make.bgm_cr = false; });
+        paintList();
+      } })));
+    }
+    paintOut();
+    if (bgmMem.saved === null) { paintSaved(); loadSaved(); } else paintSaved();
+    return host;
+  }
+
   /* ── ⑥ 마무리 — 자막 굽기 · BGM · 커버 ── */
   function bodyMake(box) {
     const m = state.make;
@@ -1002,7 +1156,7 @@ export function produceSection(ctx) {
     bgm.addEventListener('input', () => {
       const v = bgm.value.trim();
       if (v && (!BGM_NAME_RE.test(v) || v.indexOf('..') >= 0)) { bgmErr.textContent = 'mp3·wav·m4a·aac 파일 이름만 적어요(폴더 경로 불가)'; if (poll.refresh) poll.refresh(); }
-      else { bgmErr.textContent = ''; change((s) => { s.make.bgm = v; }); }
+      else { bgmErr.textContent = ''; change((s) => { if (v !== s.make.bgm) { s.make.bgm_credit = ''; s.make.bgm_cr = false; } s.make.bgm = v; }); }
     });
     const vol = h('select', { class: 'pr-sel', 'aria-label': 'BGM 볼륨' },
       h('option', { value: '', text: '자동 — 말소리 있으면 -24dB, 없으면 -16dB' }),
@@ -1019,9 +1173,10 @@ export function produceSection(ctx) {
 
     box.append(
       burnBox, aiBox,
-      h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: 'BGM 파일 이름 (노트북의 render\\bgm 폴더에 넣어 둔 것)' }), bgm),
+      bgmFinder(),
+      h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: 'BGM 파일 이름 (위에서 고르면 자동으로 들어가요 · 직접 넣을 때는 노트북 render\\bgm 폴더에 둔 파일 이름)' }), bgm),
       bgmErr,
-      note('내가 쓸 수 있는 음원만 넣어요. 남의 음원·저작권이 있는 곡은 쓰지 않아요. 곡이 짧으면 반복하고, 말소리가 나올 때는 자동으로 작아져요.'),
+      note('내가 쓸 수 있는 음원만 넣어요. 남의 음원·저작권이 있는 곡은 쓰지 않아요. 곡이 짧으면 반복하고, 말소리가 나올 때는 자동으로 작아져요. 노트북 폴더에 없으면 허브 보관함에서 알아서 받아 가요.'),
       h('div', { class: 'pr-two' },
         h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: 'BGM 볼륨' }), vol),
         h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '커버로 쓸 장면 시점(초)' }), cover)),
@@ -1073,6 +1228,7 @@ export function produceSection(ctx) {
       if (fr.limiter) info.push('피크 다듬기: ' + fr.limiter.measured_lufs + ' LUFS → -14 로 올리려고 순간 피크를 ' + fr.limiter.ceiling_db + ' dB 아래로 눌렀어요');
       if (fr.ai_notice) info.push('마지막 2초 "AI 자막 보조" 안내 포함');
       info.forEach((t) => box.appendChild(note(t)));
+      if (fr.bgm && fr.bgm.credit) box.appendChild(creditBox(fr.bgm.credit, fr.bgm.credit_required === true));
       if (fr.out) box.appendChild(h('div', { class: 'pr-warnbox' }, h('strong', { text: '결과 파일: ' }), h('code', { text: (fr.out_dir || ('out/' + contentId)) + '\\' + fr.out }),
         fr.cover ? h('span', { text: ' · 커버 ' + fr.cover }) : null));
     }
@@ -1086,6 +1242,7 @@ export function produceSection(ctx) {
     reviewSteps(brand).forEach((rs, i) => {
       box.appendChild(check((i + 1) + '. ' + rs.title, state.review[rs.id] === true, (v) => change((s) => { s.review[rs.id] = v; }), rs.rule));
     });
+    if (state.make.bgm && state.make.bgm_credit) box.appendChild(creditBox(state.make.bgm_credit, state.make.bgm_cr === true));
     box.appendChild(h('p', { class: 'pr-brand', text: '이 카드의 트랙 값 — 글꼴 ' + f.font + ' · 강조색 ' + f.color + ' · 줄당 ' + f.cpl + '자' }));
     box.appendChild(note('발행(업로드·고정댓글·링크 삽입)은 사람이 해요. 이 화면은 어떤 것도 올리지 않아요. 효과음은 아직 허브가 하지 않아요. TTS 내레이션은 ④ 완제품 옵션에서만 넣어요(⑥ 은 클린 마스터에서 시작해서 ④ 의 내레이션이 들어가지 않아요).'));
   }

@@ -10,7 +10,7 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261121b';
+import { tcToSec } from './yt/edl.js?v=20261121c';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -82,7 +82,7 @@ export const STEPS = [
 /** 오더를 보내는 단계 → 상태에 저장하는 오더 칸 이름(진행 상태 표시·폴링이 쓴다). */
 export const ORDER_KEY_OF_STEP = { render: 'render', srt: 'order_tr', make: 'order_fin' };
 
-export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', bgm_db: '', cover_t: 1 }; }
+export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', bgm_db: '', cover_t: 1, bgm_credit: '', bgm_cr: false }; }
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
@@ -125,7 +125,9 @@ export function normalizeState(raw) {
   }
   if (raw.make && typeof raw.make === 'object') {
     const m = raw.make;
-    s.make = { burn: m.burn !== false, ai_notice: m.ai_notice !== false, bgm: String(m.bgm || '').slice(0, 80), bgm_db: '', cover_t: 1 };
+    s.make = { burn: m.burn !== false, ai_notice: m.ai_notice !== false, bgm: String(m.bgm || '').slice(0, 80), bgm_db: '', cover_t: 1, bgm_credit: '', bgm_cr: false };
+    // 허브에서 고른 곡의 출처 문구(CC BY 는 영상 설명란에 넣어야 한다) — 곡 이름이 있을 때만 남긴다
+    if (s.make.bgm) { s.make.bgm_credit = String(m.bgm_credit || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 500); s.make.bgm_cr = m.bgm_cr === true && !!s.make.bgm_credit; }
     if (m.bgm_db !== '' && m.bgm_db != null && Number.isFinite(Number(m.bgm_db))) s.make.bgm_db = Number(m.bgm_db);
     if (Number.isFinite(Number(m.cover_t)) && Number(m.cover_t) >= 0 && Number(m.cover_t) <= 3600) s.make.cover_t = Number(m.cover_t);
   }
@@ -473,6 +475,23 @@ export function reportIsFresh(text, sentAt) {
   return fin >= sent - 120000;
 }
 
+/** BGM 찾기 빠른 검색어 — 곡 제목이 영어라 영어 검색어로 찾는다(화면에는 한글 이름을 같이 보여 준다). */
+export const BGM_QUICK_TERMS = [
+  { label: '잔잔한', q: 'calm piano' }, { label: '밝은', q: 'upbeat happy' }, { label: '로파이', q: 'lofi chill' },
+  { label: '어쿠스틱', q: 'acoustic guitar' }, { label: '신나는', q: 'energetic pop' }, { label: '시네마틱', q: 'cinematic' }
+];
+
+/** 곡 길이(초) → '3:05' */
+export function fmtDuration(sec) {
+  const n = Math.max(0, Math.round(Number(sec) || 0));
+  return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+}
+
+/** 검색어 정리(앞뒤 공백·여러 공백·제어문자 제거, 40자). 비면 ''. */
+export function cleanBgmQuery(q) {
+  return String(q == null ? '' : q).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+}
+
 export function parseReport(input) {
   let r = input;
   if (typeof input === 'string') {
@@ -497,7 +516,7 @@ export function parseReport(input) {
   if (r.out_dir) out.out_dir = str(r.out_dir, 200);
   if (r.ai_notice !== undefined) out.ai_notice = r.ai_notice === true;
   if (r.burn && typeof r.burn === 'object') out.burn = { cues: Number(r.burn.cues) || 0, font: str(r.burn.font, 60), font_preferred_missing: r.burn.font_preferred_missing === true, font_preferred: str(r.burn.font_preferred, 60), warnings: (Array.isArray(r.burn.warnings) ? r.burn.warnings : []).slice(0, 10).map((x) => str(x, 100)) };
-  if (r.bgm && typeof r.bgm === 'object') out.bgm = { name: str(r.bgm.name, 80), volume_db: Number(r.bgm.volume_db) };
+  if (r.bgm && typeof r.bgm === 'object') out.bgm = { name: str(r.bgm.name, 80), volume_db: Number(r.bgm.volume_db), source: str(r.bgm.source, 10), credit: str(r.bgm.credit, 500), credit_required: r.bgm.credit_required === true };
   if (r.limiter && typeof r.limiter === 'object') out.limiter = { measured_lufs: Number(r.limiter.measured_lufs), gain_db: Number(r.limiter.gain_db), ceiling_db: Number(r.limiter.ceiling_db) };
   if (r.cuts && typeof r.cuts === 'object') out.cuts = { applied: Number(r.cuts.applied) || 0, removed_seconds: Number(r.cuts.removed_seconds) || 0 };
   return { ok: true, report: out };

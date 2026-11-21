@@ -50,6 +50,12 @@ const ACTION_WHITELIST = {
   asset_get:            { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   upload_video_list:    { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   upload_video_fetch:   { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  // 무료 BGM 찾기·보관 (2026-11-21, gas/Bgm.gs) — 외부(Openverse·Jamendo)·드라이브 호출이라 라우터 락 없음
+  bgm_search:          { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  bgm_list:            { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  bgm_fetch:           { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  bgm_pick:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  bgm_delete:          { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   // 내 블로그 보기 (2026-11-19) — gas/Blog.gs. 네이버 공개 데이터를 모은다(외부 호출 → 라우터 락 없음, 시트 쓰기만 자체 락)
   blog_sync:            { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   list_blog_stats:      { mode: 'READ',  allowDegraded: true,  m1: true },

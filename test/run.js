@@ -513,6 +513,20 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('⑤ 의 AI 안내 선택이 ⑥ 의 기본값이 된다', /s\.make\.ai_notice = aiBox\.checked/.test(pvSrc));
     ok('단계를 옮기면 앞 단계의 진행 상태를 이어 쓰지 않는다 · 조회가 겹치면 끝난 뒤 다시 확인', /if \(poll\.key !== key\) \{ poll\.live = null/.test(pvSrc) && /poll\.key !== key \|\| state\[key\]\.order_id !== orderId/.test(pvSrc) && /poll\.again = true/.test(pvSrc));
     ok('⑥ 칸에 잘못 적힌 BGM·커버 값이 있으면 보내지 않는다(보이는 값 ≠ 보내는 값 방지)', /const inputErr = bgmErr\.textContent \|\| coverErr\.textContent/.test(pvSrc));
+    /* ── 무료 BGM 찾기(⑥) ── */
+    ok('BGM 출처 문구는 곡 이름이 있을 때만 저장값에 남는다(손으로 이름을 지우면 문구도 사라진다)', (a => a.make.bgm_credit.indexOf('Music:') === 0 && a.make.bgm_cr === true)(L.normalizeState({ make: { bgm: 'x-0a1b2c3d.mp3', bgm_credit: 'Music: "X" by Y', bgm_cr: true } }))
+      && (b => b.make.bgm_credit === '' && b.make.bgm_cr === false)(L.normalizeState({ make: { bgm: '', bgm_credit: 'Music: "X" by Y', bgm_cr: true } }))
+      && (c => c.make.bgm_cr === false)(L.normalizeState({ make: { bgm: 'a.mp3', bgm_credit: '', bgm_cr: true } }))
+      && L.normalizeState({ make: { bgm: 'a.mp3', bgm_credit: 'x'.repeat(900) } }).make.bgm_credit.length === 500
+      && L.normalizeState({ make: { bgm: 'a.mp3', bgm_credit: 'a\nb\u0000c' } }).make.bgm_credit === 'a b c'
+      && L.defaultMake().bgm_credit === '' && L.defaultMake().bgm_cr === false);
+    ok('출처 문구는 오더 payload 에 실리지 않는다(노트북이 허브 보관함에서 직접 읽는다)', !/credit/.test(JSON.stringify(L.buildStagePayload('finish', Object.assign({ state: L.normalizeState({ srt: { skipped: true }, make: { bgm: 'x-0a1b2c3d.mp3', bgm_credit: 'Music: X', bgm_cr: true } }) }, stBase)).payload)));
+    ok('마무리 보고의 BGM 출처·표기 필요를 지킨다', (r => r.ok && r.report.bgm.source === 'hub' && r.report.bgm.credit.indexOf('Music:') === 0 && r.report.bgm.credit_required === true)(L.parseReport(JSON.stringify(Object.assign({}, finOk, { bgm: { name: 'a.mp3', volume_db: -24, source: 'hub', credit: 'Music: "X" by Y', credit_required: true } })))));
+    ok('곡 길이 표기 · 검색어 정리', L.fmtDuration(185) === '3:05' && L.fmtDuration(59.6) === '1:00' && L.fmtDuration(null) === '0:00' && L.cleanBgmQuery('  calm\n  piano  ') === 'calm piano' && L.cleanBgmQuery('x'.repeat(80)).length === 40 && L.cleanBgmQuery(null) === '' && L.BGM_QUICK_TERMS.length >= 4 && L.BGM_QUICK_TERMS.every(t => t.label && /^[a-z ]+$/.test(t.q)));
+    const idxHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    ok('미리듣기용 오디오는 Jamendo 저장소만 허용(CSP media-src) · 그 밖의 주소는 열지 않는다', /media-src 'self' https:\/\/\*\.storage\.jamendo\.com;/.test(idxHtml) && !/media-src[^;]*\*[^.]/.test(idxHtml.replace(/https:\/\/\*\.storage\.jamendo\.com/, '')));
+    ok('BGM 찾기 화면: 검색·미리듣기·고르기·보관함·출처 문구 복사, innerHTML 없음', /api\.post\('bgm_search'/.test(pvSrc) && /api\.post\('bgm_pick'/.test(pvSrc) && /api\.post\('bgm_list'/.test(pvSrc) && /api\.post\('bgm_delete'/.test(pvSrc) && /출처 문구 복사/.test(pvSrc) && /미리듣기/.test(pvSrc) && !/innerHTML/.test(pvSrc));
+    ok('서버가 준 곡 이름이 BGM 이름 규칙에 맞을 때만 쓴다', /if \(!BGM_NAME_RE\.test\(name\)\) throw/.test(pvSrc));
     ok('produceView 가 srtRules·produceLogic 을 버전 쿼리로 부른다', /from '\.\/srtRules\.js\?v=\d+[a-z]'/.test(pvSrc));
 
     /* ── 화면 스모크: 가짜 DOM 으로 produceSection 을 그려 7개 단계를 전부 열어 본다 ──
@@ -566,7 +580,8 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
           '처음(빈 카드)': {},
           '자막 확정 전': { inputs: ['a.mp4'], plan: true, cuts: true, render: { order_id: 'Q-0', status: 'DONE', report: finishedClean } },
           '자막 확정·마무리 보고': { inputs: ['a.mp4'], plan: true, cuts: true, render: { order_id: 'Q-0', status: 'DONE', report: finishedClean }, srt: { confirmed: true, cues: 3, hash: 'x' }, order_tr: { order_id: 'Q-1', status: 'DONE' }, order_fin: { order_id: 'Q-2', status: 'DONE' },
-            fin_report: { out: 'a_finish.mp4', width: 1080, height: 1920, fps: 30, duration: 8, lufs: -14, tp: -1.8, checks: [{ id: 'x', status: 'PASS', msg: 'ok' }], burn: { cues: 3, font: 'NanumGothic', font_preferred_missing: true, font_preferred: 'Pretendard', warnings: [] }, bgm: { name: 'b.mp3', volume_db: -24 } } },
+            fin_report: { out: 'a_finish.mp4', width: 1080, height: 1920, fps: 30, duration: 8, lufs: -14, tp: -1.8, checks: [{ id: 'x', status: 'PASS', msg: 'ok' }], burn: { cues: 3, font: 'NanumGothic', font_preferred_missing: true, font_preferred: 'Pretendard', warnings: [] }, bgm: { name: 'b.mp3', volume_db: -24, source: 'hub', credit: 'Music: "X" by Y — CC BY 3.0', credit_required: true } },
+            make: { bgm: 'x-0a1b2c3d.mp3', bgm_credit: 'Music: "X" by Y — CC BY 3.0', bgm_cr: true } },
           '컷 목록이 있는 카드': { inputs: ['a.mp4', 'b.mp4'], cut_input: 'a.mp4', cut_list: [{ type: 'DEAD', from: 1, to: 2, on: true }] }
         };
         for (const [label, studio] of Object.entries(states)) {

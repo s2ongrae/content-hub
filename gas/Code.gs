@@ -243,6 +243,11 @@ const M1_HANDLERS = {
   upload_video_list: handleUploadVideoList_,
   upload_video_fetch: handleUploadVideoFetch_,
   upload_video_delete: handleUploadVideoDelete_,
+  bgm_search: handleBgmSearch_,
+  bgm_pick: handleBgmPick_,
+  bgm_list: handleBgmList_,
+  bgm_fetch: handleBgmFetch_,
+  bgm_delete: handleBgmDelete_,
   asset_put: handleAssetPut_,
   asset_get: handleAssetGet_,
   // 내 블로그 보기 (2026-11-19) — gas/Blog.gs

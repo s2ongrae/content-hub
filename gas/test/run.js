@@ -127,7 +127,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Blog.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Blog.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -1287,6 +1287,108 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
     ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
   });
+
+  /* ── [V] 무료 BGM (gas/Bgm.gs) — 찾기·보관·노트북 전달 ── */
+  console.log('\n[V] 무료 BGM 찾기·보관 (gas/Bgm.gs)');
+  {
+    const BG = ['bgm_search', 'bgm_pick', 'bgm_list', 'bgm_fetch', 'bgm_delete'];
+    const HMv = ev(U.ctx, 'M1_HANDLERS');
+    ok('BGM 액션 5개가 화이트리스트·핸들러에 있다', BG.every(a => wl[a] && wl[a].m1 === true && typeof HMv[a] === 'function'));
+    ok('보관·삭제는 쓰기, 찾기·목록·받기는 읽기 · 모두 라우터 락 없음', wl.bgm_pick.mode === 'WRITE' && wl.bgm_delete.mode === 'WRITE' && wl.bgm_search.mode === 'READ' && wl.bgm_list.mode === 'READ' && wl.bgm_fetch.mode === 'READ' && BG.every(a => wl[a].longRunning === true));
+    BG.forEach((a) => {
+      eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
+      ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
+    });
+
+    const uid = (n) => '0a1b2c3d-0000-4000-8000-' + String(n).padStart(12, '0');
+    const R = (n, over) => Object.assign({ id: uid(n), title: 'Calm Piano ' + n, creator: 'Some Artist', license: 'by', license_version: '3.0', license_url: 'https://creativecommons.org/licenses/by/3.0/', provider: 'jamendo', source: 'jamendo', url: 'https://prod-1.storage.jamendo.com/?trackid=' + (1000 + n) + '&format=mp32', foreign_landing_url: 'https://www.jamendo.com/track/' + (1000 + n), duration: 120000, genres: ['ambient'] }, over || {});
+    const audio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(4600000, 7)]);   // 약 4.4MB → 조각 3개
+    const calls = [];
+    let apiReply = { code: 200, json: { result_count: 0, results: [] } };
+    let audioReply = { code: 200, bytes: audio };
+    U.ctx.UrlFetchApp = {
+      fetch: (url, opts) => {
+        calls.push(url);
+        if (/^https:\/\/api\.openverse\.org\//.test(url)) {
+          const rep = typeof apiReply === 'function' ? apiReply(url) : apiReply;
+          return { getResponseCode: () => rep.code, getContentText: () => JSON.stringify(rep.json || {}) };
+        }
+        if (/\.storage\.jamendo\.com\//.test(url)) return { getResponseCode: () => audioReply.code, getBlob: () => ({ getBytes: () => Array.from(audioReply.bytes) }) };
+        throw new Error('허용 밖 주소: ' + url);
+      }
+    };
+    const search = (p) => callHandler(U.ctx, 'handleBgmSearch_', null, p);
+    const pick = (p) => callHandler(U.ctx, 'handleBgmPick_', null, p);
+    const blist = () => callHandler(U.ctx, 'handleBgmList_', null, {});
+    const bfetch = (p) => callHandler(U.ctx, 'handleBgmFetch_', null, p);
+    const bdel = (p) => callHandler(U.ctx, 'handleBgmDelete_', null, p);
+
+    eq('찾을 말이 없으면 거부', search({ q: '   ' }).code, 'ERR_VALIDATION_FAILED');
+    apiReply = { code: 200, json: { result_count: 77, results: [
+      R(1), R(2, { license: 'cc0', license_version: '1.0', license_url: 'https://creativecommons.org/publicdomain/zero/1.0/' }),
+      R(3, { license: 'by-sa' }), R(4, { license: 'by-nc' }), R(5, { license: 'by-nd' }),
+      R(6, { provider: 'freesound', source: 'freesound' }), R(7, { duration: 10000 }), R(8, { duration: 900000 }),
+      R(9, { url: 'https://evil.example.com/a.mp3' }), R(10, { url: 'https://prod-1.storage.jamendo.com.evil.com/?trackid=1&format=mp32' }),
+      R(11, { id: 'not-a-uuid' }), R(12, { title: '  제목\n에   줄바꿈  ', creator: 'x'.repeat(200) })
+    ] } };
+    const s1 = search({ q: 'Calm Piano' });
+    ok('찾기: CC0·퍼블릭 도메인·CC BY 만 남기고 SA·NC·ND·타 출처·길이 밖·이상한 주소·id 는 뺀다', s1.ok && s1.data.items.map(i => i.id).join() === [uid(1), uid(2), uid(12)].join(), s1.data && s1.data.items.map(i => i.id));
+    const it1 = s1.data.items[0], it2 = s1.data.items[1];
+    ok('찾기: 출처 문구(곡명·만든이·라이선스·링크)와 표기 필요 여부', /Music: "Calm Piano 1" by Some Artist/.test(it1.credit) && /CC BY 3\.0/.test(it1.credit) && /creativecommons\.org\/licenses\/by\/3\.0/.test(it1.credit) && /jamendo\.com\/track\/1001/.test(it1.credit) && it1.credit_required === true && it2.credit_required === false && it2.license_label === 'CC0 1.0', [it1, it2]);
+    ok('찾기: 서버 내부용 audio_url 은 화면으로 보내지 않는다 · 길이는 초', !('audio_url' in it1) && it1.duration_sec === 120 && it1.preview_url.indexOf('https://prod-1.storage.jamendo.com/') === 0);
+    ok('찾기: 제목·만든이의 줄바꿈·길이를 정리한다', s1.data.items[2].title === '제목 에 줄바꿈' && s1.data.items[2].creator.length === 60, s1.data.items[2]);
+    ok('찾기: Openverse 에 jamendo·허용 라이선스로만 묻고 검색어를 인코딩한다', /source=jamendo/.test(calls[0]) && /license=by,cc0,pdm/.test(calls[0]) && /q=Calm%20Piano/.test(calls[0]), calls[0]);
+    const nCalls = calls.length;
+    search({ q: 'Calm Piano' });
+    ok('같은 검색(같은 말·쪽)은 캐시에서 준다(바깥 호출 없음)', calls.length === nCalls);
+    apiReply = { code: 429, json: {} };
+    eq('검색이 너무 잦아 막히면(429) 안내와 함께 ERR_BGM_UNREACHABLE', search({ q: 'other words' }).code, 'ERR_BGM_UNREACHABLE');
+
+    // 보관
+    eq('곡 id 형식이 이상하면 거부', pick({ id: '../x' }).code, 'ERR_VALIDATION_FAILED');
+    const before = calls.length;
+    apiReply = () => ({ code: 200, json: R(3, { license: 'by-sa' }) });
+    eq('쓸 수 없는 라이선스(by-sa)는 내려받지 않고 거부', pick({ id: uid(3) }).code, 'ERR_VALIDATION_FAILED');
+    ok('거부된 곡은 음원 주소를 부르지 않는다', !calls.slice(before).some(u => /storage\.jamendo/.test(u)));
+    apiReply = () => ({ code: 404, json: {} });
+    eq('없는 곡은 ERR_NOT_FOUND', pick({ id: uid(404) }).code, 'ERR_NOT_FOUND');
+
+    apiReply = () => ({ code: 200, json: R(1) });
+    const p1 = pick({ id: uid(1) });
+    ok('보관: 이름은 영문 slug + id 앞 8자 .mp3, 크기·출처 문구가 돌아온다', p1.ok && p1.data.name === 'calm-piano-1-0a1b2c3d.mp3' && p1.data.bytes === audio.length && p1.data.already === false && /Music: "Calm Piano 1"/.test(p1.data.credit), p1);
+    const bgmDir = up.folders.find(f => f.name === '_bgm');
+    ok('보관: ContentHubOS_Uploads/_bgm 비공개 폴더에 mp3 와 출처 json 이 생긴다', !!bgmDir && bgmDir.shared === 'PRIVATE/NONE' && bgmDir.live().map(f => f.name).sort().join() === 'calm-piano-1-0a1b2c3d.credit.json,calm-piano-1-0a1b2c3d.mp3', bgmDir && bgmDir.live().map(f => f.name));
+    const metaJson = JSON.parse(bgmDir.live().find(f => /credit\.json$/.test(f.name)).getBlob().getDataAsString());
+    ok('출처 json: 곡명·만든이·라이선스·표기 필요·출처 문구·길이·보관 시각', metaJson.title === 'Calm Piano 1' && metaJson.creator === 'Some Artist' && metaJson.license === 'by' && metaJson.credit_required === true && /Music:/.test(metaJson.credit) && metaJson.duration_sec === 120 && !!metaJson.saved_at, metaJson);
+    const dl = calls.length;
+    const p1b = pick({ id: uid(1) });
+    ok('이미 보관한 곡은 다시 내려받지 않는다', p1b.ok && p1b.data.already === true && calls.slice(dl).every(u => !/storage\.jamendo/.test(u)), p1b);
+
+    audioReply = { code: 200, bytes: Buffer.from('<html>not audio</html>'.repeat(10000)) };
+    apiReply = () => ({ code: 200, json: R(20) });
+    eq('mp3 가 아니면(머리글이 다르면) 거부', pick({ id: uid(20) }).code, 'ERR_VALIDATION_FAILED');
+    audioReply = { code: 200, bytes: Buffer.concat([Buffer.from('ID3'), Buffer.alloc(100)]) };
+    eq('너무 작은 파일은 거부', pick({ id: uid(20) }).code, 'ERR_VALIDATION_FAILED');
+    audioReply = { code: 503, bytes: Buffer.alloc(0) };
+    eq('내려받기가 실패하면 ERR_BGM_UNREACHABLE', pick({ id: uid(20) }).code, 'ERR_BGM_UNREACHABLE');
+    ok('실패한 곡은 폴더에 남지 않는다', bgmDir.live().every(f => /calm-piano-1/.test(f.name)));
+    audioReply = { code: 200, bytes: audio };
+
+    // 목록 · 받기
+    const l1 = blist();
+    ok('목록: 이름·크기·조각 수·곡명·출처 문구', l1.ok && l1.data.items.length === 1 && l1.data.items[0].name === 'calm-piano-1-0a1b2c3d.mp3' && l1.data.items[0].bytes === audio.length && l1.data.items[0].parts === 3 && l1.data.items[0].title === 'Calm Piano 1' && l1.data.items[0].credit_required === true && /Music:/.test(l1.data.items[0].credit), l1.data);
+    const f0 = [0, 1, 2].map(i => bfetch({ name: 'calm-piano-1-0a1b2c3d.mp3', index: i }));
+    ok('받기: 조각을 이어 붙이면 원본과 같다(조각 3개)', f0.every(g => g.ok && g.data.parts === 3 && g.data.size === audio.length) && Buffer.compare(Buffer.concat(f0.map(g => Buffer.from(g.data.data, 'base64'))), audio) === 0, f0.map(g => g.code));
+    ok('받기: 0번 조각에만 출처 문구를 싣는다', /Music:/.test(f0[0].data.credit) && f0[1].data.credit === undefined);
+    eq('받기: 없는 곡은 ERR_NOT_FOUND', bfetch({ name: 'nope.mp3', index: 0 }).code, 'ERR_NOT_FOUND');
+    eq('받기: 조각 번호가 범위를 벗어나면 거부', bfetch({ name: 'calm-piano-1-0a1b2c3d.mp3', index: 9 }).code, 'ERR_VALIDATION_FAILED');
+    ok('받기: 경로·이상한 이름은 거부', ['../x.mp3', 'a/b.mp3', 'x.exe', '.hid.mp3', ''].every(n => bfetch({ name: n, index: 0 }).code === 'ERR_VALIDATION_FAILED'));
+
+    // 삭제
+    const d1 = bdel({ name: 'calm-piano-1-0a1b2c3d.mp3' });
+    ok('삭제: mp3 와 출처 json 을 함께 휴지통으로', d1.ok && d1.data.removed === 2 && bgmDir.live().length === 0 && blist().data.items.length === 0, d1);
+    eq('삭제: 이름 검사', bdel({ name: '../x.mp3' }).code, 'ERR_VALIDATION_FAILED');
+  }
 }
 
 console.log('\n[B] 백업 버그 3종 (gas/Backup.gs) — 보존 정리 · 시트 사본 · 무결성 점검 분리/이어하기');

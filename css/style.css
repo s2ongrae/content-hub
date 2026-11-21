@@ -1427,3 +1427,13 @@ a.cmp-card:hover { border-color: var(--accent); }
 .pr-srt-ana { display: grid; gap: 6px; }
 .pr-issues { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: var(--tx-2); }
 .pr-issues .pr-i-fail { color: var(--danger); font-weight: 600; }
+
+/* 무료 BGM 찾기 (⑥) */
+.pr-bgm { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); margin: 10px 0; }
+.pr-bgm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pr-bgm-out, .pr-bgm-saved { display: grid; gap: 6px; }
+.pr-bgm-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 8px 0; border-top: 1px solid var(--line-soft); }
+.pr-bgm-info { display: grid; gap: 2px; min-width: 0; flex: 1 1 180px; font-size: 13px; }
+.pr-bgm-info strong { overflow-wrap: anywhere; }
+.pr-bgm-now { margin: 0; font-size: 13px; color: var(--tx); overflow-wrap: anywhere; }
+.pr-credit { display: block; margin: 6px 0; padding: 6px 8px; border-radius: 6px; background: var(--surface-2); color: var(--tx); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
