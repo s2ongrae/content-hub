@@ -217,22 +217,32 @@ export function renderBlogView(main, ctx) {
 
 /* ───────────── 오늘의 추천 제목 10 (gas/BlogSeo.gs) ───────────── */
 
-let seoLoading = false;
+let seoPromise = null;
 
-/** 오늘 줄을 서버에서 받아 온다. 같은 날 두 번 불러도 서버는 저장된 줄을 돌려준다. */
-export async function loadBlogSeo(state, api, opts) {
-  if (!api || !api.configured) { state.blogSeo = { error: 'ERR_NO_CONFIG' }; return; }
-  if (seoLoading) return;
-  seoLoading = true;
-  try {
-    const res = await api.blogSeoTitles(Object.assign({ brand: state.brand }, opts || {}));
-    state.blogSeo = { data: res.data || null, at: Date.now() };
-  } catch (err) {
-    state.blogSeo = { error: (err && err.code) || 'ERR_UNKNOWN', msg: (err && err.message) || '' };
-  } finally {
-    seoLoading = false;
-  }
+/**
+ * 오늘 줄을 서버에서 받아 온다. 같은 날 두 번 불러도 서버는 저장된 줄을 돌려준다.
+ * ⚠ 불러오는 중에 화면이 다시 그려질 수 있다(블로그 통계가 늦게 오면 renderRoute 가 또 돈다).
+ *   그때 새 요청을 만들지 않고 **같은 약속(promise)을 돌려준다** — 예전 코드는 즉시 반환해서
+ *   '가져오는 중' → renderRoute → '가져오는 중' … 이 마이크로태스크로 계속 돌아 화면이 얼었다.
+ */
+export function ensureBlogSeo(state, api, opts) {
+  if (!api || !api.configured) { state.blogSeo = { error: 'ERR_NO_CONFIG' }; return Promise.resolve(); }
+  if (seoPromise) return seoPromise;
+  seoPromise = (async () => {
+    try {
+      const res = await api.blogSeoTitles(Object.assign({ brand: state.brand }, opts || {}));
+      state.blogSeo = { data: res.data || null, at: Date.now() };
+    } catch (err) {
+      state.blogSeo = { error: (err && err.code) || 'ERR_UNKNOWN', msg: (err && err.message) || '' };
+    } finally {
+      seoPromise = null;
+    }
+  })();
+  return seoPromise;
 }
+
+/** 예전 이름(다른 곳에서 부를 수 있어 남긴다) */
+export function loadBlogSeo(state, api, opts) { return ensureBlogSeo(state, api, opts); }
 
 function seoPanel(h, ctx) {
   const { state, api, toast } = ctx;
@@ -242,7 +252,7 @@ function seoPanel(h, ctx) {
   const saved = state.blogSeo;
   if (!saved) {
     panel.appendChild(h('p', { class: 'hint', text: '오늘의 제목을 가져오는 중…' }));
-    loadBlogSeo(state, api).then(() => { if (state.route === 'blog') ctx.renderRoute(); });
+    ensureBlogSeo(state, api).then(() => { if (state.route === 'blog') ctx.renderRoute(); });
     return panel;
   }
 
@@ -287,7 +297,7 @@ function seoPanel(h, ctx) {
     onclick: async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true; btn.textContent = '뽑는 중…';
-      await loadBlogSeo(state, api, { refresh: true });
+      await ensureBlogSeo(state, api, { refresh: true });
       const after = state.blogSeo || {};
       toast(after.error ? '다시 뽑지 못했어요 — ' + (after.msg || after.error) : '오늘 제목을 다시 뽑았습니다', after.error ? 'err' : 'ok');
       ctx.renderRoute();

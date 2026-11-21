@@ -1022,6 +1022,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('blog: 제목을 누르면 스튜디오로 넘긴다', /putSeoSeed\(/.test(bsv) && /#\/create\/blog/.test(bsv));
     ok('blog: 발행은 사람 몫이라고 적는다', /임시저장까지/.test(bsv));
     ok('blog: 가져오지 못했을 때 다시 시도할 수 있다', /오늘의 제목을 가져오는 중/.test(bsv) && /다시 시도/.test(bsv));
+    ok('blog: 불러오는 중 다시 그려져도 같은 약속을 쓴다(화면 얼음 방지)', /export function ensureBlogSeo/.test(bsv) && /if \(seoPromise\) return seoPromise/.test(bsv) && !/let seoLoading/.test(bsv));
 
     const SL = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js'));
     const kit = await SL.buildBlogKit({
