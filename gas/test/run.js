@@ -2264,6 +2264,16 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
     ok('순위가 없으면 "내 글 없음"을 쓰지 않는다', out.rows.every(r => r.reason.indexOf('내 글 없음') < 0), out.rows[0].reason);
   }
 
+  /* 시트가 날짜를 Date 로 돌려줘도 '오늘 줄'을 찾는다(두 번째 호출이 계산을 다시 하지 않게) */
+  {
+    const sh = ss.getSheetByName('Blog_Seo_Titles');
+    if (sh) sh.rows[1][0] = new Date('2026-11-21T00:00:00+09:00');
+    const before = calls.length;
+    const again = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'daejeon_youth' }, { brand: 'daejeon_youth' });
+    ok('날짜 칸이 Date 여도 저장된 줄을 쓴다', again.ok && again.data.cached === true, again.data && again.data.cached);
+    eq('그때는 네트워크를 부르지 않는다', calls.length, before);
+  }
+
   const meli = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'ppiyak_kimmary' }, { brand: 'ppiyak_kimmary' });
   ok('메리 트랙은 블로그를 쓰지 않는다고 알린다', meli.ok && meli.data.count === 0 && /블로그를 쓰지/.test(meli.data.fallback), meli.data && meli.data.fallback);
 }
