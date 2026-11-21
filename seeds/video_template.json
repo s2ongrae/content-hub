@@ -12,7 +12,7 @@
     "caption": { "size": 68, "cpl": 13, "lines": 2, "margin_v": 501, "outline": 3, "shadow": 1, "fade": [80, 60] },
     "punch": { "size": 76, "pop_ms": 100 },
     "hook": { "seconds": 1.5, "size": 96 },
-    "header": { "hold_until": 3.5, "title_size": 80, "title_cpl": 10, "badge_size": 48, "badge_height": 78, "slim_size": 32, "slim_height": 58, "y": 244, "x": 88 },
+    "header": { "hold_until": 3.5, "title_size": 80, "title_cpl": 10, "badge_size": 48, "badge_height": 78, "slim_size": 32, "slim_height": 58, "y": 244, "x": 100 },
     "outro": { "seconds": 1.2, "size": 40, "underline": true },
     "tts": { "hype": { "rate": "+20%", "pitch": "+7Hz", "volume": "+12%" }, "calm": { "rate": "+8%", "pitch": "+0Hz", "volume": "+0%" } },
     "mix": { "duck_db": -15, "attack_ms": 50, "release_ms": 300, "headroom": 0.8, "makeup_db": 6, "limiter_ceiling": 0.5, "audio_bitrate": "320k" }
