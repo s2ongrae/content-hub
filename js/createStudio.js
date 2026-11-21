@@ -26,6 +26,7 @@ import {
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261121g';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261121g';
 import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261121a';
+import { paintAiClip } from './aiClip.js?v=20261121a';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';
@@ -831,6 +832,9 @@ function paintVideo(actions, out, ctx, ui) {
   });
   actions.appendChild(stepsBtn);
   actions.appendChild(stepsHost);
+
+  /* AI 클립(무료) — 구글 Flow·허깅페이스 프롬프트 빌더. 새 파일 js/aiClip.js 만 쓰고 style.css 는 건드리지 않는다. */
+  paintAiClip(actions, ctx);
 
   /* 대본·자막·내레이션(content_draft format:'video') */
   scriptBtn.addEventListener('click', async () => {

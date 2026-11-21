@@ -1031,6 +1031,52 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오늘의 추천 제목 10 시험', false, (err && err.stack) || err);
   }
 
+  /* ── 무료 AI 클립(구글 Flow·허깅페이스) — js/aiClip.js ↔ seeds/ai_video_free.json ── */
+  console.log('[무료 AI 클립]');
+  try {
+    const { pathToFileURL } = require('url');
+    const AC = await import(pathToFileURL(path.join(ROOT, 'js', 'aiClip.js')).href + '?v=test-aiclip');
+    ok('Flow: 720p 4초 = 12크레딧', AC.creditCost(4, '720p') === 12);
+    ok('Flow: 360p 4초 = 4크레딧(1/3 값)', AC.creditCost(4, '360p') === 4);
+    ok('Flow: 모르는 해상도는 720p 로 본다', AC.creditCost(4, '1080p') === 12);
+    const bud = AC.fitsBudget({ seconds: 5, count: 2 }, '720p');
+    ok('하루 50크레딧 예산: 720p 5초 2컷 = 30크레딧 · 남음 20', bud.total === 30 && bud.fits === true && bud.left === 20);
+    ok('예산을 넘으면 fits=false', AC.fitsBudget({ seconds: 10, count: 4 }, '720p').fits === false);
+
+    const f = AC.buildFlowPrompt({ preset: 'product_scene', subject: 'a ceramic cat bowl', seconds: 4, resolution: '720p' });
+    ok('프롬프트에 소재가 들어간다', /a ceramic cat bowl/.test(f.prompt));
+    ok('프롬프트에 무자막 강제 문구가 늘 붙는다', f.prompt.indexOf(AC.NO_TEXT_SUFFIX) >= 0);
+    ok('프롬프트에 9:16 이 들어간다', /9:16/.test(f.prompt));
+    ok('길이는 3~10초로 조여진다', AC.buildFlowPrompt({ seconds: 30 }).seconds === 10 && AC.buildFlowPrompt({ seconds: 1 }).seconds === 3);
+    ok('크레딧이 결과에 같이 온다', f.credits === 12 && f.resolution === '720p');
+    ok('네거티브에 text·watermark 가 있다', /watermark/.test(f.negative) && /text/.test(f.negative));
+    ok('모르는 프리셋은 상품 컷으로', AC.buildFlowPrompt({ preset: 'zzz' }).preset === 'product_scene');
+
+    const m = AC.maryPrompt({});
+    ['[1. SCENE]', '[2. ROLE]', '[3. IDENTITY LOCK]', '[4. KEEP]'].forEach((tag) => ok('메리 4단: ' + tag, m.indexOf(tag) >= 0));
+    ok('메리 4단에 해부 가드(다리 4개·발가락)가 있다', /four legs only/.test(m) && /five toes/.test(m));
+    ok('메리 4단에 무자막 문구가 있다', m.indexOf(AC.NO_TEXT_SUFFIX) >= 0);
+
+    ok('삽입 상한: 30초 완제품 → 네이버 클립 6초 · 유튜브 9초', AC.maxInsertSeconds(30, 'naver_clip') === 6 && AC.maxInsertSeconds(30, 'youtube') === 9);
+    ok('판정 5개', AC.JUDGE.length === 5);
+
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'ai_video_free.json'), 'utf8'));
+    ok('시드: Flow 하루 50크레딧 · 360p 1 · 720p 3', seed.flow.free_credits_per_day === 50 && seed.flow.models.omni_flash_1_2.credits_per_second['360p'] === 1 && seed.flow.models.omni_flash_1_2.credits_per_second['720p'] === 3);
+    ok('시드: 한국은 워터마크 지역', seed.flow.visible_watermark_regions.indexOf('KR') >= 0);
+    ok('시드: ZeroGPU 무료 5분', seed.spaces.quota.free_minutes_per_day === 5);
+    ok('시드: animate 모드 두 가지', Object.keys(seed.spaces.wan_animate.modes).length === 2 && !!seed.spaces.wan_animate.modes['Pose Retarget']);
+    ok('js/aiClip.js 상수와 시드가 같다(크레딧·크롭·삽입·상한)', AC.FLOW.creditsPerSecond['720p'] === seed.flow.models.omni_flash_1_2.credits_per_second['720p'] && AC.INSERT.cropZoom === seed.clip_spec.crop_zoom && AC.INSERT.maxSeconds === seed.clip_spec.insert_seconds.max && AC.INSERT.maxShareOfFinal === seed.clip_spec.max_share_of_final);
+    ok('시드 Space 이름이 실측 그대로', seed.spaces.wan_i2v.repo === 'zerogpu-aoti/wan2-2-fp8da-aoti-faster' && seed.spaces.wan_animate.repo === 'alexnasa/Wan2.2-Animate-ZEROGPU');
+
+    const src = fs.readFileSync(path.join(ROOT, 'js', 'aiClip.js'), 'utf8');
+    ok('aiClip: innerHTML 없음', !/\.innerHTML\s*=/.test(src));
+    ok('aiClip: 주소·토큰 값이 없다', !/script\.google\.com|hf_[A-Za-z0-9]{10,}/.test(src));
+    const cs = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('스튜디오 영상 화면에 AI 클립 패널이 붙는다', /paintAiClip\(actions, ctx\)/.test(cs) && /from '\.\/aiClip\.js/.test(cs));
+  } catch (err) {
+    ok('무료 AI 클립 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();
