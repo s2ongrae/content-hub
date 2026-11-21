@@ -599,7 +599,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const pl = fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8');
     ok('innerHTML/outerHTML/insertAdjacentHTML/document.write 0건', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(pv + pl));
     ok('웹앱 주소·토큰·시트 ID 같은 값이 없다', !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(pv + pl));
-    ok('payload studio 키 한 개만 저장(시트 칸을 늘리지 않는다)', /patch: \{ studio: state \}/.test(pv));
+    ok('studio 쓰기는 studio.formats.video 로만 한다(구 루트 키는 읽기 폴백 · 1줄 롤백)', /mergeFormat\(studioRoot, 'video', state\)/.test(pv) && /readStudio\(detail\.payload\)/.test(pv) && !/patch: \{ studio: state \}/.test(pv));
     ok('단계 7개: 재료·기획·컷·클린 마스터·자막·마무리·사람 확인', L.STEPS.map((x) => x.key).join(',') === 'material,plan,cuts,render,srt,make,finish' && L.STEPS.length === 7);
     ok('app.js 가 제작 탭을 연결한다', /produceSection/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')));
 
@@ -634,6 +634,221 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('app.js 의 produceView import 버전이 index 와 같다', (fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8').match(/produceView\.js\?v=(\d+[a-z])/) || [])[1] === (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/js\/app\.js\?v=(\d+[a-z])/) || [])[1]);
   } catch (err) {
     ok('제작 스텝퍼 시험', false, (err && err.stack) || err);
+  }
+
+  /* ────────────────────────────────────────────────────────────────
+   * [9] 제작·생성 스튜디오 (2026-11-21 O1) — 계산(studioLogic)·카드 그리기(studioCanvas)·화면 스모크
+   * ──────────────────────────────────────────────────────────────── */
+  console.log('\n[9] 제작·생성 스튜디오');
+  try {
+    const SL = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js'));
+    const SC = await import('file://' + path.join(ROOT, 'js', 'studioCanvas.js'));
+
+    /* 포맷·트랙 규칙 */
+    ok('포맷 3개: 블로그 · 영상 · 피드', SL.FORMAT_IDS.join(',') === 'blog,video,feed');
+    ok('트랙 B(삐약 김메리)는 영상만', SL.formatsFor('ppiyak_kimmary').join(',') === 'video' && SL.formatsFor('daejeon_youth').length === 3);
+    ok('쓸 수 없는 포맷이면 빈 값(선택 화면)', SL.pickFormat('blog', 'ppiyak_kimmary') === '' && SL.pickFormat('video', 'ppiyak_kimmary') === 'video' && SL.pickFormat('게시', 'daejeon_youth') === '');
+    ok('트랙 B 이동 문구가 설계 그대로', SL.TRACK_B_NOTE === '반려동물 채널은 영상만 지원해 영상 스튜디오로 이동했어요');
+
+    /* 재료 4칸 */
+    const m0 = SL.normalizeMaterials({ place: { name: ' 미미삼겹 ' }, concept: { kind: 'hack', tone: 'x' }, video: { length_sec: 45 } });
+    ok('모르는 개념·톤·길이는 기본값으로 맞춘다', m0.concept.kind === 'review' && m0.concept.tone === 'plain' && m0.video.length_sec === 30);
+    ok('재료 요약: 사진 수 · 가게 · 컨셉', /사진 0장 · 미미삼겹 · 맛집 리뷰/.test(SL.materialSummary(m0)), SL.materialSummary(m0));
+    ok('재료가 비면 false, 하나라도 있으면 true', SL.hasMaterial({}) === false && SL.hasMaterial({ place: { name: 'x' } }) === true);
+
+    /* 사진 역할·자동 순서 */
+    ok('파일 이름으로 역할 추정', SL.photoRole('01_외관.jpg') === '외관' && SL.photoRole('메뉴판.png') === '메뉴판' && SL.photoRole('삼겹굽기.jpg') === '음식' && SL.photoRole('가게내부.jpg') === '분위기' && SL.photoRole('영수증.jpg') === '마무리');
+    const ordered = SL.autoOrderPhotos([{ name: '영수증.jpg' }, { name: '삼겹.jpg' }, { name: '입구.jpg' }, { name: '메뉴판.jpg' }, { name: '내부.jpg' }]);
+    ok('자동 순서: 외관→메뉴판→음식→분위기→마무리', ordered.map((p) => p.role).join(',') === '외관,메뉴판,음식,분위기,마무리', ordered.map((p) => p.role));
+    ok('자동 순서는 1부터 번호를 매긴다', ordered.map((p) => p.order).join(',') === '1,2,3,4,5');
+
+    /* 장수 계산 */
+    ok('영상 장수: 15초 5 · 30초 8 · 60초 15', SL.photoCountFor('video', { lengthSec: 15 }) === 5 && SL.photoCountFor('video', { lengthSec: 30 }) === 8 && SL.photoCountFor('video', { lengthSec: 60 }) === 15);
+    ok('블로그 22 · 피드 6 (가진 장수가 모자라면 가진 만큼)', SL.photoCountFor('blog', {}) === 22 && SL.photoCountFor('feed', {}) === 6 && SL.photoCountFor('blog', { available: 4 }) === 4);
+    const vplan = SL.photoPlanFor('video', { photos: ordered, lengthSec: 60 });
+    ok('영상 60초: 5장으로도 렌더는 되지만 권장 15장에는 10장 모자람', vplan.target === 15 && vplan.enough === true && vplan.meets_target === false && vplan.missing === 10, vplan);
+
+    /* 캡션 규칙 */
+    ok('직접 쓴 캡션은 덮지 않는다', SL.captionFor({ name: 'a.jpg', role: '음식', caption: '내가 쓴 캡션' }, m0) === '내가 쓴 캡션');
+    ok('빈 캡션은 사실 묘사로 채운다(15~25자)', /입구|메뉴|자리/.test(SL.captionFor({ name: 'a.jpg', role: '외관' }, m0)));
+
+    /* 블로그 키트 */
+    const memo = '첫 문단은 그대로 남습니다.\n두 번째 줄도 그대로.\n\n둘째 문단입니다.';
+    const matB = SL.normalizeMaterials({
+      place: { name: '미미삼겹' }, content: { memo: memo, region_dong: '봉명동', price_menu: '삼겹 16,000원', category: '고기' },
+      photos: ordered
+    });
+    const blocks = (await import('file://' + path.join(ROOT, 'js', 'slot-engine.js'))).splitUserBlocks(memo);
+    const kit = await SL.signKit(SL.buildBlogKit({ materials: matB, blocks: blocks }));
+    ok('블로그 키트: 제목 3안', kit.titles.length === 3 && kit.titles[0].indexOf('미미삼겹') >= 0, kit.titles);
+    ok('블로그 키트: 원문 문단이 한 글자도 안 바뀐다', kit.blocks.map((b) => b.text).join('\n\n') === memo);
+    ok('블로그 키트: 사진 위치표가 문단 뒤에 붙는다', kit.photo_plan.length === 5 && kit.photo_plan.filter((x) => x.slot === 0).length >= 1);
+    ok('블로그 키트: 해시(SHA-256)가 붙는다', /^[0-9a-f]{64}$/.test(kit.user_body_sha256));
+    ok('블로그 키트 본문에 사진 표시([사진] 이름 — 캡션)', /\[사진\] .+\.jpg — /.test(kit.text));
+    ok('네이버에 붙이는 순서가 안내된다', kit.paste_steps.length >= 5 && /임시저장/.test(kit.paste_steps.join(' ')));
+    ok('모르는 값은 [채우기]로 남긴다(지어내지 않음)', SL.buildBlogKit({ materials: SL.normalizeMaterials({ content: { memo: '메모' } }) }).titles[0].indexOf('[채우기]') >= 0);
+
+    /* 피드 */
+    const cards = SL.buildFeedCards({ materials: matB });
+    ok('피드 카드 6장', cards.length === 6 && cards.map((c) => c.no).join(',') === '1,2,3,4,5,6');
+    ok('피드 카드: 사진이 순서대로 배치된다', cards[0].photo === ordered[0].name && cards[2].photo === ordered[2].name);
+    ok('피드 카드: 모르는 칸은 [채우기]', SL.buildFeedCards({ materials: SL.normalizeMaterials({}) })[1].body === '[채우기]');
+    ok('캡션·해시태그 5개', SL.feedCaption(matB).indexOf('미미삼겹') >= 0 && SL.hashtagsOf(matB).length === 5 && SL.hashtagsOf(matB).every((t) => t.charAt(0) === '#'));
+
+    /* AI 초안 요청 */
+    const req = await SL.buildDraftRequest({ contentId: 'C-1', brand: 'daejeon_youth', format: 'blog', materials: matB, blocks: blocks });
+    ok('초안 요청: 타입·포맷·개념', req.type === 'content_draft' && req.format === 'blog' && req.concept.kind === 'review');
+    ok('초안 요청: 블록마다 SHA-256', req.blocks.length === 2 && /^[0-9a-f]{64}$/.test(req.blocks[0].sha256));
+    ok('초안 요청: 메모 해시는 블록 전체의 해시', /^[0-9a-f]{64}$/.test(req.memo_sha256));
+    ok('초안 요청: 사진은 이름·역할만', req.media.length === 5 && Object.keys(req.media[0]).sort().join(',') === 'name,role');
+    ok('초안 요청: 3,500자 이하면 인라인(블록·팩트 포함)', !req.payload_source && !!req.blocks && !!req.facts);
+    const longMemo = Array.from({ length: 12 }, (_, i) => ('문단' + i + ' ').repeat(60)).join('\n\n');
+    const longBlocks = longMemo.split('\n\n').map((t, i) => ({ id: 'U' + (i + 1), text: t }));
+    const req2 = await SL.buildDraftRequest({ contentId: 'C-1', brand: 'daejeon_youth', format: 'blog', materials: SL.normalizeMaterials({ content: { memo: longMemo } }), blocks: longBlocks });
+    ok('초안 요청: 3,500자를 넘으면 payload_source:drive(블록·팩트 제거)', req2.payload_source === 'drive' && !req2.blocks && !req2.facts && JSON.stringify(req2).length <= 3500, JSON.stringify(req2).length);
+
+    /* 원문 잠금 검증 */
+    ok('AI 결과의 USER 블록이 그대로면 통과', SL.verifyUserBlocks(blocks, [{ origin: 'USER', text: blocks[0].text }, { origin: 'USER', text: blocks[1].text }]).ok === true);
+    ok('USER 블록이 바뀌면 불통과(화면이 AI 문장을 버린다)', SL.verifyUserBlocks(blocks, [{ origin: 'USER', text: '바뀜' }, { origin: 'USER', text: blocks[1].text }]).ok === false);
+    const composed = SL.composeBlogWithDraft(kit, { titles: ['ㄱ', 'ㄴ', 'ㄷ'], blocks: [{ origin: 'USER', text: blocks[0].text }, { origin: 'USER', text: blocks[1].text }], bridges: ['사이 문장 1', '사이 문장 2'], outro: '마무리 문단' });
+    ok('합치기: 원문이 그대로 남고 사이 문장이 들어간다', composed.text.indexOf('첫 문단은 그대로 남습니다.') >= 0 && composed.text.indexOf('사이 문장 1') >= 0);
+    ok('합치기: 제목·마무리는 AI 것을 쓴다', composed.titles[0] === 'ㄱ' && composed.text.indexOf('마무리 문단') >= 0);
+    const composedBad = SL.composeBlogWithDraft(kit, { titles: ['x'], blocks: [{ origin: 'USER', text: '변조' }], bridges: ['AI 문장'] });
+    ok('합치기: 원문이 변조됐으면 AI 문장을 넣지 않는다', composedBad.verified.ok === false && composedBad.text.indexOf('AI 문장') < 0);
+
+    /* studio 문서 읽기·쓰기(마이그레이션) */
+    const legacy = { steps: 3, inputs: ['a.mp4'], render: { order_id: 'Q-1' } };
+    const rs = SL.readStudio({ studio: legacy });
+    ok('구 구조를 읽기로 폴백한다(migrated=true)', rs.migrated === true && rs.video.inputs[0] === 'a.mp4' && rs.legacy_root === true);
+    const rs2 = SL.readStudio({ studio: { formats: { video: { steps: 1 }, blog: { draft: { titles: ['a'] } } }, steps: 9 } });
+    ok('새 구조가 있으면 그쪽이 이긴다', rs2.migrated === false && rs2.video.steps === 1 && rs2.studio.steps === 9);
+    const merged = SL.mergeFormat(rs2.studio, 'video', { steps: 2 });
+    ok('쓰기는 다른 포맷·구 루트 키를 보존한다', merged.formats.blog.draft.titles[0] === 'a' && merged.formats.video.steps === 2 && merged.steps === 9 && merged.meta.format === 'video');
+    const withMat = SL.mergeMaterialsIntoStudio(merged, matB);
+    ok('재료를 studio 에 넣으면 장소·개념·사진 목록이 남는다', withMat.place.name === '미미삼겹' && withMat.media.length === 5 && withMat.content.memo.indexOf('첫 문단') >= 0);
+    const back = SL.materialsFromStudio(withMat);
+    ok('카드에서 재료를 다시 읽는다', back.place.name === '미미삼겹' && back.photos.length === 5 && back.concept.kind === 'review');
+
+    /* 문구 */
+    ok('실패 문구 3종(설계 §6)', SL.errorText('ERR_TIMEOUT').indexOf('시간 초과') >= 0 && SL.errorText('ERR_VERSION_CONFLICT').indexOf('병합') >= 0 && SL.errorText('x').indexOf('연결 또는 형식 오류') >= 0);
+    ok('오더 상태: 종료/진행 구분', SL.orderLine('DONE').done === true && SL.orderLine('FAILED').done === true && SL.orderLine('RUNNING').done === false && SL.orderLine('WAITING_APPROVAL').text.indexOf('승인') >= 0);
+
+    /* 카드 그리기 계산 */
+    ok('카드 1080×1350(4:5)', SC.CARD_W === 1080 && SC.CARD_H === 1350);
+    const cr = SC.coverRect(2000, 1000, 1080, 700);
+    ok('사진 채우기: 가운데를 잘라낸다(비율 유지)', Math.abs(cr.sw - 1542.86) < 0.1 && Math.abs(cr.sh - 1000) < 0.01 && Math.abs(cr.sx - 228.57) < 0.1 && cr.sy === 0, cr);
+    ok('긴 문장 줄바꿈(글자 수 기준)', SC.splitLines('가나다라마바사 아자차카타파하', 8).length >= 2);
+    ok('보정 프리셋 4종 · 파일 이름 규칙', SC.FILTER_PRESETS.length === 4 && SC.cardFileName('미미 삼겹', 2) === '미미_삼겹_카드2.png');
+
+    /* 화면 스모크 — 가짜 DOM 으로 세 포맷을 모두 그려 본다 */
+    {
+      class N {
+        constructor(tag) { this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.className = ''; this._text = ''; this.value = ''; this.checked = false; this.hidden = false; this.isConnected = true; this.style = {}; }
+        set textContent(v) { this._text = String(v); this.children = []; }
+        get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+        setAttribute(k, v) { this.attrs[k] = String(v); }
+        removeAttribute(k) { delete this.attrs[k]; }
+        hasAttribute(k) { return k in this.attrs; }
+        getAttribute(k) { return this.attrs[k] === undefined ? null : this.attrs[k]; }
+        addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+        removeEventListener() {}
+        append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { textContent: String(k), tag: '#text', children: [] }; if (n.parent !== undefined) n.parent = this; this.children.push(n); }); }
+        appendChild(k) { this.append(k); return k; }
+        replaceChildren(...kids) { this.children = []; this.append(...kids); }
+        querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+        querySelectorAll(sel) { const out = []; const cls = (sel.match(/^\.([\w-]+)/) || [])[1]; (function w(n) { (n.children || []).forEach((c) => { if (!c || !c.tag) return; if (!cls || (c.className || '').split(/\s+/).indexOf(cls) >= 0) out.push(c); w(c); }); })(this); return out; }
+        closest() { return null; }
+        remove() {}
+        focus() {}
+        select() {}
+        click() { (this.listeners.click || []).forEach((f) => f({ target: this })); }
+      }
+      const store = {};
+      const dom = { createElement: (t) => new N(t), createTextNode: (t) => ({ tag: '#text', textContent: String(t), children: [] }), body: new N('body'), addEventListener() {}, removeEventListener() {}, hidden: false, execCommand: () => false };
+      const prev = { d: global.document, w: global.window, l: global.localStorage, loc: global.location, nav: global.navigator };
+      global.document = dom;
+      global.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
+      global.window = { localStorage: global.localStorage };
+      global.location = { hash: '#/create' };
+      global.navigator = { clipboard: null };
+      const hh = (tag, attrs, ...kids) => {
+        const n = new N(tag);
+        if (attrs) for (const [k, v] of Object.entries(attrs)) {
+          if (v == null || v === false) continue;
+          if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'style') n.setAttribute('style', v);
+          else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v); else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+        }
+        n.append(...kids.flat(4).filter((k) => k != null && k !== false)); return n;
+      };
+      const walk = (n, f) => { f(n); (n.children || []).forEach((c) => c && c.tag && walk(c, f)); };
+      const toasts = [];
+      const mkCtx = (brand) => ({
+        h: hh, state: { brand }, api: { post: async () => ({ data: {} }) },
+        toast: (m) => toasts.push(m), friendlyError: (e) => String(e),
+        pageHead: (t, s) => hh('div', { class: 'page-head' }, hh('h1', null, t), hh('p', null, s)),
+        BRANDS: { daejeon_youth: { name: '대전 청년' }, ppiyak_kimmary: { name: '삐약 김메리' } },
+        openDetail: () => {}
+      });
+      try {
+        const CS = await import('file://' + path.join(ROOT, 'js', 'createStudio.js'));
+        const runs = [
+          ['첫 화면(포맷 선택)', { brand: 'daejeon_youth' }, 'create', ''],
+          ['블로그', { brand: 'daejeon_youth' }, 'create/blog', 'blog'],
+          ['영상', { brand: 'daejeon_youth' }, 'create/video', 'video'],
+          ['피드', { brand: 'daejeon_youth' }, 'create/feed', 'feed'],
+          ['트랙 B 영상', { brand: 'ppiyak_kimmary' }, 'create/video', 'video']
+        ];
+        for (const [label, st, hash, fmt] of runs) {
+          const main = new N('main');
+          global.location.hash = '#/' + hash;
+          const failures = [];
+          try {
+            CS.renderCreateStudio(main, mkCtx(st.brand), { format: fmt });
+            const junk = [];
+            walk(main, (n) => { if (n.tag === '#text' && /^(null|undefined|false|NaN)$/.test(n.textContent)) junk.push(n.textContent); });
+            if (junk.length) failures.push('화면에 "' + junk[0] + '" 글자가 보임');
+            if (!main.children.length) failures.push('아무것도 그리지 않음');
+            if (fmt) {
+              const inputs = []; walk(main, (n) => { if (n.tag === 'input' || n.tag === 'textarea') inputs.push(n); });
+              if (inputs.length < 8) failures.push('재료 칸이 부족함(' + inputs.length + '개)');
+            }
+          } catch (e) { failures.push((e && e.message) || String(e)); }
+          ok('화면 스모크(' + label + '): 오류 없이 그려진다', failures.length === 0, failures.join(' | '));
+        }
+        // 트랙 B 에서 블로그를 요청하면 영상으로 보낸다 + 토스트
+        toasts.length = 0;
+        const mainB = new N('main');
+        global.location.hash = '#/create/blog';
+        CS.renderCreateStudio(mainB, mkCtx('ppiyak_kimmary'), { format: 'blog' });
+        ok('트랙 B 는 블로그 화면을 열지 않고 영상으로 이동 + 안내', global.location.hash === '#/create/video' && toasts.some((t) => /영상만 지원/.test(t)), [global.location.hash, toasts]);
+        // 첫 화면에는 포맷 카드 3개
+        const mainC = new N('main');
+        global.location.hash = '#/create';
+        CS.renderCreateStudio(mainC, mkCtx('daejeon_youth'), { format: '' });
+        const fmtBtns = []; walk(mainC, (n) => { if ((n.className || '').split(/\s+/).indexOf('st-format') >= 0) fmtBtns.push(n); });
+        ok('첫 화면에 포맷 3개가 나온다', fmtBtns.length === 3, fmtBtns.length);
+      } finally {
+        global.document = prev.d; global.window = prev.w; global.localStorage = prev.l; global.location = prev.loc; global.navigator = prev.nav;
+      }
+    }
+
+    /* 코드 규칙 */
+    const cs = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    const sl = fs.readFileSync(path.join(ROOT, 'js', 'studioLogic.js'), 'utf8');
+    const sc = fs.readFileSync(path.join(ROOT, 'js', 'studioCanvas.js'), 'utf8');
+    ok('studio: innerHTML/outerHTML/insertAdjacentHTML/document.write 0건', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(cs + sl + sc));
+    ok('studio: 웹앱 주소·토큰 값이 없다', !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}|\bcq_[A-Za-z0-9]{8,}|xox[bp]-/.test(cs + sl + sc));
+    ok('studio: 사진 미리보기는 로컬 ObjectURL(드라이브 URL 을 img src 에 넣지 않는다)', /URL\.createObjectURL/.test(cs) && !/src.*drive\.google/.test(cs));
+    ok('studio: 오더 보내기는 1회 1개로 잠긴다(mem.busy)', /mem\.busy\[key\]/.test(cs));
+    ok('studio: hub_order_status 15초 폴링 · 탭 숨김이면 쉰다', /POLL_MS = 15000/.test(cs) && /document\.hidden/.test(cs) && /line\.isConnected/.test(cs));
+    ok('studio: 실패 문구 3종을 그대로 보여 준다', /ERR_VERSION_CONFLICT/.test(sl) && /시간 초과/.test(sl));
+    ok('studio: 예전 화면을 지우지 않았다(create-view 는 #/create/legacy 로 마운트)', fs.existsSync(path.join(ROOT, 'js', 'create-view.js')) && /create\/legacy/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')));
+    ok('studio: 숏폼 공방(studioView.js)은 그대로 살아 있다', fs.existsSync(path.join(ROOT, 'js', 'studioView.js')) && /renderStudio/.test(fs.readFileSync(path.join(ROOT, 'js', 'seriesView.js'), 'utf8')));
+    ok('studio: 영상 6단계를 마운트한다(produceSection)', /produceSection\(\{/.test(cs));
+    ok('index.html: 스튜디오 CSS 와 blob: 미리보기 허용(CSP)', /css\/studio\.css/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /img-src 'self' data: blob:/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 하단 탭 이름이 "제작"', /data-route="create"[^>]*aria-label="제작 스튜디오"/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+  } catch (err) {
+    ok('제작 스튜디오 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

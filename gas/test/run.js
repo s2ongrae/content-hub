@@ -225,7 +225,7 @@ console.log('\n[7] 오더 프록시 — 허용 타입 · 큐 전달');
 A.env.props.set('QUEUE_TOKEN', 'portal-key-for-test-0123456789abcdef');
 o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'no_such_type' }, { brand: 'daejeon_youth' });
 eq('허용 밖 타입 거부', o.code, 'ERR_INVALID_ACTION');
-eq('허용 타입 4종', ev(A.ctx,'HUB_ORDER_TYPES').join(','), 'content_render,content_upload,content_stats,blog_neighbor');
+eq('허용 타입 5종(2026-11-21 content_draft 추가)', ev(A.ctx,'HUB_ORDER_TYPES').join(','), 'content_render,content_upload,content_stats,blog_neighbor,content_draft');
 ok('큐를 부르지 않았다', A.env.fetched.length === 0);
 
 o = callHandler(A.ctx, 'handleHubOrder_', null, {
@@ -305,6 +305,125 @@ ok('fit 이 있는 오더 접수', o.ok, o);
 eq('fit 은 소문자로 큐에 실린다', A.env.fetched[A.env.fetched.length - 1].body.payload.fit, 'blur');
 ok('fit 이 payload 키에 들어간다', Object.keys(A.env.fetched[A.env.fetched.length - 1].body.payload).indexOf('fit') >= 0);
 ['auto', 'left', 'CROPX'].forEach((f) => eq('거부: fit=' + f, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { fit: f }), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+
+console.log('\n[8h] 사진 입력(content_render images) — 25장 · 영상 8개와 별개');
+A.env.setFetchReply(okReply);
+const photoNames = Array.from({ length: 25 }, (_, i) => '사진' + pad(i + 1) + '_' + (i < 2 ? '외관' : (i < 4 ? '음식' : '분위기')) + '.jpg');
+o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render', content_id: 'CH-20261121-IMG', brand: 'daejeon_youth', images: photoNames }, { brand: 'daejeon_youth' });
+ok('사진 25장만으로 렌더 오더 접수(입력 영상 없음)', o.ok, o);
+const rimg = A.env.fetched[A.env.fetched.length - 1].body;
+eq('큐 타입은 content_render(claude_prompt 아님)', rimg.type, 'content_render');
+ok('사진 이름은 그대로 · inputs 키는 없다', JSON.stringify(rimg.payload.images) === JSON.stringify(photoNames) && !('inputs' in rimg.payload), Object.keys(rimg.payload));
+eq('응답 queue_type', o.ok && o.data.queue_type, 'content_render');
+o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render', content_id: 'CH-20261121-IMG', brand: 'daejeon_youth', images: ['a.jpg', 'a.jpg', 'b.webp'], photo_seconds: 3.456, xfade: 0.3 }, { brand: 'daejeon_youth' });
+const rimg2 = A.env.fetched[A.env.fetched.length - 1].body.payload;
+ok('사진 이름 중복은 버리고 순서는 지킨다', JSON.stringify(rimg2.images) === JSON.stringify(['a.jpg', 'b.webp']), rimg2.images);
+ok('장당 길이·전환을 소수 2자리로 넘길 수 있다', rimg2.photo_seconds === 3.46 && rimg2.xfade === 0.3, rimg2);
+o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render', content_id: 'CH-20261121-IMG', brand: 'daejeon_youth', inputs: ['v.mp4'], images: ['a.jpg'] }, { brand: 'daejeon_youth' });
+const rmix = A.env.fetched[A.env.fetched.length - 1].body.payload;
+ok('영상+사진 섞어 보낼 수 있다', o.ok && rmix.inputs[0] === 'v.mp4' && rmix.images[0] === 'a.jpg', rmix);
+const nImg = A.env.fetched.length;
+[
+  ['사진 빈 배열 + 영상 없음', { content_id: 'CH-1', brand: 'daejeon_youth', images: [] }],
+  ['사진 26장', { content_id: 'CH-1', brand: 'daejeon_youth', images: Array.from({ length: 26 }, (_, i) => 'p' + i + '.jpg') }],
+  ['사진 확장자 gif', { content_id: 'CH-1', brand: 'daejeon_youth', images: ['a.gif'] }],
+  ['사진 경로', { content_id: 'CH-1', brand: 'daejeon_youth', images: ['../a.jpg'] }],
+  ['사진 배열 아님', { content_id: 'CH-1', brand: 'daejeon_youth', images: 'a.jpg' }],
+  ['영상·사진 같은 이름', { content_id: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], images: ['a.mp4'] }],
+  ['photo_seconds 범위 밖', { content_id: 'CH-1', brand: 'daejeon_youth', images: ['a.jpg'], photo_seconds: 20 }]
+].forEach(([name, pl]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({ type: 'content_render' }, pl), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+ok('거부된 사진 오더는 큐를 부르지 않았다', A.env.fetched.length === nImg);
+ok('images 키가 아예 없는 content_render 는 지금처럼 조립본 오더(claude_prompt)다', (function () {
+  const before = A.env.fetched.length;
+  const r = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'content_render', channel: 'shorts', place_name: '미미삼겹' }, { brand: 'daejeon_youth' });
+  return r.ok && A.env.fetched.length === before + 1 && A.env.fetched[A.env.fetched.length - 1].body.type === 'claude_prompt';
+})());
+A.env.setFetchReply(okReply);
+ok('사진 25장 + 영상 8개 + 컷 150개 payload 도 큐 한도(4,000자) 안', (function () {
+  const r = A.ctx.hubRenderPayload_({ content_id: 'CH-20261121-IMG', brand: 'daejeon_youth',
+    inputs: Array.from({ length: 8 }, (_, i) => 'v' + i + '.mp4'), images: photoNames,
+    cuts: Array.from({ length: 150 }, (_, i) => [i * 2, i * 2 + 1, i % 8]) });
+  return JSON.stringify(r).length < 4000 && (r.payload_source === 'drive' || !r.captions);
+})(), '큐 payload 가 4,000자를 넘으면 payload_source 가 스스로 바뀌어야 한다');
+
+console.log('\n[8i] content_draft — 초안 생성(LOW · 파일 안 고침)');
+const nodeCrypto = require('crypto');
+const sha = (t) => nodeCrypto.createHash('sha256').update(String(t), 'utf8').digest('hex');
+const blocksIn = ['첫 문단 원문입니다.', '둘째 문단은 두 줄로\n되어 있습니다.'];
+const blockObjs = blocksIn.map((t, i) => ({ id: 'U' + (i + 1), origin: 'USER', text: t, sha256: sha(t) }));
+const memoHash = sha(blocksIn.join('\n\n'));
+const goodDraft = {
+  type: 'content_draft', content_id: 'CH-20261121-DR1', brand: 'daejeon_youth', format: 'blog',
+  concept: { kind: 'review', tone: 'plain', hint: '웃긴데 정보는 정확하게' },
+  facts: { place_name: '미미삼겹', price_menu: '삼겹 16,000원' },
+  memo_sha256: memoHash, blocks: blockObjs,
+  media: [{ name: '사진01_외관.jpg', role: '외관' }],
+  ask: { titles: 3, bridge: true, captions: true, outro: true }
+};
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodDraft, { brand: 'daejeon_youth' });
+ok('초안 오더 접수', o.ok, o);
+const rdr = A.env.fetched[A.env.fetched.length - 1].body;
+eq('큐 타입은 content_draft(claude_prompt 아님)', rdr.type, 'content_draft');
+eq('응답 queue_type', o.ok && o.data.queue_type, 'content_draft');
+ok('블록은 USER·해시 둘 다 보낸다', rdr.payload.blocks[0].origin === 'USER' && rdr.payload.blocks[0].sha256 === sha(blocksIn[0]), rdr.payload.blocks[0]);
+eq('개념·장르·요청은 그대로', rdr.payload.concept.kind + '/' + rdr.payload.concept.tone + '/' + rdr.payload.ask.titles, 'review/plain/3');
+eq('사진 이름·역할만 보낸다(내용·바이트 없음)', JSON.stringify(rdr.payload.media), JSON.stringify([{ name: '사진01_외관.jpg', role: '외관' }]));
+ok('팩트는 400자로 자르고 허용 키만', (function () {
+  const r = A.ctx.hubDraftPayload_(Object.assign({}, goodDraft, { facts: { place_name: '가'.repeat(500), evil: 'x' } }));
+  return r.facts.place_name.length === 400 && !('evil' in r.facts);
+})());
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodDraft, { format: 'video', length_sec: 30, content_id: 'CH-20261121-DR2' }), { brand: 'daejeon_youth' });
+ok('영상 대본 오더 접수 · 길이 포함', o.ok && A.env.fetched[A.env.fetched.length - 1].body.payload.length_sec === 30, o);
+const nDr = A.env.fetched.length;
+[
+  ['허용 외 필드', { evil: 1 }],
+  ['format 틀림', { format: 'shorts' }],
+  ['brand 틀림', { brand: 'x' }],
+  ['concept.kind 틀림', { concept: { kind: 'hack' } }],
+  ['concept.tone 틀림', { concept: { tone: 'shout' } }],
+  ['memo_sha256 없음', { memo_sha256: '' }],
+  ['memo_sha256 형식', { memo_sha256: 'abc' }],
+  ['블록 해시 불일치', { blocks: [{ id: 'U1', text: '바뀐 문단', sha256: sha('원래 문단') }] }],
+  ['메모 해시 불일치', { memo_sha256: sha('다른 메모') }],
+  ['블록에 sha256 없음', { blocks: [{ id: 'U1', text: blocksIn[0] }] }],
+  ['블록이 AI_ADD', { blocks: [{ id: 'U1', origin: 'AI_ADD', text: blocksIn[0], sha256: sha(blocksIn[0]) }] }],
+  ['블록 61개', { blocks: Array.from({ length: 61 }, (_, i) => ({ id: 'U' + i, text: 'x' + i, sha256: sha('x' + i) })), memo_sha256: sha(Array.from({ length: 61 }, (_, i) => 'x' + i).join('\n\n')) }],
+  ['사진 26장', { media: Array.from({ length: 26 }, (_, i) => ({ name: 'p' + i + '.jpg' })) }],
+  ['payload_source 틀림', { payload_source: 'sheet' }],
+  ['titles 5', { ask: { titles: 5 } }]
+].forEach(([name, patch]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodDraft, patch), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+ok('거부된 초안 오더는 큐를 부르지 않았다', A.env.fetched.length === nDr);
+ok('긴 메모는 문장을 자르지 않고 payload_source:drive 로 바꾼다', (function () {
+  const parts = Array.from({ length: 12 }, (_, i) => ('문단' + i + ' ').repeat(60));
+  const long = parts.join('\n\n');
+  const bs = parts.map((t, i) => ({ id: 'U' + (i + 1), text: t, sha256: sha(t) }));
+  const r = A.ctx.hubDraftPayload_(Object.assign({}, goodDraft, { blocks: bs, memo_sha256: sha(long), facts: { place_name: '미미삼겹'.repeat(30) } }));
+  return r.payload_source === 'drive' && !r.blocks && !r.facts && JSON.stringify(r).length <= 3500;
+})());
+ok('drive 모드도 블록 없이 접수된다(워커가 카드에서 읽는다)', (function () {
+  const r = A.ctx.hubDraftPayload_({ content_id: 'CH-1', brand: 'daejeon_youth', format: 'blog', memo_sha256: memoHash, payload_source: 'drive' });
+  return r.payload_source === 'drive' && !r.blocks;
+})());
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code: 'ERR_UNKNOWN_TYPE', message: '허용되지 않은 작업 타입입니다: content_draft' } }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodDraft, { brand: 'daejeon_youth' });
+eq('큐가 content_draft 를 모르면 같은 안내(ERR_QUEUE_TYPE_UNKNOWN)', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
+ok('무엇을 배포해야 하는지 말한다(초안 생성)', /content_draft/.test(o.message || '') && /배포/.test(o.message || ''), o.message);
+A.env.setFetchReply(okReply);
+
+console.log('\n[8j] 초안 결과 저장 — update_content patch_mode:deep (하위 키만 합친다)');
+ok('deepMergeObjects_ 가 있다', typeof ev(A.ctx, 'deepMergeObjects_') === 'function');
+(function () {
+  const before = { studio: { formats: { video: { steps: 3 } }, meta: { format: 'video' } }, production: { captions: [[0, 1, '가']] } };
+  const after = ev(A.ctx, 'deepMergeObjects_')(before, { studio: { formats: { blog: { draft: { titles: ['a'] } } }, meta: { format: 'blog' } } });
+  ok('깊은 병합: 다른 포맷(영상)은 남고 초안만 더해진다', after.studio.formats.video.steps === 3 && after.studio.formats.blog.draft.titles[0] === 'a', after.studio);
+  ok('깊은 병합: 배열은 통째로 바꾸고 없는 키는 보존', JSON.stringify(after.production.captions) === JSON.stringify([[0, 1, '가']]) && after.studio.meta.format === 'blog');
+  ok('깊이 9 이상은 그대로 교체(스택 보호)', (function () {
+    let deep = { v: 1 };
+    for (let i = 0; i < 12; i++) deep = { n: deep };
+    const r = ev(A.ctx, 'deepMergeObjects_')({ n: { n: { keep: 1 } } }, deep);
+    return !!r && typeof r === 'object';
+  })());
+})();
 
 console.log('\n[8b-2] 컷(잘라낼 구간) — 짧은 모양으로 큐에 보낸다');
 A.env.setFetchReply(okReply);
@@ -1214,7 +1333,19 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
   const goodP = { content_id: 'C-003', name: 'z.mp4', index: 0, parts: 1, data: b64(Buffer.from('abc')) };
   const code = (p) => chunk(Object.assign({}, goodP, p)).code;
   eq('content_id 에 경로 금지', code({ content_id: '../x' }), 'ERR_VALIDATION_FAILED');
-  eq('확장자 mp4·mov·m4v 만', code({ name: 'z.exe' }), 'ERR_VALIDATION_FAILED');
+  eq('확장자 mp4·mov·m4v·jpg·png·webp 만', code({ name: 'z.exe' }), 'ERR_VALIDATION_FAILED');
+  eq('사진 확장자 gif 는 아직 거부', code({ name: 'z.gif' }), 'ERR_VALIDATION_FAILED');
+  ok('사진(jpg·jpeg·png·webp) 업로드 허용', ['사진01_외관.jpg', 'a.jpeg', 'b.PNG', 'c.webp'].every(n => chunk(Object.assign({}, goodP, { name: n, content_id: 'C-IMG', data: b64(Buffer.from('img')) })).ok));
+  eq('사진 목록에 kind=photo 로 나온다', list('C-IMG').data.items[0].kind, 'photo');
+  eq('영상 목록은 kind=video', list('C-001').data.items[0].kind, 'video');
+  eq('사진은 장당 10MB 까지(넘으면 거부)', code({ name: 'big.jpg', total_size: 10 * 1024 * 1024 + 1 }), 'ERR_VALIDATION_FAILED');
+  ok('사진 10MB 는 통과(영상 1.5GB 와 별도 상한)', chunk(Object.assign({}, goodP, { name: 'ok.jpg', content_id: 'C-IMG2', total_size: 10 * 1024 * 1024, data: b64(Buffer.from('x')) })).ok);
+  ok('카드 한 장에 사진 25장까지', (function () {
+    for (let i = 0; i < 25; i++) chunk({ content_id: 'C-IMG3', name: 'p' + pad(i) + '.jpg', index: 0, parts: 1, data: b64(Buffer.from('x')) });
+    const r = chunk({ content_id: 'C-IMG3', name: 'p25.jpg', index: 0, parts: 1, data: b64(Buffer.from('x')) });
+    return r.code === 'ERR_VALIDATION_FAILED' && /25/.test(r.message || '');
+  })());
+  ok('사진을 다시 보내면(같은 이름) 상한에 걸리지 않는다', chunk({ content_id: 'C-IMG3', name: 'p00.jpg', index: 0, parts: 1, data: b64(Buffer.from('y')) }).ok);
   eq('경로·.. 금지', code({ name: '../z.mp4' }), 'ERR_VALIDATION_FAILED');
   eq('점으로 시작 금지', code({ name: '.z.mp4' }), 'ERR_VALIDATION_FAILED');
   eq('index 는 parts 안', code({ index: 1 }), 'ERR_VALIDATION_FAILED');

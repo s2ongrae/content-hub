@@ -17,9 +17,10 @@ import { loadDaangnSeed } from './daangnView.js?v=20261119w';
 import { getAnalytics } from './analyticsView.js?v=20261119w';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261119w';
 import { renderCreateView } from './create-view.js?v=20261118x';
+import { renderCreateStudio } from './createStudio.js?v=20261121c';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261119b';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
-import { produceSection } from './produceView.js?v=20261121b';
+import { produceSection } from './produceView.js?v=20261121c';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -306,6 +307,14 @@ function applyBrand(brand, opts = {}) {
   });
   state.search = '';
   state.reviewId = null;
+  /* 트랙 B(삐약 김메리)에는 블로그·피드가 없다 — 그 화면을 보던 중이면 영상 스튜디오로 즉시 옮긴다(설계 §9) */
+  if (!opts.silent && brand === 'ppiyak_kimmary') {
+    const sub = String(state.route || '').split('/');
+    if (sub[0] === 'create' && sub[1] && ['blog', 'feed'].indexOf(sub[1]) >= 0) {
+      toast('반려동물 채널은 영상만 지원해 영상 스튜디오로 이동했어요', '');
+      location.hash = '#/create/video';
+    }
+  }
   if (!opts.silent) {
     refresh().then(() => { renderRoute(); loadHealth(); });
   }
@@ -461,8 +470,12 @@ function friendlyError(err) {
 
 function renderRoute() {
   const route = state.route || 'board';
+  /* 하위 라우트(#/create/blog) — 앞 조각이 화면, 뒤 조각이 그 화면의 선택값이다 */
+  const seg = String(route).split('/');
+  const routeRoot = seg[0] || 'board';
+  const routeSub = seg[1] || '';
   /* 상세(#/post)는 따로 탭이 없다 — 들어온 곳(성과분석·내 블로그) 탭을 켜 둔다 */
-  const tabRoute = route === 'post' ? (/[?&]source=blog(&|$)/.test(location.hash) ? 'blog' : 'perf') : route;
+  const tabRoute = routeRoot === 'post' ? (/[?&]source=blog(&|$)/.test(location.hash) ? 'blog' : 'perf') : routeRoot;
   document.querySelectorAll('[data-route]').forEach((tab) => {
     if (tab.dataset.route === tabRoute) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
@@ -473,7 +486,8 @@ function renderRoute() {
   const view = {
     board: renderBoard,
     approve: renderApprove,
-    create: (main) => renderCreateView(main, ctx),
+    /* ＋ 만들기 = 제작 스튜디오. #/create/legacy 는 예전 채널 조립기(지우지 않고 남긴다) */
+    create: (main) => (routeSub === 'legacy' ? renderCreateView(main, ctx) : renderCreateStudio(main, ctx, { format: routeSub })),
     capture: renderCapture,
     review: renderReview,
     perf: (main) => renderPerfView(main, ctx),
@@ -483,7 +497,7 @@ function renderRoute() {
     series: (main) => renderSeriesView(main, { h, state, toast, friendlyError }),
     knowhow: renderKnowHow,
     ops: renderOps
-  }[route] || renderBoard;
+  }[routeRoot] || renderBoard;
   const maybe = view(main);
   if (maybe && typeof maybe.catch === 'function') maybe.catch((err) => toast(friendlyError(err), 'err'));
   window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });

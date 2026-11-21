@@ -10,7 +10,7 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261121b';
+import { tcToSec } from './yt/edl.js?v=20261121c';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;

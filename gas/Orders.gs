@@ -21,7 +21,7 @@
  */
 
 /** 허용 타입 — 늘리려면 여기와 docs/ONESTOP_CREATOR_SPEC.md §8.1 을 같이 고친다. */
-const HUB_ORDER_TYPES = ['content_render', 'content_upload', 'content_stats', 'blog_neighbor'];
+const HUB_ORDER_TYPES = ['content_render', 'content_upload', 'content_stats', 'blog_neighbor', 'content_draft'];
 
 const MEDIA_MAX_FILES = 100;
 const MEDIA_DEADLINE_MS = 15000;
@@ -133,6 +133,9 @@ function hubOrderInstruction_(type, payload) {
     case 'content_render':
       return '이 조립본으로 채널 산출물(쇼츠·클립·당근·인스타·블로그)을 실제 파일로 만든다. '
         + '만들 파일은 1~2개만. 렌더 도구가 없으면 `BLOCKED: NEED <경로>` 한 줄만 남기고 멈춘다.';
+    case 'content_draft':
+      return '이 카드의 재료(사진·장소·메모)로 블로그 초안(제목 3안·문단 사이 연결·빈 사진 캡션·마무리) 또는 영상 대본·자막 큐를 만든다. '
+        + 'USER 블록(사용자가 쓴 문단)은 한 글자도 고치지 않고 사이에만 넣는다. 결과는 update_content 로 카드 payload 에만 쓰고, 파일은 고치지 않는다.';
     case 'content_upload':
       return '이 조립본을 채널에 업로드할 준비(제목·본문·태그·썸네일 문구)를 파일 1개로 정리한다. '
         + '실제 업로드·로그인은 하지 않는다.';
@@ -178,6 +181,10 @@ function hubOrderPrompt_(type, payload) {
 const RENDER_CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 const RENDER_FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
 const RENDER_EXT_RE = /\.(mp4|mov|m4v)$/i;
+/* 사진 입력(2026-11-21, O2a/O2b): 영상 8개 상한과 별개로 25장까지 받는다.
+   60초 영상 15장·블로그 22장을 채우려면 8로는 모자라다(설계 §11-1). */
+const RENDER_IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
+const RENDER_MAX_IMAGES = 25;
 const RENDER_PROFILES = ['captions', 'bgm'];
 const RENDER_BRANDS = ['daejeon_youth', 'ppiyak_kimmary'];
 const RENDER_FITS = ['crop', 'blur', 'pad'];   // 프레이밍 — 비우면 노트북이 원본 방향으로 정한다
@@ -187,7 +194,7 @@ const RENDER_MAX_INPUTS = 8;
 const RENDER_MAX_CUES = 400;
 const RENDER_MAX_CUE_TEXT = 200;
 const RENDER_CUES_INLINE = 40;
-const RENDER_MAX_PAYLOAD_CHARS = 3800;
+const RENDER_MAX_PAYLOAD_CHARS = 3500;   // 큐 4,000자 한도 — 넘으면 payload_source:'drive' 로 바꿔 보낸다(설계 §7.2)
 const RENDER_SUB_STYLES = ['auto', 'shorts', 'long'];
 const RENDER_VOICE_RE = /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/;
 
@@ -223,7 +230,27 @@ const RENDER_BGM_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|wav
 function isRealRenderOrder_(type, payload) {
   if (type !== 'content_render' || !payload) return false;
   // stage 가 적혀 있으면(모르는 값이어도) 진짜 렌더 경로로 보내 검증에서 거절한다 — 옛 claude_prompt 경로로 새지 않게
-  return Array.isArray(payload.inputs) || String(payload.stage || '') !== '';
+  // 사진만 있는 오더(images)도 진짜 렌더다 — inputs 가 없어도 claude_prompt 로 보내면 안 된다.
+  //  images 키가 **있기만 해도**(배열이 아니어도) 렌더 경로로 보내 검증에서 거절한다 — 조용히 옛 길로 새지 않게.
+  return Array.isArray(payload.inputs) || payload.images !== undefined || String(payload.stage || '') !== '';
+}
+
+/** 사진 파일 이름 목록 — 영상과 별개. 중복은 버리고 순서는 보존한다. */
+function hubRenderImages_(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  if (!Array.isArray(raw)) throw bad('images 는 파일 이름 목록(배열)이어야 합니다.');
+  if (raw.length > RENDER_MAX_IMAGES) throw bad('images 는 ' + RENDER_MAX_IMAGES + '장까지입니다(지금 ' + raw.length + '장).');
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const n = raw[i];
+    if (typeof n !== 'string' || !RENDER_FILE_RE.test(n) || n.indexOf('..') !== -1 || n.charAt(0) === '.' || !RENDER_IMAGE_EXT_RE.test(n)) {
+      throw bad('images 에는 사진 파일 이름(jpg·jpeg·png·webp)만 넣을 수 있습니다: ' + String(n).slice(0, 40));
+    }
+    if (out.indexOf(n) === -1) out.push(n);
+  }
+  if (raw.length && !out.length) throw bad('images 가 비었습니다.');
+  return out;
 }
 
 /** 렌더 오더 payload 를 검사해 큐에 보낼 모양(고정 키 5개 이하)으로 돌려준다. 어긋나면 ERR_VALIDATION_FAILED. */
@@ -261,18 +288,26 @@ function hubRenderPayload_(payload) {
     return so;
   }
   const inputs = payload.inputs;
-  if (!inputs.length || inputs.length > RENDER_MAX_INPUTS) throw bad('inputs 는 1~' + RENDER_MAX_INPUTS + '개여야 합니다.');
+  const images = hubRenderImages_(payload.images);
+  if (!inputs && !images.length) throw bad('inputs(영상 1~' + RENDER_MAX_INPUTS + '개) 또는 images(사진 1~' + RENDER_MAX_IMAGES + '장)가 필요합니다.');
+  if (inputs && (!inputs.length || inputs.length > RENDER_MAX_INPUTS)) throw bad('inputs 는 1~' + RENDER_MAX_INPUTS + '개여야 합니다.');
   const names = [];
-  for (let i = 0; i < inputs.length; i++) {
-    const n = inputs[i];
-    if (typeof n !== 'string' || !RENDER_FILE_RE.test(n) || n.indexOf('..') !== -1 || n.charAt(0) === '.' || !RENDER_EXT_RE.test(n)) {
-      throw bad('inputs 에는 파일 이름(mp4·mov·m4v)만 넣을 수 있습니다: ' + String(n).slice(0, 40));
+  if (inputs) {
+    for (let i = 0; i < inputs.length; i++) {
+      const n = inputs[i];
+      if (typeof n !== 'string' || !RENDER_FILE_RE.test(n) || n.indexOf('..') !== -1 || n.charAt(0) === '.' || !RENDER_EXT_RE.test(n)) {
+        throw bad('inputs 에는 파일 이름(mp4·mov·m4v)만 넣을 수 있습니다: ' + String(n).slice(0, 40));
+      }
+      if (names.indexOf(n) === -1) names.push(n);
     }
-    if (names.indexOf(n) === -1) names.push(n);
   }
+  // 사진과 영상에 같은 이름이 두 번 오면 거절한다(서로 다른 파일이 같은 자리에 풍기는 것 방지)
+  images.forEach(function (n) { if (names.indexOf(n) !== -1) throw bad('같은 파일이 영상·사진 양쪽에 있습니다: ' + n); });
   const profile = payload.profile === undefined || payload.profile === null || payload.profile === '' ? 'captions' : String(payload.profile);
   if (RENDER_PROFILES.indexOf(profile) === -1) throw bad('profile 은 captions 또는 bgm 이어야 합니다.');
-  const out = { content_id: contentId, brand: brand, inputs: names, profile: profile };
+  const out = { content_id: contentId, brand: brand, profile: profile };
+  if (names.length) out.inputs = names;
+  if (images.length) out.images = images;
   if (payload.fit !== undefined && payload.fit !== null && payload.fit !== '') {
     const fit = String(payload.fit).trim().toLowerCase();
     if (RENDER_FITS.indexOf(fit) === -1) throw bad('fit 은 crop · blur · pad 중 하나여야 합니다.');
@@ -285,6 +320,17 @@ function hubRenderPayload_(payload) {
   }
   const cuts = hubRenderCuts_(payload.cuts, names.length);
   if (cuts.length) out.cuts = cuts;
+  // 사진 길이·전환(2026-11-21): 비우면 노트북이 자막 길이로 계산한다(장당 3.0초 이상)
+  if (payload.photo_seconds !== undefined && payload.photo_seconds !== null && payload.photo_seconds !== '') {
+    const v = Number(payload.photo_seconds);
+    if (!isFinite(v) || v < 1 || v > 15) throw bad('photo_seconds 는 1~15초 사이 숫자여야 합니다.');
+    out.photo_seconds = Math.round(v * 100) / 100;
+  }
+  if (payload.xfade !== undefined && payload.xfade !== null && payload.xfade !== '') {
+    const v = Number(payload.xfade);
+    if (!isFinite(v) || v < 0 || v > 2) throw bad('xfade 는 0~2초 사이 숫자여야 합니다.');
+    out.xfade = Math.round(v * 100) / 100;
+  }
   // ── 완제품 옵션 — 자막 번인·내레이션(2026-11-20) ──
   const captions = hubRenderCues_(payload.captions, 'captions', false);
   const narration = hubRenderCues_(payload.narration, 'narration', true);
@@ -378,6 +424,151 @@ function hubOrderResult_(json, type, workspace, prompt, queueType, cutCount, cue
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * content_draft — 텍스트 생성 오더(2026-11-21, O2b / 설계 §7.1)
+ *
+ *   왜 claude_prompt 를 재사용하지 않나: claude_prompt 는 **파일을 고치는** 오더다(편집 규칙·사후 게이트·git).
+ *   블로그 초안·영상 대본은 결과를 카드 payload 에만 쓰고 파일은 하나도 안 건드린다 — 위험도 LOW·자동승인.
+ *   (content_render 는 그대로 HIGH 유지 — 큰 파일과 CPU 를 오래 쓴다)
+ *
+ *   요청: { type:'content_draft', content_id, brand, format:'blog'|'video', concept:{kind,tone,hint},
+ *           facts:{…}, memo_sha256, blocks:[{id,origin:'USER',text,sha256}], media:[{name,role}],
+ *           ask:{titles:3,bridge,captions,outro}, payload_source:'inline'|'drive' }
+ *   허브에서 먼저 막는 것(1중): ① block.sha256 이 그 문단과 같은가 ② memo_sha256 이 블록 전체와 같은가
+ *   노트북이 두 번째(사이에만 삽입) · 저장 전 세 번째(USER 블록 재해시 불일치면 폐기·재시도).
+ * ------------------------------------------------------------------ */
+const DRAFT_FORMATS = ['blog', 'video'];
+const DRAFT_KINDS = ['review', 'story', 'info'];
+const DRAFT_TONES = ['plain', 'hype', 'chungcheong'];
+const DRAFT_MAX_MEDIA = 25;
+const DRAFT_MAX_BLOCKS = 60;
+const DRAFT_MAX_BLOCK_TEXT = 4000;
+const DRAFT_MAX_HINT = 200;
+const DRAFT_MAX_FACT = 400;
+const DRAFT_LENGTHS = [15, 30, 60];
+const DRAFT_FACT_KEYS = ['place_name', 'region_dong', 'category', 'hours', 'closed_days', 'parking',
+  'wait_time', 'price_menu', 'tel', 'address', 'naver_place_url'];
+const DRAFT_ALLOWED_KEYS = ['type', 'content_id', 'brand', 'format', 'concept', 'facts', 'memo_sha256',
+  'blocks', 'media', 'ask', 'payload_source', 'length_sec', 'user_body_sha256'];
+const REPORT_SHA_RE = /^[0-9a-f]{64}$/;
+
+/** 문자열의 SHA-256 hex — 블록 락에 쓸 때만 쓴다(개인정보·비밀값 아님). */
+function hubSha256_(text) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(text == null ? '' : text), Utilities.Charset.UTF_8);
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const b = (bytes[i] + 256) % 256;
+    out += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return out;
+}
+
+/** content_draft payload 검사 → 큐에 보낼 모양. 어긋나면 ERR_VALIDATION_FAILED. */
+function hubDraftPayload_(payload) {
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  // 자동승인(LOW) 오더다 — 모르는 필드는 조용히 버리지 않고 거절한다(무엇을 보냈는지가 결과에 남게)
+  Object.keys(payload || {}).forEach(function (k) {
+    if (DRAFT_ALLOWED_KEYS.indexOf(k) === -1) throw bad('허용되지 않은 필드입니다: ' + k);
+  });
+  const contentId = String(payload.content_id || '');
+  if (!RENDER_CONTENT_ID_RE.test(contentId)) throw bad('content_id 는 영문·숫자·_·- 40자 이내여야 합니다.');
+  const brand = String(payload.brand || '');
+  if (RENDER_BRANDS.indexOf(brand) === -1) throw bad('brand 가 올바르지 않습니다.');
+  const format = String(payload.format || '');
+  if (DRAFT_FORMATS.indexOf(format) === -1) throw bad('format 은 ' + DRAFT_FORMATS.join(' · ') + ' 이어야 합니다.');
+  const concept = payload.concept && typeof payload.concept === 'object' ? payload.concept : {};
+  const kind = String(concept.kind || 'review');
+  if (DRAFT_KINDS.indexOf(kind) === -1) throw bad('concept.kind 는 ' + DRAFT_KINDS.join(' · ') + ' 중 하나여야 합니다.');
+  const tone = String(concept.tone || 'plain');
+  if (DRAFT_TONES.indexOf(tone) === -1) throw bad('concept.tone 은 ' + DRAFT_TONES.join(' · ') + ' 중 하나여야 합니다.');
+  const hint = String(concept.hint == null ? '' : concept.hint).slice(0, DRAFT_MAX_HINT);
+  const memoSha = String(payload.memo_sha256 || '');
+  if (!REPORT_SHA_RE.test(memoSha)) throw bad('memo_sha256(SHA-256 64자리)가 필요합니다 — 화면에서 메모 해시를 먼저 만드세요.');
+
+  // 사진 목록(이름·역할) — 내용은 보내지 않는다(파일은 드라이브 비공개 폴더에 있다)
+  const media = [];
+  if (payload.media !== undefined && payload.media !== null && payload.media !== '') {
+    if (!Array.isArray(payload.media)) throw bad('media 는 목록이어야 합니다.');
+    if (payload.media.length > DRAFT_MAX_MEDIA) throw bad('media 는 ' + DRAFT_MAX_MEDIA + '장까지입니다(지금 ' + payload.media.length + '장).');
+    for (let i = 0; i < payload.media.length; i++) {
+      const mm = payload.media[i] && typeof payload.media[i] === 'object' ? payload.media[i] : {};
+      const n = String(mm.name || '');
+      if (!RENDER_FILE_RE.test(n) || n.indexOf('..') !== -1 || n.charAt(0) === '.') throw bad('media[' + i + '] 이름이 올바르지 않습니다.');
+      media.push({ name: n, role: String(mm.role || '').slice(0, 20) });
+    }
+  }
+
+  // 사용자 원문 블록 — 각 블록의 해시가 그 글과 같은지 여기서 본다(1중)
+  let payloadSource = 'inline';
+  if (payload.payload_source !== undefined && payload.payload_source !== null && payload.payload_source !== '') {
+    payloadSource = String(payload.payload_source).trim().toLowerCase();
+    if (['inline', 'drive'].indexOf(payloadSource) === -1) throw bad('payload_source 는 inline · drive 중 하나여야 합니다.');
+  }
+  const blocks = [];
+  if (payload.blocks !== undefined && payload.blocks !== null && payload.blocks !== '') {
+    if (!Array.isArray(payload.blocks)) throw bad('blocks 는 목록이어야 합니다.');
+    if (payload.blocks.length > DRAFT_MAX_BLOCKS) throw bad('blocks 는 ' + DRAFT_MAX_BLOCKS + '문단까지입니다.');
+    for (let i = 0; i < payload.blocks.length; i++) {
+      const b = payload.blocks[i] && typeof payload.blocks[i] === 'object' ? payload.blocks[i] : {};
+      const text = String(b.text == null ? '' : b.text);
+      if (!text.trim()) throw bad('blocks[' + i + '] 문단이 비었습니다.');
+      if (text.length > DRAFT_MAX_BLOCK_TEXT) throw bad('blocks[' + i + '] 문단이 너무 깁니다(4,000자까지).');
+      if (String(b.origin || 'USER').toUpperCase() !== 'USER') throw bad('blocks[' + i + '] 는 USER 문단만 보낼 수 있습니다.');
+      const sha = String(b.sha256 || '');
+      if (!REPORT_SHA_RE.test(sha)) throw bad('blocks[' + i + '] 에 sha256 이 필요합니다.');
+      if (hubSha256_(text) !== sha) throw bad('blocks[' + i + '] 해시가 문단과 다릅니다 — 화면에서 다시 만드세요.');
+      blocks.push({ id: String(b.id || ('U' + (i + 1))), origin: 'USER', text: text, sha256: sha });
+    }
+  }
+  if (blocks.length) {
+    const joined = blocks.map(function (b) { return b.text; }).join('\n\n');
+    if (hubSha256_(joined) !== memoSha) throw bad('memo_sha256 이 전체 메모와 다릅니다 — 화면에서 다시 만드세요.');
+  }
+
+  const facts = {};
+  if (payload.facts && typeof payload.facts === 'object') {
+    DRAFT_FACT_KEYS.forEach(function (k) {
+      const v = payload.facts[k];
+      if (v !== undefined && v !== null && v !== '') facts[k] = String(v).slice(0, DRAFT_MAX_FACT);
+    });
+  }
+  const askIn = payload.ask && typeof payload.ask === 'object' ? payload.ask : {};
+  let askTitles = 3;
+  if (askIn.titles !== undefined && askIn.titles !== null && askIn.titles !== '') {
+    askTitles = Number(askIn.titles);
+    if ([1, 2, 3].indexOf(askTitles) === -1) throw bad('ask.titles 는 1~3 이어야 합니다.');
+  }
+  const ask = {
+    titles: askTitles,
+    bridge: askIn.bridge !== false,
+    captions: askIn.captions !== false,
+    outro: askIn.outro !== false
+  };
+  const out = { content_id: contentId, brand: brand, format: format, concept: { kind: kind, tone: tone, hint: hint }, memo_sha256: memoSha, ask: ask };
+  if (media.length) out.media = media;
+  if (format === 'video') {
+    const len = Number(payload.length_sec);
+    out.length_sec = DRAFT_LENGTHS.indexOf(len) >= 0 ? len : 30;
+  }
+  if (payloadSource === 'drive') out.payload_source = 'drive';
+  else {
+    if (blocks.length) out.blocks = blocks;
+    if (Object.keys(facts).length) out.facts = facts;
+    if (JSON.stringify(out).length > RENDER_MAX_PAYLOAD_CHARS) {
+      // 길어지면 문장을 자르지 않고 카드에서 읽게 한다(워커가 get_content_detail 로 같은 값을 가져온다)
+      delete out.blocks;
+      delete out.facts;
+      out.payload_source = 'drive';
+    }
+  }
+  if (JSON.stringify(out).length > 3900) {
+    // 사진 25장 이름까지 넘치면 이름을 10장으로 줄인다(워커는 카드에서 전체 목록을 다시 읽는다)
+    if (out.media) out.media = out.media.slice(0, 10);
+    out.payload_source = 'drive';
+  }
+  return out;
+}
+
 function handleHubOrder_(ss, payload, ctx) {
   const type = String((payload && payload.type) || '').trim();
   if (HUB_ORDER_TYPES.indexOf(type) === -1) {
@@ -400,6 +591,7 @@ function handleHubOrder_(ss, payload, ctx) {
   const engine = String(props.getProperty('QUEUE_ENGINE') || 'auto').trim() || 'auto';
 
   const realRender = isRealRenderOrder_(type, payload);
+  const isDraft = type === 'content_draft';
   let prompt = '';
   let body;
   if (realRender) {
@@ -410,6 +602,15 @@ function handleHubOrder_(ss, payload, ctx) {
       type: 'content_render',
       workspace: workspace,
       payload: hubRenderPayload_(payload)
+    };
+  } else if (isDraft) {
+    // 텍스트 생성 — 큐에서도 실제 타입 content_draft 로 들어간다(LOW·자동승인). 파일은 안 고친다.
+    body = {
+      key: token,
+      action: 'queue_enqueue',
+      type: 'content_draft',
+      workspace: workspace,
+      payload: hubDraftPayload_(payload)
     };
   } else {
     prompt = hubOrderPrompt_(type, payload);
@@ -450,10 +651,11 @@ function handleHubOrder_(ss, payload, ctx) {
     const code = String(e.code || json.code || '');
     // 큐(Apps Script)가 아직 content_render 를 모르는 동안: 옛 동작으로 되돌리지 않고 분명히 알린다.
     // (포털 오더함 큐는 code 'type' + "보낼 수 없는 오더" 로, 노트북 큐는 ERR_UNKNOWN_TYPE 으로 거절한다 — 둘 다 같은 안내)
-    if (realRender && (code === 'ERR_UNKNOWN_TYPE' || code === 'type' || /ERR_UNKNOWN_TYPE|허용되지 않은 작업 타입|보낼 수 없는 오더/.test(msg))) {
+    if ((realRender || isDraft) && (code === 'ERR_UNKNOWN_TYPE' || code === 'type' || /ERR_UNKNOWN_TYPE|허용되지 않은 작업 타입|보낼 수 없는 오더/.test(msg))) {
+      const what = isDraft ? 'content_draft(초안 생성)' : 'content_render(영상 렌더)';
       throw createAppError_('ERR_QUEUE_TYPE_UNKNOWN',
-        '노트북 큐가 아직 영상 렌더(content_render)를 모릅니다. 큐 Apps Script 를 새 버전으로 배포한 뒤 다시 보내 주세요(오더는 만들어지지 않았습니다).',
-        { queue_code: code || 'ERR_UNKNOWN_TYPE' });
+        '노트북 큐가 아직 ' + what + ' 를 모릅니다. 큐 Apps Script 를 새 버전으로 배포한 뒤 다시 보내 주세요(오더는 만들어지지 않았습니다).',
+        { queue_code: code || 'ERR_UNKNOWN_TYPE', order_type: isDraft ? 'content_draft' : 'content_render' });
     }
     const hint = /unauthorized/i.test(msg) ? ' — QUEUE_TOKEN 이 그 웹앱의 키와 다릅니다'
       : (code === 'workspace' ? ' — QUEUE_WORKSPACE 값이 큐의 허용 목록에 없습니다'
@@ -462,7 +664,8 @@ function handleHubOrder_(ss, payload, ctx) {
       { queue_code: code });
   }
 
-  const out = hubOrderResult_(json, type, workspace, prompt, realRender ? 'content_render' : 'claude_prompt',
+  const queueType = isDraft ? 'content_draft' : (realRender ? 'content_render' : 'claude_prompt');
+  const out = hubOrderResult_(json, type, workspace, prompt, queueType,
     realRender ? (body.payload.cuts ? body.payload.cuts.length : 0) : undefined,
     realRender ? { captions: (body.payload.captions || []).length, narration: (body.payload.narration || []).length } : undefined);
   appendSystemHealth_({

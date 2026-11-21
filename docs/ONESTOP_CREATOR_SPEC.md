@@ -279,7 +279,9 @@ Sheets `Contents` 칸은 **늘리지 않는다**(37칸 유지). 아래는 Drive 
 ```
 - 브라우저에는 큐 토큰을 절대 넣지 않는다(CSP `connect-src`도 그대로).
 - GAS ScriptProperties: `QUEUE_EXEC_URL`, `QUEUE_TOKEN`.
-- 타입 화이트리스트: `content_render`(영상 렌더), `content_upload`(업로드), `content_stats`(지표 수집), `blog_neighbor`(댓글·서이추). 그 외는 `ERR_INVALID_ACTION`.
+- 타입 화이트리스트: `content_render`(영상 렌더), `content_upload`(업로드), `content_stats`(지표 수집), `blog_neighbor`(댓글·서이추), `content_draft`(초안 생성 · 2026-11-21 추가). 그 외는 `ERR_INVALID_ACTION`.
+  - `content_draft` 는 파일을 고치지 않고 카드 payload(`studio.formats.<format>.draft`)에만 쓰는 **LOW·자동승인** 오더다(확정 설계 2026-11-20 §7.1).
+  - `content_render` 는 `images[]`(사진 25장)를 입력으로 받는다 — 영상 `inputs`(1~8개)와 별개이며, 사진만으로 켄번즈·자막·내레이션 완제품을 만든다.
 
 ### 8.2 오더 규격
 - `engine: "freellmapi"` **명시**(auto 금지: claude 한도·agy 권한 문제로 계속 실패).
