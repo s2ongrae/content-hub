@@ -19,18 +19,18 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121i';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121i';
+import { buildEDL } from './yt/edl.js?v=20261121j';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121j';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery
-} from './produceLogic.js?v=20261121i';
+} from './produceLogic.js?v=20261121j';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261121i';
 import { readStudio, mergeFormat } from './studioLogic.js?v=20261121i';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint } from './videoTemplate.js?v=20261121i';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD } from './videoTemplate.js?v=20261121j';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -710,7 +710,8 @@ export function produceSection(ctx) {
         narration: state.narrate ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
         burnSubtitles: state.burn, subStyle: state.sub_style,
         narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined,
-        template: state.template, title: state.title, badge: state.badge, hook: state.hook, outro: state.outro
+        template: state.template, title: state.title, badge: state.badge, hook: state.hook, outro: state.outro,
+        hookPos: state.hook_pos, hookHold: state.hook_hold
       });
       return { cr, b };
     };
@@ -757,6 +758,9 @@ export function produceSection(ctx) {
       h('input', { class: 'pr-in', type: 'text', maxlength: String(max), 'aria-label': label,
         value: state[key] || '', placeholder: ph || '',
         oninput: (e) => { const v = e.target.value; change((st) => { st[key] = v; }); } }));
+    const hookPosNow = state.hook_pos || DEFAULT_HOOK_POS;
+    const hookHoldNow = HOOK_HOLDS.indexOf(state.hook_hold) >= 0 ? state.hook_hold : DEFAULT_HOOK_HOLD;
+    const hookPosLabel = (HOOK_POSITIONS.find((p) => p.id === hookPosNow) || HOOK_POSITIONS[0]).label;
     const tState = state.template === 'none'
       ? '템플릿 없이 자막만 굽습니다(예전 동작).'
       : ('트랙 기본값 — 뱃지 ' + (tHint && tHint.badge ? tHint.badge : '대전 청년') + ' · 아웃트로 ' + (tHint && tHint.outro ? tHint.outro : '다음 코스는? 구독') + '. 비운 칸은 기본값을 써요.');
@@ -769,8 +773,15 @@ export function produceSection(ctx) {
         tInput('title', '2줄 임팩트 제목 (한 줄 10자)', tHint && tHint.title ? tHint.title : '예: 천장에 매달린 건', 40),
         tInput('badge', '카테고리 뱃지', tHint && tHint.badge ? tHint.badge : '예: 제주 · 서커스', 14)),
       h('div', { class: 'pr-two' },
-        tInput('hook', '오프닝 훅 (0~1.5초)', tHint && tHint.hook ? tHint.hook : '예: 천 두 장뿐', 16),
+        tInput('hook', '오프닝 훅 (0~' + hookHoldNow + '초 · 화면 ' + hookPosLabel + ')', tHint && tHint.hook ? tHint.hook : '예: 천 두 장뿐', 16),
         tInput('outro', '아웃트로 (마지막 1초)', tHint && tHint.outro ? tHint.outro : '예: 다음 코스는? 구독', 24)),
+      state.template === 'none' ? null : h('div', { class: 'pr-two' },
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '훅 위치' }),
+          h('select', { class: 'pr-sel', 'aria-label': '훅 위치', onchange: (e) => change((st) => { st.hook_pos = e.target.value; }) },
+            ...HOOK_POSITIONS.map((p) => h('option', { value: p.id, selected: hookPosNow === p.id ? '' : null, text: '위치: ' + p.label })))),
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '훅 유지' }),
+          h('select', { class: 'pr-sel', 'aria-label': '훅 유지 시간', onchange: (e) => change((st) => { st.hook_hold = Number(e.target.value); }) },
+            ...HOOK_HOLDS.map((v) => h('option', { value: String(v), selected: hookHoldNow === v ? '' : null, text: '유지: ' + v.toFixed(1) + '초' }))))),
       h('span', { class: 'pr-check-s', text: tState })));
 
     box.append(...orderBlock('render', {
