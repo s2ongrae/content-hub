@@ -9,7 +9,7 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261121u';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261121v';
 import { renderPostView } from './postView.js?v=20261119w';
 import { trackChannelsOf } from './trackChannels.js?v=20261119w';
 import { renderLintView } from './lintView.js?v=20261121';
@@ -20,7 +20,7 @@ import { renderCreateView } from './create-view.js?v=20261118x';
 import { renderCreateStudio } from './createStudio.js?v=20261121q';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261121i';
 import { draftSection, draftPreview } from './draftView.js?v=20261119m';
-import { produceSection } from './produceView.js?v=20261121u';
+import { produceSection } from './produceView.js?v=20261121v';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 

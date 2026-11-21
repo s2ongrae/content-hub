@@ -167,13 +167,20 @@ function prescribe(v, basis) {
   }
 
   if (v.retention_pct == null) {
+    if (v.dwell_sec > 0 && !v.duration_sec) {
+      return {
+        bottleneck: 'measure',
+        prescription: '시청 지속 ' + round1(v.dwell_sec) + '초는 저장했습니다 — 영상 길이가 들어오면 %로 환산됩니다(Media_Meta 갱신).',
+        detail: '반응률 ' + (v.reaction_pct == null ? '—' : round1(v.reaction_pct) + '%')
+      };
+    }
     const extra = lowReaction
       ? ' 반응률도 우리 중위수의 ' + Math.round(v.reaction_pct / basis.reaction.value * 100) + '%로 낮습니다 — 첫 장면 글자 질문을 같이 바꿔 보세요.'
       : '';
     return {
       bottleneck: 'measure',
       prescription: PRESCRIPTION.measure + extra,
-      detail: '반응률 ' + round1(v.reaction_pct) + '%'
+      detail: '반응률 ' + (v.reaction_pct == null ? '—' : round1(v.reaction_pct) + '%')
     };
   }
 
@@ -241,7 +248,10 @@ export function diagnoseVideos(videos, ctx) {
       reaction_pct: reactionPct(row),
       retention_pct: retention ? retention.pct : null,
       retention_source: retention ? retention.source : '',
-      retention_dwell: retention && retention.dwellSec ? retention.dwellSec : 0
+      retention_dwell: retention && retention.dwellSec ? retention.dwellSec : 0,
+      /* 카드에 넣은 평균 시청 지속(초) — 길이를 몰라도 입력은 되게 따로 남긴다. */
+      dwell_sec: (String(row.content_id || '') && num((c.shortsCountByContent || {})[String(row.content_id || '')]) === 1)
+        ? num((c.dwellByContent || {})[String(row.content_id || '')]) : 0
     };
   });
 
@@ -290,8 +300,13 @@ async function readyAnalytics(api, brand) {
 async function loadMeta(api, videos) {
   if (!videos.length) return metaCache.map;
   const failedRecently = metaCache.failedAt && (Date.now() - metaCache.failedAt) < META_RETRY_MS;
-  const fresh = Date.now() - metaCache.at < META_TTL_MS && !failedRecently;
-  if (fresh) return metaCache.map;
+  if (failedRecently) return metaCache.map;      // 방금 실패 — 30초 뒤 다시
+  const ttlExpired = Date.now() - metaCache.at >= META_TTL_MS;
+  /* 모자란 영상만 더 받는다 — 트랙을 바꿔도 다른 채널 영상이 비지 않게(2026-11-21 실측). */
+  const wanted = videos.map((r) => r.external_id).filter(Boolean);
+  const missing = wanted.filter((id) => !metaCache.map[id]);
+  const ids = (ttlExpired ? wanted : missing).slice(0, MAX_META_IDS);
+  if (!ids.length) return metaCache.map;
   /* 다른 그리기가 이미 부르는 중이면 끝날 때까지 기다린다 — 빈 지도로 먼저 그리면 제목·길이가 빠진 카드가 남는다. */
   if (metaCache.loading) {
     const t0 = Date.now();
@@ -300,10 +315,20 @@ async function loadMeta(api, videos) {
   }
   metaCache.loading = true;
   try {
-    const ids = videos.slice().sort((a, b) => num(b.views) - num(a.views)).slice(0, MAX_META_IDS).map((r) => r.external_id);
     const res = await api.post('list_media_meta', { source: 'youtube', ids });
     const list = (res && res.data && res.data.items) || [];
-    list.forEach((m) => { if (m && m.external_id) metaCache.map[m.external_id] = m; });
+    list.forEach((m) => {
+      if (!m || !m.external_id) return;
+      /* 같은 영상 줄이 둘이면 빈칸을 채워 합진다 — 나중 줄이 제목만 있고 길이·발행일이 빈 경우가 있다. */
+      const prev = metaCache.map[m.external_id] || {};
+      metaCache.map[m.external_id] = {
+        external_id: m.external_id,
+        channel: m.channel || prev.channel || '',
+        title: m.title || prev.title || '',
+        published_at: m.published_at || prev.published_at || '',
+        duration_sec: Number(m.duration_sec) || Number(prev.duration_sec) || 0
+      };
+    });
     metaCache.at = Date.now();
     metaCache.failedAt = 0;
   } catch (err) {
@@ -361,7 +386,7 @@ export function renderDiagnosisPanel(host, ctx, metricsRows) {
   const paint = (items, basis) => {
     while (host.firstChild) host.removeChild(host.firstChild);
 
-    const measured = items.filter((v) => v.retention_pct != null).length;
+    const measured = items.filter((v) => v.retention_pct != null || v.dwell_sec > 0).length;
     const panel = h('div', { class: 'panel dxp' },
       h('h3', null, PANEL_TITLE, h('span', { class: 'tag', text: '실측' })),
       h('p', { class: 'hint', text: '① 조회(재생 시작) ② 평균 시청률 ③ 반응률 — 유튜브가 준 값과 내가 넣은 값으로만 판정합니다.' }));
@@ -453,7 +478,8 @@ function videoCard(h, ctx, v, basis, host) {
   tiles.appendChild(tile('① 조회', nf(v.views), v.era === 'old' ? '8/24 이전 기준' : '재생 시작', false));
   tiles.appendChild(tile('② 평균 시청률',
     v.retention_pct == null ? '미수집' : round1(v.retention_pct) + '%',
-    v.retention_pct == null ? '스튜디오에서 입력' : (RETENTION_SOURCE_LABEL[v.retention_source] || ''),
+    v.retention_pct != null ? (RETENTION_SOURCE_LABEL[v.retention_source] || '')
+      : (v.dwell_sec ? '입력 ' + round1(v.dwell_sec) + '초 · 길이 대기' : '스튜디오에서 입력'),
     v.retention_pct == null));
   tiles.appendChild(tile('③ 반응률',
     v.reaction_pct == null ? '—' : round1(v.reaction_pct) + '%',
@@ -470,21 +496,22 @@ function videoCard(h, ctx, v, basis, host) {
   }
 
   /* 2지표가 비었으면 여기서 바로 넣는다 — 유튜브 스튜디오의 '평균 시청 지속(초)' 또는 '평균 시청 비율(%)'. */
-  if (v.retention_pct == null && v.content_id && v.duration_sec > 0) {
+  if (v.retention_pct == null && v.content_id) {
+    const hasDur = v.duration_sec > 0;
     const input = h('input', {
       type: 'number', inputmode: 'decimal', min: '0', step: '0.1', placeholder: '지속(초)',
       'aria-label': (v.title || v.external_id) + ' 평균 시청 지속 초',
       style: 'width:76px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--tx);font-size:12px'
     });
-    const pctInput = h('input', {
+    const pctInput = hasDur ? h('input', {
       type: 'number', inputmode: 'decimal', min: '0', max: '100', step: '0.1', placeholder: '비율(%)',
       'aria-label': (v.title || v.external_id) + ' 평균 시청 비율 %',
       style: 'width:76px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--tx);font-size:12px'
-    });
+    }) : null;
     const btn = h('button', { class: 'btn sm primary', type: 'button', text: '넣기' });
     btn.addEventListener('click', async () => {
       const rawSec = String(input.value).trim();
-      const rawPct = String(pctInput.value).trim();
+      const rawPct = pctInput ? String(pctInput.value).trim() : '';
       const pct = rawPct === '' ? 0 : Number(rawPct);
       /* 비율을 넣었으면 길이로 초를 만든다 — 둘 다 실제 값이라 추정이 아니다(초로 저장해 두면 다른 화면과 같은 칸을 쓴다). */
       const sec = rawPct !== '' ? dwellSecFromPct(pct, v.duration_sec) : Number(rawSec);
@@ -517,12 +544,10 @@ function videoCard(h, ctx, v, basis, host) {
       }
     });
     card.appendChild(h('div', { style: 'display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap' },
-      h('span', { style: 'font-size:10.5px;color:var(--tx-3);white-space:nowrap', text: '길이 ' + v.duration_sec + '초' }),
+      h('span', { style: 'font-size:10.5px;color:var(--tx-3);white-space:nowrap', text: hasDur ? '길이 ' + v.duration_sec + '초' : '길이 미상' }),
       input, pctInput, btn));
   } else if (v.retention_pct == null && !v.content_id) {
     card.appendChild(h('p', { class: 'hint', style: 'margin-top:6px', text: '카드와 연결되지 않은 영상입니다 — tools/analytics/config.json 의 links 에 영상 ID를 넣으면 입력할 수 있습니다.' }));
-  } else if (v.retention_pct == null && !v.duration_sec) {
-    card.appendChild(h('p', { class: 'hint', style: 'margin-top:6px', text: '영상 길이를 아직 모릅니다 — Media_Meta 가 갱신되면 입력할 수 있습니다.' }));
   }
 
   return card;

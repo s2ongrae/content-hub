@@ -19,7 +19,7 @@
 
 import { renderAnalyticsPanel } from './analyticsView.js?v=20261121r';
 import { renderChannelView } from './channelView.js?v=20261121r';
-import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261121u';
+import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261121v';
 import { trackChannelsOf } from './trackChannels.js?v=20261119o';
 
 const PERF_CHANNELS = ['blog', 'shorts', 'reels', 'clip', 'daangn'];

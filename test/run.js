@@ -1341,6 +1341,13 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('카드별 시청 지속은 가장 최근 기록 · 0은 버린다', dw.Ca === 27 && !('Cb' in dw), dw);
     ok('카드별 쇼츠 편수를 센다', D.shortsCountByContent([{ content_id: 'Ca' }, { content_id: 'Ca' }, { content_id: '' }]).Ca === 2);
 
+    /* 길이를 모르는 영상 — 초만 입력해 두고 길이가 오면 환산한다(입력 자체를 막지 않는다) */
+    const noDur = D.diagnoseVideos([mk({ external_id: 'n1', content_id: 'Cn', views: 500, likes: 5 })], {
+      today: '2026-11-21', metaById: { n1: { published_at: '2026-11-10' } }, dwellByContent: { Cn: 18 }, shortsCountByContent: { Cn: 1 }
+    });
+    ok('길이를 몰라도 입력한 초는 남는다', noDur.items[0].retention_pct === null && noDur.items[0].dwell_sec === 18, noDur.items[0]);
+    ok('그 상태의 처방은 길이 대기를 말한다', noDur.items[0].bottleneck === 'measure' && /영상 길이/.test(noDur.items[0].prescription), noDur.items[0].prescription);
+
     /* ⑥ 화면·코드 규칙 */
     ok('패널 제목·미수집 고지', D.PANEL_TITLE.indexOf('3지표') >= 0 && /추정하지 않습니다/.test(D.PANEL_NOTE) && /8\/24/.test(D.PANEL_NOTE));
     const pds = fs.readFileSync(path.join(ROOT, 'js', 'perfDiagnosis.js'), 'utf8');
