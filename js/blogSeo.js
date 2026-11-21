@@ -41,10 +41,10 @@ export function trendTone(row) {
   return '';
 }
 
-/** 내 14위 / 신규 */
+/** 내 14위 — 순위 기록이 없으면 빈 값('신규'를 매 줄 붙이면 소음이다) */
 export function rankChip(row) {
   const r = Number(row && row.my_rank);
-  return r >= 1 ? '내 ' + r + '위' : '신규';
+  return r >= 1 ? '내 ' + r + '위' : '';
 }
 
 /** 문서 12만 — 경쟁 강도(네이버 블로그 검색 결과 수) */

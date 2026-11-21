@@ -988,7 +988,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     eq('색: +15 이상', S.trendTone({ trend_pct: 15 }), ' up');
     eq('색: −15 이하', S.trendTone({ trend_pct: -15 }), ' down');
     eq('내 순위 칩', S.rankChip({ my_rank: 14 }), '내 14위');
-    eq('없으면 신규', S.rankChip({}), '신규');
+    eq('순위가 없으면 아무것도 안 단다', S.rankChip({}), '');
     eq('문서 수는 만 단위', S.docChip({ doc_total: 120000 }), '문서 12만');
     eq('문서 값이 없으면 빈 칸', S.docChip({}), '');
     const sp = S.splitRows([1, 2, 3, 4, 5, 6]);
