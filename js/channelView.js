@@ -211,5 +211,14 @@ export async function renderChannelView(main, ctx, source) {
   }
   panel.appendChild(h('p', { class: 'hint', style: 'margin-top:10px',
     text: '같은 영상은 가장 최근에 수집한 값 하나만 셉니다(누적값을 날마다 더하지 않아요). 숫자는 매일 아침 자동으로 갱신됩니다.' }));
+  /* 영상별 병목 처방은 전체 탭에 있다 — 여기서 한 줄로 알려 준다(유튜브만). */
+  if (source === 'youtube') {
+    const toAll = h('button', { type: 'button', class: 'chip-link',
+      style: 'background:none;border:0;padding:0;font:inherit;color:var(--tx);text-decoration:underline;cursor:pointer',
+      text: '🎯 쇼츠 3지표 진단' });
+    toAll.addEventListener('click', () => { state.perfTab = 'all'; ctx.renderRoute(); });
+    panel.appendChild(h('p', { class: 'hint', style: 'margin-top:4px' },
+      toAll, h('span', { text: ' — 영상별 조회·평균 시청률·반응률과 병목 처방은 [전체] 탭에서 봅니다.' })));
+  }
   host.appendChild(panel);
 }

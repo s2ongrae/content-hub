@@ -25,7 +25,7 @@
  */
 
 import { getAnalytics, waitAnalytics } from './analyticsView.js?v=20261121r';
-import { currentRows } from './channelView.js?v=20261121r';
+import { currentRows } from './channelView.js?v=20261121w';
 
 /* ───────────── 기준값(우리 기준) ───────────── */
 
