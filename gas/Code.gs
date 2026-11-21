@@ -259,7 +259,9 @@ const M1_HANDLERS = {
   // 네이버 데이터랩 (gas/Insight.gs)
   insight_trend: handleInsightTrend_,
   insight_shopping: handleInsightShopping_,
-  insight_budget: handleInsightBudget_
+  insight_budget: handleInsightBudget_,
+  // 오늘의 블로그 제목 10 (2026-11-21) — gas/BlogSeo.gs
+  blog_seo_titles: handleBlogSeoTitles_
 };
 
 function handleHealth_(ss, payload) {

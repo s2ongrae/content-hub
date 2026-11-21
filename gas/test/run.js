@@ -127,7 +127,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Blog.gs', 'Insight.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Blog.gs', 'BlogSeo.gs', 'Insight.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -1955,6 +1955,121 @@ console.log('\n[13] 네이버 데이터랩 (gas/Insight.gs) — 천장·캐시·
     eq('묶음당 검색어는 5개까지만', groups[0].keywords.length, 5);
     eq('빈 입력은 0묶음', N.ctx.normalizeTrendGroups_({ groups: [{ name: '', keywords: ['a'] }, { name: 'b', keywords: [] }] }).length, 0);
   }
+}
+
+console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
+{
+  /* 순수 점수 */
+  const N = loadGas();
+  eq('표본 적음(최고 10 미만)은 후보에서 빠진다', N.ctx.blogSeoTrendScore_({ peak: 6, delta_pct: 80 }).score, -100);
+  eq('표본 없음도 빠진다', N.ctx.blogSeoTrendScore_(null).state, '표본 없음');
+  eq('4주 +50% 면 30점', N.ctx.blogSeoTrendScore_({ peak: 100, delta_pct: 50 }).score, 30);
+  eq('+20% 면 20점', N.ctx.blogSeoTrendScore_({ peak: 100, delta_pct: 20 }).score, 20);
+  eq('−20% 면 −10점', N.ctx.blogSeoTrendScore_({ peak: 100, delta_pct: -20 }).score, -10);
+  eq('성수기는 +10', N.ctx.blogSeoTrendScore_({ peak: 100, delta_pct: 20, season: '성수기' }).score, 30);
+  eq('문서 4만이면 12점', N.ctx.blogSeoDocScore_(40000), 12);
+  eq('문서 150만이면 −8점', N.ctx.blogSeoDocScore_(1500000), -8);
+  eq('문서 값이 없으면 0점', N.ctx.blogSeoDocScore_(null), 0);
+
+  /* 선별 */
+  const axesAll = () => {
+    const c = [];
+    const AXES = ev(N.ctx, 'BLOG_SEO_AXES_');
+    ['food', 'life', 'store', 'cat'].forEach(a => {
+      AXES[a].keywords.slice(0, 4).forEach(k => c.push({ axis: a, keyword: k }));
+    });
+    return c;
+  };
+  const trend = {};
+  axesAll().forEach((c, i) => { trend[c.keyword] = { peak: 100, delta_pct: (i % 5) * 10, season: i % 3 === 0 ? '성수기' : '' }; });
+  const picked = N.ctx.blogSeoPick_({
+    day: '2026-11-21', candidates: axesAll(), trend: trend, docs: {},
+    mine: { ranks: {}, inflow: [], posts: [], recentTitles: [], pattern: null }
+  });
+  eq('하루 10개', picked.rows.length, 10);
+  const cnt = {};
+  picked.rows.forEach(r => { cnt[r.axis] = (cnt[r.axis] || 0) + 1; });
+  eq('축 배분 3/3/2/2', JSON.stringify([cnt.food, cnt.life, cnt.store, cnt.cat]), JSON.stringify([3, 3, 2, 2]));
+  eq('순위는 1~10', picked.rows.map(r => r.rank).join(','), '1,2,3,4,5,6,7,8,9,10');
+  ok('제목은 34자 이내', picked.rows.every(r => r.title.length <= 34), picked.rows.map(r => r.title.length));
+  ok('제목이 서로 다르다', new Set(picked.rows.map(r => r.title)).size === 10);
+  ok('키워드가 제목에 들어 있다', picked.rows.every(r => r.title.indexOf(r.keyword) >= 0));
+  ok('근거 줄에 내 순위/문서 이야기', picked.rows.every(r => /내 |문서 |최근 4주|표본|유입/.test(r.reason)));
+
+  const nextDay = N.ctx.blogSeoPick_({
+    day: '2026-11-22', candidates: axesAll(), trend: trend, docs: {},
+    mine: { ranks: {}, inflow: [], posts: [], recentTitles: [], pattern: null }
+  });
+  const sameTitle = picked.rows.filter(r => nextDay.rows.some(x => x.title === r.title && x.keyword === r.keyword)).length;
+  ok('날이 바뀌면 제목 각도가 바뀐다', sameTitle <= 5, sameTitle);
+
+  /* 이미 쓴 말 제외 · 순위 방어 예외 */
+  const dup = N.ctx.blogSeoPick_({
+    day: '2026-11-21',
+    candidates: [{ axis: 'food', keyword: '대전 맛집' }, { axis: 'food', keyword: '유성 맛집' }],
+    trend: { '대전 맛집': { peak: 100, delta_pct: 60 }, '유성 맛집': { peak: 100, delta_pct: 10 } },
+    docs: {},
+    mine: { ranks: {}, inflow: [], posts: [], recentTitles: ['[대전 봉명동 맛집] 시험 대전 맛집 후기'], pattern: null }
+  });
+  ok('이미 쓴 말은 빠진다', dup.rows.every(r => r.keyword !== '대전 맛집'), dup.rows.map(r => r.keyword));
+  const defend = N.ctx.blogSeoPick_({
+    day: '2026-11-21',
+    candidates: [{ axis: 'food', keyword: '대전 맛집' }],
+    trend: { '대전 맛집': { peak: 100, delta_pct: 60 } }, docs: {},
+    mine: { ranks: { '대전 맛집': 14 }, inflow: [], posts: [], recentTitles: ['대전 맛집 3곳 비교'], pattern: null }
+  });
+  ok('11~50위 키워드는 리뉴얼 목적으로 남긴다', defend.rows.length === 1 && defend.rows[0].my_rank === 14, defend.rows);
+
+  /* 후보 돌리기 */
+  const cand = N.ctx.blogSeoCandidates_('2026-11-21');
+  eq('후보는 축 배분+2씩(18)', cand.length, 18);
+  const cand2 = N.ctx.blogSeoCandidates_('2026-11-22');
+  ok('다음 날은 다른 키워드부터 본다', cand[0].keyword !== cand2[0].keyword, cand[0].keyword + ' / ' + cand2[0].keyword);
+
+  /* 액션 끝까지 — 가짜 시트·가짜 네트워크 */
+  const P = loadGas();
+  const ss = new FakeSS();
+  const calls = [];
+  P.ctx.SpreadsheetApp = { getActiveSpreadsheet: () => ss };
+  P.ctx.UrlFetchApp = { fetch: (url, opts) => {
+    calls.push({ url, opts });
+    if (String(url).indexOf('search-trend') >= 0 || String(url).indexOf('datalab/search') >= 0) {
+      const body = JSON.parse(opts.payload);
+      const results = body.keywordGroups.map((g, i) => ({
+        title: g.groupName, keywords: g.keywords,
+        data: [20, 24, 30, 38, 10, 12, 14, 16, 40, 44, 48, 52].map((r, n) => ({ period: 'p' + n, ratio: r + i }))
+      }));
+      return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ results: results }) };
+    }
+    if (String(url).indexOf('search') >= 0) {
+      return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ total: 120000, items: [] }) };
+    }
+    return { getResponseCode: () => 404, getContentText: () => '' };
+  } };
+  P.env.props.set('NAVER_CLIENT_ID', 'test-id');
+  P.env.props.set('NAVER_CLIENT_SECRET', 'test-secret');
+  P.env.props.set('NAVER_API_MODE', 'hub');
+
+  const run1 = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'daejeon_youth' }, { brand: 'daejeon_youth' });
+  ok('액션은 10줄을 준다', run1.ok && run1.data.count === 10, run1.code || (run1.data && run1.data.count));
+  eq('처음에는 cached=false', run1.ok && run1.data.cached, false);
+  ok('응답에 축별 뼈대가 있다', run1.ok && run1.data.axes && run1.data.axes.food.skeleton.length >= 3);
+  ok('절대 검색량이 아니라는 문구', run1.ok && /상대지수/.test(run1.data.note));
+  ok('시트에 10줄을 쌓는다(헤더 포함)', ss.getSheetByName('Blog_Seo_Titles') && ss.getSheetByName('Blog_Seo_Titles').getLastRow() === 11, ss.getSheetByName('Blog_Seo_Titles') && ss.getSheetByName('Blog_Seo_Titles').getLastRow());
+  const trendCalls = calls.filter(c => String(c.url).indexOf('search-trend') >= 0 || String(c.url).indexOf('datalab/search') >= 0).length;
+  eq('데이터랩은 5개씩 묶어 4회만 부른다', trendCalls, 4);
+  const calledBefore = calls.length;
+  const run2 = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'daejeon_youth' }, { brand: 'daejeon_youth' });
+  ok('같은 날 두 번째는 저장된 줄(cached=true)', run2.ok && run2.data.cached === true, run2.data && run2.data.cached);
+  eq('두 번째는 네트워크를 부르지 않는다', calls.length, calledBefore);
+  ok('저장된 줄과 같은 제목', run2.ok && run2.data.rows[0].title === run1.data.rows[0].title);
+  eq('같은 날을 다시 만들어도 10줄(중복 없음)', (function () {
+    callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'daejeon_youth', refresh: true }, { brand: 'daejeon_youth' });
+    return ss.getSheetByName('Blog_Seo_Titles').getLastRow();
+  })(), 11);
+
+  const meli = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'ppiyak_kimmary' }, { brand: 'ppiyak_kimmary' });
+  ok('메리 트랙은 블로그를 쓰지 않는다고 알린다', meli.ok && meli.data.count === 0 && /블로그를 쓰지/.test(meli.data.fallback), meli.data && meli.data.fallback);
 }
 
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));

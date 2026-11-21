@@ -15,6 +15,7 @@
  */
 import { lintBlog, loadLintRules } from './blogLint.js?v=20261118';
 import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261121h';
+import { axisShort, trendChip, trendTone, rankChip, docChip, splitRows, makeSeoSeed, putSeoSeed, titleLen } from './blogSeo.js?v=20261121a';
 
 const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것' };
 
@@ -178,6 +179,9 @@ export function renderBlogView(main, ctx) {
 
   const s = summarize(blog);
 
+  /* ⓪ 오늘의 추천 제목 10 — 아침에 서버가 만든 줄(0토큰). 누르면 초안 스튜디오로 넘긴다. */
+  main.appendChild(seoPanel(h, ctx));
+
   /* ① 큰 숫자 */
   const trend = (s.last7 != null && s.prev7) ? Math.round(((s.last7 - s.prev7) / s.prev7) * 100) : null;
   main.appendChild(h('div', { class: 'kpi-grid blog-kpis' },
@@ -211,11 +215,129 @@ export function renderBlogView(main, ctx) {
   main.appendChild(setupPanel(h, blog));
 }
 
+/* ───────────── 오늘의 추천 제목 10 (gas/BlogSeo.gs) ───────────── */
+
+let seoLoading = false;
+
+/** 오늘 줄을 서버에서 받아 온다. 같은 날 두 번 불러도 서버는 저장된 줄을 돌려준다. */
+export async function loadBlogSeo(state, api, opts) {
+  if (!api || !api.configured) { state.blogSeo = { error: 'ERR_NO_CONFIG' }; return; }
+  if (seoLoading) return;
+  seoLoading = true;
+  try {
+    const res = await api.blogSeoTitles(Object.assign({ brand: state.brand }, opts || {}));
+    state.blogSeo = { data: res.data || null, at: Date.now() };
+  } catch (err) {
+    state.blogSeo = { error: (err && err.code) || 'ERR_UNKNOWN', msg: (err && err.message) || '' };
+  } finally {
+    seoLoading = false;
+  }
+}
+
+function seoPanel(h, ctx) {
+  const { state, api, toast } = ctx;
+  const panel = h('div', { class: 'panel seo-panel' },
+    h('h3', null, '오늘의 추천 제목 10', h('span', { class: 'tag', text: '매일 08:30 · 무료 규칙' })));
+
+  const saved = state.blogSeo;
+  if (!saved) {
+    panel.appendChild(h('p', { class: 'hint', text: '오늘의 제목을 가져오는 중…' }));
+    loadBlogSeo(state, api).then(() => { if (state.route === 'blog') ctx.renderRoute(); });
+    return panel;
+  }
+
+  if (saved.error) {
+    const notDeployed = ['ERR_UNKNOWN_ACTION', 'ERR_ACTION_NOT_ALLOWED', 'ERR_NOT_IMPLEMENTED', 'ERR_NOT_FOUND'].includes(saved.error);
+    panel.appendChild(h('p', { class: 'hint' + (notDeployed ? '' : ' err'),
+      text: notDeployed
+        ? '서버에 이 기능(gas/BlogSeo.gs)이 아직 안 올라갔어요. 새 버전으로 배포하면 여기에 매일 아침 제목 10개가 뜹니다.'
+        : (saved.msg || blogErrorText(saved.error, saved.msg) || '제목을 가져오지 못했어요.') }));
+    panel.appendChild(h('div', { class: 'row', style: 'margin-top:8px' },
+      h('button', {
+        class: 'btn sm', type: 'button', text: '↻ 다시 시도',
+        onclick: () => { state.blogSeo = null; ctx.renderRoute(); }
+      })));
+    return panel;
+  }
+
+  const data = saved.data || {};
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  if (!rows.length) {
+    panel.appendChild(h('p', { class: 'hint', text: data.fallback || '오늘은 뽑힌 제목이 없어요. [↻ 다시 뽑기]를 눌러 보세요.' }));
+  } else {
+    const { first, rest } = splitRows(rows);
+    panel.appendChild(seoList(h, ctx, first, data));
+    if (rest.length) {
+      panel.appendChild(h('details', { class: 'seo-more' },
+        h('summary', { text: '나머지 ' + rest.length + '개 펼치기' }),
+        seoList(h, ctx, rest, data)));
+    }
+  }
+
+  if (data.pattern && data.pattern.text) {
+    panel.appendChild(h('p', { class: 'hint', style: 'margin-top:10px', text: '📐 ' + data.pattern.text }));
+  }
+  if (data.fallback) {
+    panel.appendChild(h('p', { class: 'hint', style: 'color:var(--warn)', text: data.fallback }));
+  }
+
+  const refresh = h('button', {
+    class: 'btn xs', type: 'button', text: '↻ 다시 뽑기',
+    title: '오늘 제목을 새로 만듭니다(데이터랩 4회 · 검색 18회, 무료 한도 안)',
+    onclick: async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = '뽑는 중…';
+      await loadBlogSeo(state, api, { refresh: true });
+      const after = state.blogSeo || {};
+      toast(after.error ? '다시 뽑지 못했어요 — ' + (after.msg || after.error) : '오늘 제목을 다시 뽑았습니다', after.error ? 'err' : 'ok');
+      ctx.renderRoute();
+    }
+  });
+
+  panel.appendChild(h('div', { class: 'row', style: 'margin-top:10px;align-items:center;gap:8px' },
+    refresh,
+    h('span', { class: 'hint', style: 'margin:0',
+      text: (data.day ? data.day.slice(5).replace('-', '/') + ' 기준 · ' : '')
+        + (data.cached ? '아침에 만든 그대로' : '지금 만듦') })));
+  panel.appendChild(h('p', { class: 'hint',
+    text: '제목을 누르면 그 제목·키워드가 초안 스튜디오로 넘어갑니다. 발행은 직접 하시고, 여기서는 임시저장까지 준비합니다.' }));
+  if (data.note) panel.appendChild(h('p', { class: 'hint', text: data.note }));
+  return panel;
+}
+
+function seoList(h, ctx, rows, data) {
+  const { toast } = ctx;
+  const list = h('div', { class: 'list seo-list' });
+  rows.forEach((r) => {
+    const len = titleLen(r.title);
+    const go = () => {
+      const seed = makeSeoSeed(r, data.axes, data.day);
+      if (seed) putSeoSeed(seed);
+      location.hash = '#/create/blog';
+      toast('이 제목으로 초안을 시작합니다 — 사진·메모를 넣으면 2줄 호흡 초안이 나와요', 'ok');
+    };
+    const titleBtn = h('button', { class: 'seo-title', type: 'button', text: r.title, onclick: go });
+    const head = h('div', { class: 'seo-head' },
+      h('span', { class: 'seo-axis ' + String(r.axis || ''), text: axisShort(r.axis) }),
+      titleBtn,
+      len.over ? h('span', { class: 'tag', text: len.len + '자 · 김' }) : null);
+    const sub = h('div', { class: 'l-sub', style: 'white-space:normal;overflow:visible;line-height:1.45' },
+      h('em', { class: 'delta' + trendTone(r), text: trendChip(r) }),
+      h('span', { text: ' · ' + rankChip(r) }),
+      docChip(r) ? h('span', { text: ' · ' + docChip(r) }) : null,
+      h('span', { text: ' · ' + (r.reason || '') }));
+    const side = h('div', { class: 'l-side' },
+      h('button', { class: 'btn xs primary', type: 'button', text: '초안', title: '이 제목으로 #/create/blog 시작', onclick: go }));
+    list.appendChild(h('div', { class: 'lrow seo-row' },
+      h('div', { class: 'l-main', style: 'min-width:0' }, head, sub), side));
+  });
+  return list;
+}
+
 function relTimeSafe(ctx, iso) {
   try { return ctx.relTime ? ctx.relTime(iso) : String(iso).slice(0, 16).replace('T', ' '); }
   catch (e) { return String(iso).slice(0, 16).replace('T', ' '); }
 }
-
 function blogErrorText(code, msg) {
   switch (code) {
     case 'ERR_BLOG_UNREACHABLE': return '네이버가 잠깐 응답하지 않았어요. 조금 뒤 다시 눌러 주세요.';
@@ -476,7 +598,7 @@ function trendPanel(h, ctx, blog) {
         + (saved.data.budget ? ' · ' + budgetText(saved.data.budget) : '')
         + (saved.data.cached ? ' · 저장된 값(12시간 안 재사용)' : '') }));
     panel.appendChild(h('p', { class: 'hint',
-      text: '숫자는 절대 검색량이 아니라 이 요청 안에서 가장 높았던 구간을 100으로 둔 값입니다. 다른 요청과 나란히 비교하지 마세요.' }));
+      text: '숫자는 절대 검색량이 아니라 그 키워드 묶음 안에서 가장 높았던 구간을 100으로 둔 값입니다. 키워드끼리 크기를 비교하지 말고, 오르는지·성수기인지만 보세요.' }));
   } else {
     panel.appendChild(h('p', { class: 'hint',
       text: '발행 전에 지금 오르는 말인지 확인하세요. 키워드 5개까지 한 번에 묶어 비교합니다(따로 부르면 서로 비교할 수 없어요).' }));

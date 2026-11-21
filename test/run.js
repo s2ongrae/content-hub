@@ -977,6 +977,60 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('채널 영상 템플릿 시험', false, (err && err.stack) || err);
   }
 
+  console.log('\n[8] 오늘의 추천 제목 10 (js/blogSeo.js · 화면 연결)');
+  try {
+    const S = await import('file://' + path.join(ROOT, 'js', 'blogSeo.js'));
+    eq('축 배지는 짧게', S.axisShort('store'), '재테크');
+    eq('오르면 ▲+', S.trendChip({ trend_pct: 28.4, trend_state: '오르는 중' }), '▲+28%');
+    eq('내리면 ▼−', S.trendChip({ trend_pct: -12, trend_state: '내리는 중' }), '▼−12%');
+    eq('표본 적음은 숫자를 말하지 않는다', S.trendChip({ trend_pct: 40, trend_state: '표본 적음' }), '표본 적음');
+    eq('값이 없으면 —', S.trendChip({}), '—');
+    eq('색: +15 이상', S.trendTone({ trend_pct: 15 }), ' up');
+    eq('색: −15 이하', S.trendTone({ trend_pct: -15 }), ' down');
+    eq('내 순위 칩', S.rankChip({ my_rank: 14 }), '내 14위');
+    eq('없으면 신규', S.rankChip({}), '신규');
+    eq('문서 수는 만 단위', S.docChip({ doc_total: 120000 }), '문서 12만');
+    eq('문서 값이 없으면 빈 칸', S.docChip({}), '');
+    const sp = S.splitRows([1, 2, 3, 4, 5, 6]);
+    eq('처음 4개만 보인다', sp.first.length, 4);
+    eq('나머지 2개는 펼치기', sp.rest.length, 2);
+    const tl = S.titleLen('가'.repeat(40));
+    ok('34자를 넘으면 표시한다', tl.over === true && tl.len === 40, tl);
+    const seed = S.makeSeoSeed(
+      { title: '대전 냉삼 다녀왔습니다', keyword: '대전 냉삼', axis: 'food', axis_label: '대전 맛집·카페' },
+      { food: { skeleton: ['1. 언제:', '2. 주차:'] } }, '2026-11-21');
+    ok('시드에 제목·키워드·뼈대가 담긴다', seed && seed.title === '대전 냉삼 다녀왔습니다' && seed.keyword === '대전 냉삼' && seed.skeleton.indexOf('1.') === 0, seed);
+    S.putSeoSeed(seed);
+    eq('시드를 보관하고 다시 읽는다', S.peekSeoSeed().title, '대전 냉삼 다녀왔습니다');
+    S.clearSeoSeed();
+    eq('시드를 지운다', S.peekSeoSeed(), null);
+    eq('제목이 없는 줄은 시드로 만들지 않는다', S.makeSeoSeed({}, null, ''), null);
+
+    const bsv = fs.readFileSync(path.join(ROOT, 'js', 'blogView.js'), 'utf8');
+    ok('blog: 오늘의 추천 제목 카드를 그린다', /function seoPanel\(/.test(bsv) && /blogSeoTitles\(/.test(bsv));
+    ok('blog: 4개 먼저, 나머지는 펼치기', /splitRows\(/.test(bsv) && /나머지 /.test(bsv));
+    ok('blog: 제목을 누르면 스튜디오로 넘긴다', /putSeoSeed\(/.test(bsv) && /#\/create\/blog/.test(bsv));
+    ok('blog: 발행은 사람 몫이라고 적는다', /임시저장까지/.test(bsv));
+    ok('blog: 가져오지 못했을 때 다시 시도할 수 있다', /오늘의 제목을 가져오는 중/.test(bsv) && /다시 시도/.test(bsv));
+
+    const SL = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js'));
+    const kit = await SL.buildBlogKit({
+      materials: { place: { name: '테스트가게' }, content: { memo: '원문 한 문단입니다. 길이는 상관없습니다.', region_dong: '봉명동' }, concept: { kind: 'review', tone: 'plain' } },
+      photos: [], links: [], title: '내가 고른 제목입니다'
+    });
+    eq('추천 제목이 1안이 된다', kit.titles[0], '내가 고른 제목입니다');
+    eq('추천 제목도 키트에 남는다', kit.title_seed, '내가 고른 제목입니다');
+    const composed = SL.composeBlogWithDraft(kit, { titles: ['AI 제목 A', 'AI 제목 B', 'AI 제목 C'], blocks: [] });
+    ok('AI 초안이 와도 내가 고른 제목이 1안', /1\) 내가 고른 제목입니다/.test(composed.text), composed.text.split('\n').slice(0, 3));
+
+    const csv = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('스튜디오: 추천 제목에서 시작했다고 보여 준다', /function seoSeedPanel\(/.test(csv) && /오늘의 추천 제목에서 시작/.test(csv));
+    ok('스튜디오: 메모 뼈대를 넣어 준다', /메모 뼈대 넣기/.test(csv) && /seed\.skeleton/.test(csv));
+    ok('스튜디오: 제목을 키트에 넘긴다', /title: seoTitleOf\(\)/.test(csv));
+  } catch (err) {
+    ok('오늘의 추천 제목 10 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();

@@ -313,6 +313,9 @@ export function buildBlogKit(input) {
     return { name: x.photo, role: x.role, text: captionFor(p, materials), auto: !String(p.caption || '').trim() };
   });
   const titles = titleOptions(materials, { photoCount: ps.length });
+  // 추천 제목(SEO)에서 넘어왔으면 그 제목을 1안으로 둔다 — 내가 고른 제목을 다시 뽑지 않는다.
+  const chosen = String(i.title || '').trim().slice(0, 80);
+  const titleList = chosen ? [chosen].concat(titles.filter((t) => t !== chosen)) : titles;
   const links = (Array.isArray(i.links) ? i.links : []).filter((l) => l && String(l.url || '').trim())
     .map((l) => ({ url: String(l.url).trim(), title: String(l.title || '').trim() }));
 
@@ -357,7 +360,8 @@ export function buildBlogKit(input) {
   };
 
   return {
-    titles: titles,
+    titles: titleList,
+    title_seed: chosen,
     blocks: blocks,
     photo_plan: plan,
     captions: captions,
@@ -518,7 +522,13 @@ export function composeBlogWithDraft(kit, draft) {
   const bridges = Array.isArray(d.bridges) ? d.bridges : (Array.isArray(d.bridge) ? d.bridge : []);
   const lines = [];
   lines.push('■ 제목 후보 3');
-  (Array.isArray(d.titles) && d.titles.length ? d.titles : k.titles || []).slice(0, 3).forEach((t, n) => lines.push((n + 1) + ') ' + t));
+  const draftTitles = (Array.isArray(d.titles) && d.titles.length ? d.titles : k.titles || []).slice(0, 3);
+  // 추천 제목으로 시작한 작업은 AI 초안이 와도 그 제목을 1안에 남긴다.
+  const seedTitle = String(k.title_seed || '');
+  const shownTitles = seedTitle && draftTitles.indexOf(seedTitle) < 0
+    ? [seedTitle].concat(draftTitles).slice(0, 3)
+    : draftTitles;
+  shownTitles.forEach((t, n) => lines.push((n + 1) + ') ' + t));
   lines.push('');
   lines.push('■ 본문');
   blocks.forEach((b, n) => {
