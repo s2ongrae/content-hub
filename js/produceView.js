@@ -19,16 +19,17 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261121c';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121c';
+import { buildEDL } from './yt/edl.js?v=20261121f';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261121f';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery
-} from './produceLogic.js?v=20261121c';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261121c';
+} from './produceLogic.js?v=20261121f';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261121f';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261121f';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -42,9 +43,16 @@ export function produceSection(ctx) {
   const contentId = detail.content_id || meta.content_id;
   const brand = meta.brand || ctx.brand;
 
-  /* ── 상태: 서버(payload.studio) 기준, 그 기기에 못 올린 변경이 남아 있으면 그것을 먼저 ── */
+  /* ── 상태: 서버(payload.studio) 기준, 그 기기에 못 올린 변경이 남아 있으면 그것을 먼저 ──
+   * 2026-11-21(제작 스튜디오 개편): 영상 상태의 자리가 studio.formats.video 로 옮겨졌다.
+   *  · 읽기: studio.formats.video → 없으면 구 구조(studio 루트에 steps·inputs…) 폴백(readStudio).
+   *  · 쓰기: 언제나 studio.formats.video 에만. 구 루트 키는 지우지 않고 남긴다(문제 시 읽기 우선순위 1줄 롤백).
+   *  · studioRoot 를 들고 다니는 이유: GAS update_content 는 patch 의 최상위 키를 통째로 교체한다 —
+   *    다른 포맷(blog·feed)의 초안을 덮지 않으려면 최신 studio 를 읽어 그 안에서 video 만 바꿔 보내야 한다. */
+  const opened = readStudio(detail.payload);
+  let studioRoot = opened.studio;
   const lsKey = LS_PREFIX + contentId;
-  let state = normalizeState(detail.payload && detail.payload.studio);
+  let state = normalizeState(opened.video);
   // 완제품(2026-11-20): 카드 payload 의 production 에 저장된 자막·내레이션 대본을 읽는다(수정은 다른 화면 몫).
   const production = (detail.payload && detail.payload.production) || {};
   const cardCaptions = production.captions !== undefined ? production.captions : (detail.payload && detail.payload.captions);
@@ -78,15 +86,16 @@ export function produceSection(ctx) {
   }
 
   async function pushToServer() {
-    const body = () => ({ content_id: contentId, expected_version: version, patch: { studio: state } });
+    const body = () => ({ content_id: contentId, expected_version: version, patch: { studio: mergeFormat(studioRoot, 'video', state) } });
     let res;
     try {
       res = await api.updateContent(body());
     } catch (err) {
       if (err && err.code === 'ERR_VERSION_CONFLICT') {
-        /* 다른 곳에서 카드가 바뀌었다 — studio 키만 보내는 저장이라 최신 버전으로 한 번 더 시도해도 남의 변경을 덮지 않는다 */
+        /* 다른 곳에서 카드가 바뀌었다 — 최신 studio 를 다시 읽어 video 하위 키만 갈아 끼운다(남의 포맷·초안을 덮지 않는다) */
         const cur = await api.getContentDetail(contentId);
         version = (cur.data && cur.data.version) || version;
+        studioRoot = readStudio(cur.data && cur.data.payload).studio;
         res = await api.updateContent(body());
       } else {
         throw err;
@@ -94,6 +103,7 @@ export function produceSection(ctx) {
     }
     const d = (res && res.data) || {};
     if (d.version) { version = d.version; detail.version = d.version; }
+    studioRoot = mergeFormat(studioRoot, 'video', state);
   }
 
   function scheduleSave() {

@@ -42,6 +42,8 @@ DEFAULT_TARGETS = {
     "avg_line_max": 20,
     "short_lines_min": 60,
     "short_lines_warn": 50,
+    "rhythm_wrap_chars": 20,
+    "short_block_max_chars": 44,
     "hashtag_count": [8, 14],
     "hashtag_warn_over": 15,
     "core_tags_required": 3,
@@ -200,19 +202,25 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
         lines = prose_lines(body)
         if not lines:
             return "warn", "—", "본문을 넣어 주세요"
-        avg = round(statistics.mean(len(x) for x in lines), 1)
+        # 문단 호흡 v5(2026-11-21): 문단이 모바일에서 몇 줄로 보이는지(20자/줄)로 환산한다.
+        wrap = t.get("rhythm_wrap_chars", 20)
+        counted = sum(max(1, -(-len(x) // wrap)) for x in lines)
+        total = sum(len(x) for x in lines)
+        avg = round(total / counted, 1) if counted else 0
         if avg <= t["avg_line_max"]:
-            return "pass", f"{avg}자", f"평균 {avg}자 · {len(lines)}줄"
-        return "warn", f"{avg}자", "평균 목표 15~18자 — 한 줄에 한 정보만"
+            return "pass", f"{avg}자", f"모바일 줄 환산 평균 {avg}자 · 문단 {len(lines)}개"
+        return "warn", f"{avg}자", "평균 목표 15~20자 — 문단 하나를 2줄(22~44자)로"
 
     if rule_id == "short_lines":
         lines = prose_lines(body)
-        short = sum(1 for x in lines if len(x) <= t["short_line_max_chars"])
+        # 짧은 호흡 v5: '16자 이하 한 줄' 대신 '2줄(44자) 이하 문단'을 센다(사용자의 실제 호흡 단위).
+        cap = t.get("short_block_max_chars", 44)
+        short = sum(1 for x in lines if len(x) <= cap)
         if short >= t["short_lines_min"]:
-            return "pass", f"{short}개", f"{t['short_line_max_chars']}자 이하 줄 {short}개"
+            return "pass", f"{short}개", f"{cap}자 이하(2줄) 문단 {short}개"
         if short >= t["short_lines_warn"]:
             return "near", f"{short}개", f"{t['short_lines_min'] - short}개 부족"
-        return "warn", f"{short}개", f"16자 이하 줄이 {short}개뿐 — 목표 65개"
+        return "warn", f"{short}개", f"{cap}자 이하 문단이 {short}개뿐 — 목표 {t['short_lines_min']}개"
 
     if rule_id == "hashtags":
         n = len(tags)

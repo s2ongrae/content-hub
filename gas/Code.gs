@@ -493,7 +493,15 @@ function handleUpdateContent_(ss, payload, ctx) {
   doc.version = currentVersion + 1;
   doc.updated_at = formatKstIso_(new Date());
   if (payload.patch && typeof payload.patch === 'object') {
-    Object.keys(payload.patch).forEach(function (k) { doc[k] = payload.patch[k]; });
+    /* patch_mode:'deep' — 객체는 재귀 병합하고 배열은 통째로 바꾼다(2026-11-21).
+       왜 필요한가: 노트북 초안 워커는 studio.formats.blog.draft 한 갈래만 쓴다. 기본(얕은) 교체로 보내면
+       화면이 보고 있던 다른 포맷(영상 단계·피드 카드)을 통째로 밀거나, 남의 동시 편집을 덮는다.
+       기본값은 지금까지와 같이 얕은 교체다 — 기존 호출자는 영향이 없다. */
+    if (String(payload.patch_mode || '') === 'deep') {
+      doc = deepMergeObjects_(doc, payload.patch);
+    } else {
+      Object.keys(payload.patch).forEach(function (k) { doc[k] = payload.patch[k]; });
+    }
   }
   if (fileId) {
     writePayloadToFile_(fileId, doc);
@@ -526,6 +534,24 @@ function handleUpdateContent_(ss, payload, ctx) {
     status: all[rowIndex][headers.indexOf('status')],
     payload_file_id: all[rowIndex][headers.indexOf('payload_file_id')]
   };
+}
+
+/**
+ * payload 재귀 병합 — 객체는 키 단위로 합치고 배열·스칼라는 오른쪽 값을 넣는다.
+ *  · undefined 는 ‘그대로 두기’로 본다(JSON 에는 오지 않지만 안전하게).
+ *  · 너무 깊은(>8) 구조는 그대로 교체한다 — 순환 참조·악성 깊이로 스택을 태우지 않게.
+ */
+function deepMergeObjects_(left, right, depth) {
+  const d = Number(depth) || 0;
+  if (d > 8) return right;
+  if (!right || typeof right !== 'object' || Array.isArray(right)) return right;
+  const out = (left && typeof left === 'object' && !Array.isArray(left)) ? left : {};
+  Object.keys(right).forEach(function (k) {
+    const v = right[k];
+    if (v === undefined) return;
+    out[k] = (v && typeof v === 'object' && !Array.isArray(v)) ? deepMergeObjects_(out[k], v, d + 1) : v;
+  });
+  return out;
 }
 
 /** 모바일 10초 승인: 사람이 버튼을 누른 사실 + 점수를 Checklist_Runs 에 기록 */

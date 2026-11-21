@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>360px 가로 스크롤 점검 — Content Hub OS</title>
+<style>
+  body { margin: 0; padding: 16px; background: #0b1220; color: #e9eff9; font: 13px/1.5 -apple-system, "Malgun Gothic", sans-serif; }
+  h1 { font-size: 15px; margin: 0 0 6px; }
+  p.h { color: #a3b3c9; margin: 0 0 14px; font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; }
+  .case { width: 360px; }
+  .case h2 { font-size: 12px; margin: 0 0 4px; color: #ffb066; }
+  .case .res { font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; margin: 4px 0 0; }
+  .ok { color: #35d07f; }
+  .bad { color: #ff5d6c; }
+  iframe { width: 360px; height: 620px; border: 1px solid #253349; border-radius: 10px; background: #fff; }
+</style>
+</head>
+<body>
+<h1>360px 가로 스크롤 점검</h1>
+<p class="h">같은 출처의 앱을 폭 360px iframe 으로 띄워 문서 가로 스크롤과 화면 밖으로 나간 요소를 센다. (개발용 점검 페이지 — 앱 화면이 아니다)<br>
+<code>tools/width-check.html#/create/blog</code> 처럼 뒤에 라우트를 붙이면 그 화면만 본다.</p>
+<div class="row" id="rows"></div>
+<script>
+(function () {
+  var W = 360;
+  var routes = (location.hash.replace(/^#\/?/, '') || 'create,create/blog,create/video,create/feed').split(',');
+  var out = [];
+  window.__results = out;
+  var host = document.getElementById('rows');
+
+  routes.forEach(function (route) {
+    var box = document.createElement('div');
+    box.className = 'case';
+    var h = document.createElement('h2');
+    h.textContent = '#/' + route;
+    var res = document.createElement('pre');
+    res.className = 'res';
+    res.textContent = '측정 중…';
+    var f = document.createElement('iframe');
+    f.width = String(W);
+    // 캐시를 피해서 싣는다 — GitHub Pages 의 HTML 은 몇 분 캐시되므로 ?wc= 를 붙이지 않으면 옛 번들이 그대로 뜬다(점검용)
+    f.src = '../?wc=' + Date.now() + '#/' + route;
+    box.appendChild(h);
+    box.appendChild(f);
+    box.appendChild(res);
+    host.appendChild(box);
+
+    f.addEventListener('load', function () {
+      setTimeout(function () { measure(route, f, res); }, 2600);
+    });
+  });
+
+  function measure(route, f, res) {
+    var row = { route: route, ok: false, scroll: null, wide: [], error: '' };
+    try {
+      var d = f.contentDocument;
+      if (!d || !d.documentElement) { row.error = 'iframe 문서를 읽지 못함(출처 확인)'; }
+      else {
+        var de = d.documentElement;
+        row.scroll = de.scrollWidth - de.clientWidth;
+        var list = [];
+        [].slice.call(d.querySelectorAll('#main *, .tabbar *, .appbar *')).forEach(function (el) {
+          if (!el.getClientRects().length) return;
+          var r = el.getBoundingClientRect();
+          if (r.width > 0 && r.right > de.clientWidth + 1) {
+            list.push({ tag: el.tagName.toLowerCase(), cls: String(el.className || '').slice(0, 40), right: Math.round(r.right), w: Math.round(r.width) });
+          }
+        });
+        row.wide = list.slice(0, 8);
+        row.ok = row.scroll <= 0 && !list.length;
+      }
+    } catch (e) { row.error = String(e && e.message || e); }
+    out.push(row);
+    res.textContent = (row.ok ? '✓ ' : '✗ ') + '가로 스크롤 ' + (row.scroll === null ? '?' : row.scroll + 'px') +
+      (row.wide.length ? '\n넘침 ' + row.wide.length + '개: ' + row.wide.map(function (x) { return x.tag + '.' + x.cls + '(' + x.right + ')'; }).join(', ') : '') +
+      (row.error ? '\n' + row.error : '');
+    res.className = 'res ' + (row.ok ? 'ok' : 'bad');
+  }
+})();
+</script>
+</body>
+</html>

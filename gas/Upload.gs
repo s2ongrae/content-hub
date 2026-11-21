@@ -11,11 +11,16 @@
  *
  *  액션 4개 (Auth.gs 화이트리스트와 Code.gs M1_HANDLERS 에 등록)
  *   · upload_video_chunk  조각 하나 저장(같은 번호를 다시 보내면 덮어씀 · 0번은 이전 업로드를 지움)
- *   · upload_video_list   올라온 파일 목록(이름·크기·조각 수·다 올라왔는지)
+ *   · upload_video_list   올라온 파일 목록(이름·크기·조각 수·다 올라왔는지 · kind: photo|video)
  *   · upload_video_fetch  조각 하나를 base64 로 돌려줌(노트북용)
  *   · upload_video_delete 파일 하나의 조각 전부 휴지통으로
  *
- *  하지 않는 것: 영상 내용을 읽거나 변환하지 않는다(조각은 불투명 바이트). 재생·미리보기 링크를 만들지 않는다.
+ *  사진(2026-11-21, O2a): 같은 조각 경로로 jpg·jpeg·png·webp 도 받는다.
+ *   · 브라우저가 올리기 전에 장변 2048px·JPEG 0.85 로 줄여(보통 400KB) 조각 1개로 올린다(js/uploadVideo.js).
+ *   · 장당 10MB·카드 한 장에 사진 25장까지(영상 8개 상한과 별개 — 60초 영상 15장·블로그 22장을 채우려면 8로는 모자란다).
+ *   · 워커는 같은 목록·같은 fetch 로 사진 조각을 받아 inbox/<content_id>/ 에 그대로 붙인다(형식은 확장자로 안다).
+ *
+ *  하지 않는 것: 영상·사진 내용을 읽거나 변환하지 않는다(조각은 불투명 바이트). 재생·미리보기 링크를 만들지 않는다.
  */
 
 const UPLOAD_ROOT_NAME = 'ContentHubOS_Uploads';
@@ -24,7 +29,11 @@ const UPLOAD_MAX_PARTS = 800;                      // 800 × 2MB = 1.6GB
 const UPLOAD_MAX_TOTAL_BYTES = 1500 * 1024 * 1024; // 파일 하나 1.5GB
 const UPLOAD_CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 const UPLOAD_NAME_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}$/;
-const UPLOAD_EXT_RE = /\.(mp4|mov|m4v)$/i;
+const UPLOAD_VIDEO_EXT_RE = /\.(mp4|mov|m4v)$/i;
+const UPLOAD_IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
+const UPLOAD_EXT_RE = /\.(mp4|mov|m4v|jpe?g|png|webp)$/i;
+const UPLOAD_IMAGE_MAX_BYTES = 10 * 1024 * 1024;   // 사진 한 장 10MB (브라우저는 보통 400KB 로 줄여 올린다)
+const UPLOAD_IMAGE_MAX_COUNT = 25;                 // 카드 한 장에 사진 25장까지(영상 8개와 별개)
 const UPLOAD_PART_RE = /^(.+)\.part(\d{5})of(\d{5})$/;
 
 function uploadBad_(msg, details) { return createAppError_('ERR_VALIDATION_FAILED', msg, details); }
@@ -38,9 +47,14 @@ function uploadContentId_(payload) {
 function uploadName_(payload) {
   const n = String((payload && payload.name) || '');
   if (!UPLOAD_NAME_RE.test(n) || n.indexOf('..') !== -1 || !UPLOAD_EXT_RE.test(n)) {
-    throw uploadBad_('파일 이름은 영문·숫자·한글·공백·._- 만, mp4·mov·m4v 확장자만 가능합니다(80자 이내).', { name: n.slice(0, 40) });
+    throw uploadBad_('파일 이름은 영문·숫자·한글·공백·._- 만, mp4·mov·m4v·jpg·jpeg·png·webp 확장자만 가능합니다(80자 이내).', { name: n.slice(0, 40) });
   }
   return n;
+}
+
+/** 확장자로 사진·영상을 가른다. 목록 응답의 kind 로 화면·워커가 구분한다. */
+function uploadKind_(name) {
+  return UPLOAD_IMAGE_EXT_RE.test(String(name || '')) ? 'photo' : (UPLOAD_VIDEO_EXT_RE.test(String(name || '')) ? 'video' : 'other');
 }
 
 function uploadInt_(v, label, min, max) {
@@ -97,8 +111,10 @@ function handleUploadVideoChunk_(ss, payload) {
   const name = uploadName_(payload);
   const parts = uploadInt_(payload.parts, 'parts', 1, UPLOAD_MAX_PARTS);
   const index = uploadInt_(payload.index, 'index', 0, parts - 1);
+  const kind = uploadKind_(name);
   if (payload.total_size !== undefined && payload.total_size !== null) {
-    uploadInt_(payload.total_size, 'total_size', 1, UPLOAD_MAX_TOTAL_BYTES);
+    if (kind === 'photo') uploadInt_(payload.total_size, 'total_size', 1, UPLOAD_IMAGE_MAX_BYTES);
+    else uploadInt_(payload.total_size, 'total_size', 1, UPLOAD_MAX_TOTAL_BYTES);
   }
   const b64 = String(payload.data || '');
   if (!b64 || !/^[A-Za-z0-9+\/=]+$/.test(b64)) throw uploadBad_('data 는 base64 문자열이어야 합니다.');
@@ -108,12 +124,21 @@ function handleUploadVideoChunk_(ss, payload) {
 
   const folder = uploadFolder_(contentId, true);
   const mine = uploadParts_(folder).filter(function (p) { return p.name === name; });
+  // 사진 상한 — 새 사진(index 0 이고 아직 없는 이름)만 센다. 다시 보낸 조각·영상은 세지 않는다.
+  if (kind === 'photo' && index === 0 && !mine.length) {
+    const names = {};
+    uploadParts_(folder).forEach(function (p) { if (uploadKind_(p.name) === 'photo') names[p.name] = true; });
+    if (Object.keys(names).length >= UPLOAD_IMAGE_MAX_COUNT) {
+      throw uploadBad_('사진은 한 카드에 ' + UPLOAD_IMAGE_MAX_COUNT + '장까지입니다. 필요 없는 사진을 지우고 올려 주세요.',
+        { photos: Object.keys(names).length, max: UPLOAD_IMAGE_MAX_COUNT });
+    }
+  }
   // 0번은 새 업로드의 시작 — 앞서 올린 같은 이름의 조각(조각 수가 달랐던 것 포함)을 모두 치운다.
   // 그 밖의 번호는 같은 번호의 옛 조각만 바꾼다(재시도해도 같은 결과).
   trashParts_(mine.filter(function (p) { return index === 0 || p.index === index || p.parts !== parts; }));
   const blob = Utilities.newBlob(bytes, 'application/octet-stream', uploadPartName_(name, index, parts));
   folder.createFile(blob);
-  return { content_id: contentId, name: name, index: index, parts: parts, bytes: bytes.length };
+  return { content_id: contentId, name: name, kind: kind, index: index, parts: parts, bytes: bytes.length };
 }
 
 function handleUploadVideoList_(ss, payload) {
@@ -139,6 +164,7 @@ function handleUploadVideoList_(ss, payload) {
     });
     return {
       name: n,
+      kind: uploadKind_(n),
       size: best.s.size,
       parts: best.s.parts,
       parts_found: best.found,
