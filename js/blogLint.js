@@ -1,5 +1,5 @@
 /**
- * js/blogLint.js — 발행 전 블로그 린터 (2026w48 기준 8항목)
+ * js/blogLint.js — 발행 전 블로그 린터 (2026w48 기준 9항목)
  *
  * 근거: 네이버 블로그 '관련도순' 상위 24건 실측(2026-11-18) → docs/BLOG_STANDARD_v4.md
  * 규칙·임계치는 seeds/blog_lint_rules_2026w48.json 하나를 웹앱·파이썬 CLI가 같이 읽는다.
@@ -314,7 +314,7 @@ function runJudge(id, m, t, lexicon, core) {
 }
 
 /**
- * 8항목 판정.
+ * 9항목 판정.
  * @param {{title?:string, body?:string, photoCount?:number, tags?:string|string[], keywords?:string|string[]}} input
  * @param {{targets:object, rules:object[], coreTags:string[], titleLexicon:string[]}} [ruleSet] loadLintRules() 결과
  * @returns {{score:number, pass:boolean, items:object[], stats:object, version:string}}
@@ -358,7 +358,7 @@ export function lintBlog(input, ruleSet) {
     hashtags: hashtagsOf(m.body, m.tags).length
   };
 
-  /* AI 티 7패턴 · 첫 400자 D.I.A.+ · 키워드 3~5회 — 점수(8항목)에는 넣지 않는다.
+  /* AI 티 7패턴 · 첫 400자 D.I.A.+ · 키워드 3~5회 — 점수(9항목)에는 넣지 않는다.
      이유: 7패턴 중 2개↑ 적발은 '발행 보류 경고'(hold)로 따로 보여주고, 점수는 실측 상위권 기준 그대로 둔다. */
   const aiTone = lintAiTone(m, set.aiTone);
 

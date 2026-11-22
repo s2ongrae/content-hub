@@ -6,7 +6,7 @@
  *
  *  ① 큰 숫자 4개 — 어제 방문자 · 최근 7일 방문자(앞 7일 대비) · 이번 달 발행 · 최근 7일 반응(댓글+공감)
  *  ② 방문자 막대(최근 30일) — 네이버는 최근 5일만 주므로 매일 자동 수집으로 쌓는다
- *  ③ 글 목록 — 댓글·공감과 7일 증가분, [점검]을 누르면 발행된 본문을 린터 8항목으로 채점
+ *  ③ 글 목록 — 댓글·공감과 7일 증가분, [점검]을 누르면 발행된 본문을 린터 9항목으로 채점
  *  ④ 카테고리별 평균 반응
  *  ⑤ 검색 순위 — 네이버 검색 API(블로그) 상위 100위 안 내 글 위치
  *
@@ -416,7 +416,7 @@ function postList(h, ctx, blog) {
     h('h3', null, '글', h('span', { class: 'tag', text: String(posts.length) })),
     seg, list,
     h('p', { class: 'hint', style: 'margin-top:10px',
-      text: '[점검]은 발행된 본문을 읽어 상위노출 8항목으로 채점합니다. 글별 조회수는 네이버가 공개하지 않아 성과 탭에서 직접 넣어 주세요.' }));
+      text: '[점검]은 발행된 본문을 읽어 상위노출 9항목으로 채점합니다. 글별 조회수는 네이버가 공개하지 않아 성과 탭에서 직접 넣어 주세요.' }));
 }
 
 function postRow(h, ctx, p) {
@@ -472,7 +472,7 @@ function fillLint(h, box, r) {
     h('strong', { class: 'score ' + (r.score >= 80 ? 'good' : r.score >= 60 ? 'mid' : 'low'), text: r.score + '점' }),
     h('span', { text: '본문 ' + nf(r.stats.bodyChars) + '자 · 사진 ' + r.stats.photos + '장' + (r.videos ? ' · 영상 ' + r.videos : '') + ' · 태그 ' + r.stats.hashtags + '개' })));
   if (!fixes.length) {
-    box.appendChild(h('div', { class: 'blog-lint-ok', text: '8항목 모두 통과' }));
+    box.appendChild(h('div', { class: 'blog-lint-ok', text: '9항목 모두 통과' }));
     return;
   }
   const ul = h('ul', { class: 'blog-lint-list' });
