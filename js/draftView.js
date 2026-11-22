@@ -11,6 +11,26 @@
  */
 
 import { api } from './api.js';
+import { applyBlogRhythm } from './blogTone.js?v=20261122h';
+import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261122a';
+
+
+/** 채널별 복사 문안 — 줄바꿈 규칙을 적용한다(사실·문장은 그대로, 배치만). */
+function copyTextFor(key, title, body) {
+  const t = String(title || '').trim();
+  const b = String(body || '').trim();
+  if (!b) return t;
+  if (key === 'blog') {
+    const r = applyBlogRhythm(b);
+    return t ? t + '\n\n' + r.text : r.text;
+  }
+  if (key === 'clip' || key === 'shorts' || key === 'reels' || key === 'ig_feed') {
+    /* 이미 5블록으로 저장된 문안은 normalizeDesc 가 그대로 둔다(정보 줄만 정리). */
+    const desc = b.indexOf('#') >= 0 || b.indexOf('\n\n') >= 0 ? normalizeDesc(b, key) : b;
+    return t ? t + '\n\n' + desc : desc;
+  }
+  return t ? t + '\n\n' + b : b;
+}
 
 /* 채널 순서는 길게 쓰는 글 → 짧은 영상 순. 라벨은 화면 말(쉬운 한국어). */
 const CHANNELS = [
@@ -293,10 +313,20 @@ export function draftSection(ctx) {
 
     const row = h('div', { class: 'da-row' });
     if (body || title) {
+      /* 복사할 때 줄바꿈을 성래 님 기준으로 접는다(2026-11-22).
+         블로그 = 2~5줄 덩어리 · 빈 줄은 덩어리 사이에만 / 클립·쇼츠·릴스 = 제목·요약·정보·행동·해시태그 5블록 */
       row.appendChild(h('button', {
         class: 'btn sm primary', type: 'button', text: '본문 복사',
-        onclick: () => copyText([title, body].filter(Boolean).join('\n\n'), toast)
+        onclick: () => copyText(copyTextFor(c.key, title, body), toast)
       }));
+      const descIssues = (c.key !== 'blog' && c.key !== 'daangn') ? lintDesc(copyTextFor(c.key, title, body), c.key) : [];
+      if (descIssues.length) {
+        row.appendChild(h('span', {
+          class: 'hint',
+          title: descIssues.map((i) => i.text).join('\n'),
+          text: '줄바꿈 점검 ' + descIssues.length + '건'
+        }));
+      }
       if (doc && doc.draft_url) {
         row.appendChild(h('a', { class: 'btn sm', href: doc.draft_url, target: '_blank', rel: 'noopener noreferrer', text: '임시저장 열기' }));
       }

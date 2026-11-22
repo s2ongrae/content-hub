@@ -15,6 +15,7 @@
  */
 
 import { AI_TONE_DEFAULTS, lintAiTone } from './blogAiTone.js?v=20261121';
+import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261122h';
 
 const RULES_URL = 'seeds/blog_lint_rules_2026w48.json';
 
@@ -40,14 +41,15 @@ const DEFAULT_CORE = ['대전맛집', '유성맛집', '봉명동맛집'];
 const DEFAULT_LEXICON = ['대전', '유성', '봉명동', '어은동', '궁동', '온천', '관평동', '둔산',
   '삼겹살', '칼국수', '고기', '맛집', '술집', '해장', '제육', '혼밥', '주차'];
 const DEFAULT_RULES = [
-  { id: 'title_front', label: '제목 앞배치', weight: 14, fix: '제목 맨 앞에 [지역 + 메뉴]를 넣으세요.' },
+  { id: 'title_front', label: '제목 앞배치', weight: 12, fix: '제목 맨 앞에 [지역 + 메뉴]를 넣으세요.' },
   { id: 'title_len', label: '제목 길이', weight: 10, fix: '26~45자로 맞추세요.' },
-  { id: 'first_screen', label: '첫 화면 정보', weight: 14, fix: '도입 3줄 뒤에 위치·영업·주차 정보 카드를 붙이세요.' },
-  { id: 'body_len', label: '본문 분량', weight: 12, fix: '1,700~2,300자로 덜어내세요.' },
-  { id: 'photo_density', label: '사진 밀도', weight: 14, fix: '사진 18~22장 · 장당 95~120자.' },
-  { id: 'line_rhythm', label: '문단 호흡', weight: 12, fix: '문단 하나를 모바일 2줄(22~44자)로 끊으세요 — 20자 한 줄보다 "2줄 호흡"이 성래 님 실제 문체입니다.' },
-  { id: 'short_lines', label: '짧은 호흡', weight: 12, fix: '2줄(44자) 이하 문단을 60개 이상으로.' },
-  { id: 'hashtags', label: '해시태그', weight: 12, fix: '8~14개 유지 + 핵심 3개 포함.' }
+  { id: 'first_screen', label: '첫 화면 정보', weight: 12, fix: '도입 3줄 뒤에 위치·영업·주차 정보 카드를 붙이세요.' },
+  { id: 'body_len', label: '본문 분량', weight: 11, fix: '1,700~2,300자로 덜어내세요.' },
+  { id: 'photo_density', label: '사진 밀도', weight: 12, fix: '사진 18~22장 · 장당 95~120자.' },
+  { id: 'line_rhythm', label: '문단 호흡', weight: 11, fix: '문단 하나를 모바일 2줄(22~44자)로 끊으세요 — 20자 한 줄보다 "2줄 호흡"이 성래 님 실제 문체입니다.' },
+  { id: 'short_lines', label: '짧은 호흡', weight: 11, fix: '2줄(44자) 이하 문단을 60개 이상으로.' },
+  { id: 'hashtags', label: '해시태그', weight: 11, fix: '8~14개 유지 + 핵심 3개 포함.' },
+  { id: 'line_layout', label: '줄바꿈 배치', weight: 10, fix: '한 줄 54자 이내 · 2~5줄을 빈 줄 없이 붙여 덩어리로 · 빈 줄은 덩어리 사이에만 · 📍⏰🚗 정보 줄은 붙여서.' }
 ];
 
 let cache = null;
@@ -260,6 +262,34 @@ const LINK_RULES = [
   { id: 'link_embed_hint', label: '붙이는 순서', weight: 0, fix: 'URL을 붙여넣고 Enter → 카드가 뜨면 남은 URL 글자를 지우세요.' }
 ];
 
+
+/**
+ * 줄바꿈 배치 (2026-11-22) — 성래 님 실측: 한 줄 22~44자 · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만.
+ * 종전 자동화는 모든 줄 사이에 빈 줄을 넣어 모바일에서 두 배로 벌어졌다.
+ */
+function judgeLineLayout(m, t) {
+  const body = String(m.body || '');
+  const groups = toGroups(body);
+  const lines = proseLines(body);
+  if (!lines.length) return st('warn', '—', '본문을 넣어 주세요');
+  const lineMax = Number(t.layout_line_max) > 0 ? Number(t.layout_line_max) : RHYTHM.blockMax;
+  const blankMax = Number(t.layout_blank_ratio_max) > 0 ? Number(t.layout_blank_ratio_max) : RHYTHM.blankRatioMax;
+  const over = lines.filter((l) => chars(l) > lineMax).length;
+  const kinds = groups.map(groupKind);
+  const infoGap = kinds.filter((k, i) => i > 0 && k === 'info' && kinds[i - 1] === 'info').length;
+  const orphans = groups.filter((g, i) => g.length === 1 && kinds[i] === 'prose').length;
+  const allLines = body.replace(/\r\n?/g, '\n').split('\n');
+  const blankRatio = allLines.length ? allLines.filter((l) => !l.trim()).length / allLines.length : 0;
+  const bad = [];
+  if (over) bad.push(lineMax + '자 초과 ' + over + '줄');
+  if (infoGap) bad.push('정보 줄이 빈 줄로 끊김 ' + infoGap + '곳');
+  if (lines.length >= 8 && blankRatio > blankMax) bad.push('빈 줄 ' + Math.round(blankRatio * 100) + '%');
+  if (lines.length >= 6 && orphans >= 2) bad.push('한 줄 덩어리 ' + orphans + '개');
+  if (!bad.length) return st('pass', groups.length + '덩어리', '덩어리 ' + groups.length + '개 · 줄 ' + lines.length + '개');
+  if (bad.length === 1) return st('near', bad[0], '줄을 붙여 덩어리로 만들면 한 번에 해결됩니다');
+  return st('warn', bad.slice(0, 2).join(' · '), '한 줄 ' + lineMax + '자 이내 · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만.');
+}
+
 const JUDGES = {
   title_front: judgeTitleFront,
   title_len: judgeTitleLen,
@@ -268,6 +298,7 @@ const JUDGES = {
   photo_density: judgePhotoDensity,
   line_rhythm: judgeLineRhythm,
   short_lines: judgeShortLines,
+  line_layout: judgeLineLayout,
   hashtags: judgeHashtags
 };
 

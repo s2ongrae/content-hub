@@ -24,7 +24,15 @@ export const RHYTHM = {
   oneLineMax: 20,       // 1줄 블록 기준
   oneLineRatio: 0.20,   // 1줄 블록 허용 비율
   oneLineRunMax: 2,     // 같은 1줄 연속 허용 개수(3연속부터 경고)
-  emojiRatio: 0.10      // 이모지 블록 허용 비율
+  emojiRatio: 0.10,     // 이모지 블록 허용 비율
+  // 2026-11-22 — 덩어리(빈 줄로 나뉘는 묶음) 규칙. 실측: 성래 님 발행글 108문단 / 27덩어리.
+  groupMin: 2,          // 덩어리 최소 줄 수(고아 1줄 덩어리는 앞 덩어리에 붙인다)
+  groupMergeTo: 3,      // 고아 1줄 덩어리를 붙일 때 목표 줄 수
+  groupMax: 5,          // 덩어리 최대 줄 수
+  infoGroupMax: 6,      // 정보 줄(📍⏰🚗)·캡션 덩어리 최대 줄 수
+  blankRatioMax: 0.5,   // 빈 줄 비율 상한(전체 줄 대비) — 넘으면 '빈 줄 과다'
+  descTitleMax: 32,     // 클립·쇼츠·릴스 첫 줄(제목) 상한 — 모바일 피드에서 잘리지 않는 길이
+  descLineMax: 54       // 설명란 한 줄 상한
 };
 
 /** 톤 프리셋 3종 — 문장 규칙은 화면 힌트·프롬프트에 쓴다. */
@@ -68,12 +76,55 @@ export function isEmojiBlock(text) {
   return EMOJI_RE.test(String(text || ''));
 }
 
-/** 블록을 빈 줄 기준으로 나눈다(키트·본문 공통). */
-export function toBlocks(text) {
+/** 정보 줄 머리 — 이 줄들로만 된 덩어리는 '정보 카드'라서 안에 빈 줄을 넣지 않는다. */
+export const INFO_HEAD_RE = /^(?:📍|⏰|🚗|💰|📞|☎|📌|✔|🕘|🕐|🕒|🅿|⏳|🍴|🚙|🎟)/u;
+/** 사진 캡션 머리(▲/△). */
+export const CAPTION_HEAD_RE = /^(?:▲|△)/u;
+/** 해시태그만 있는 줄 — 마지막 덩어리 하나로 둔다. */
+export const HASHTAG_LINE_RE = /^#[^\s#]+(?:\s+#[^\s#]+)*$/u;
+/** 사진 자리표시( [사진 1] · ![캡션](경로) ) — 덩어리 병합을 막는다. */
+export const PHOTO_MARK_RE = /^(?:\[(?:사진|📸)[^\]]*\]|!\[[^\]]*\]\([^)]*\))$/u;
+
+/**
+ * 빈 줄 기준 '덩어리'로 나눈다 — 덩어리 안의 줄 배열을 돌려준다.
+ *   toBlocks(줄 단위)와 달리 **원문의 빈 줄 구분을 살린다**.
+ *   예) "줄1\n줄2\n\n줄3" → [["줄1","줄2"], ["줄3"]]
+ */
+export function toGroups(text) {
   return String(text == null ? '' : text)
     .replace(/\r\n?/g, '\n')
     .split(/\n{2,}/)
-    .map((b) => b.replace(/^\n+|\n+$/g, '').trim())
+    .map((g) => g.split('\n').map((l) => l.trim()).filter((l) => l.length))
+    .filter((g) => g.length);
+}
+
+/** 덩어리 성격 — info · caption · hashtag · heading · photo · prose */
+export function groupKind(lines) {
+  const list = Array.isArray(lines) ? lines : [lines];
+  const first = String(list[0] || '').trim();
+  if (PHOTO_MARK_RE.test(first)) return 'photo';
+  if (CAPTION_HEAD_RE.test(first)) return 'caption';
+  if (list.length === 1 && HASHTAG_LINE_RE.test(first)) return 'hashtag';
+  if (list.every((l) => INFO_HEAD_RE.test(String(l).trim()))) return 'info';
+  if (list.length === 1 && (/^\*\*[^*].*\*\*$/.test(first) || /^#{1,6}\s/.test(first))) return 'heading';
+  return 'prose';
+}
+
+/** 덩어리 안에 있어도 되는 줄 수(성격별). */
+function groupCap(kind) {
+  return (kind === 'info' || kind === 'caption') ? RHYTHM.infoGroupMax : RHYTHM.groupMax;
+}
+
+/**
+ * '줄(문단)' 단위로 나눈다 — 네이버 에디터의 문단과 1:1.
+ *   2026-11-22: 빈 줄은 **덩어리 경계**만 뜻하게 되었다. 통계·분할은 줄 단위로 센다.
+ *   (덩어리는 toGroups 로 따로 읽는다)
+ */
+export function toBlocks(text) {
+  return String(text == null ? '' : text)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((b) => b.trim())
     .filter((b) => b.length);
 }
 
@@ -160,28 +211,29 @@ export function splitLongBlock(block, max) {
   return out;
 }
 
-/** 블록 안의 줄바꿈을 공백으로 — 블록 내 \n 0개 규칙. */
+/** 줄 단위로 정리한다(줄 안의 중복 공백만 제거). 줄바꿈은 살린다 — 덩어리 구조가 곧 호흡이다. */
 export function flattenBlocks(text) {
-  return toBlocks(text).map((b) => b.replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim());
+  return toBlocks(text).map((b) => b.replace(/\s{2,}/g, ' ').trim());
 }
 
-/** 문단 첫머리의 AI 칼럼투를 떼고, 남은 hit 는 경고로 돌려준다. */
+/** 줄 첫머리의 AI 칼럼투를 떼고, 남은 hit 는 경고로 돌려준다. 줄·빈 줄 구조는 그대로 둔다. */
 export function stripBanWords(text) {
   const removed = [];
   const hits = [];
-  const blocks = toBlocks(text).map((b) => {
-    let out = b;
+  const lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n').map((line) => {
+    if (!line.trim()) return line;
+    let out = line;
     AI_COLUMN_BAN.forEach((w) => {
-      if (out.startsWith(w)) {
-        out = out.slice(w.length).replace(/^[\s,·:]/, '');
+      if (out.trim().startsWith(w)) {
+        out = out.replace(w, '').replace(/^[\s,·:]/, '');
         removed.push(w);
       } else if (out.indexOf(w) >= 0) {
         hits.push(w);
       }
     });
     return out;
-  }).filter((b) => b.length);
-  return { text: blocks.join('\n\n'), removed, hits };
+  });
+  return { text: lines.join('\n'), removed, hits };
 }
 
 /** 1줄 블록이 3연속이면 앞 두 개를 붙인다(붙여도 44자 이내일 때만). */
@@ -234,22 +286,52 @@ export function rhythmStats(text) {
 }
 
 /**
- * 본문을 2줄 호흡으로 정리한다.
- *  ① 블록 내 \n 제거 → ② AI 칼럼투 제거 → ③ 55자↑ 분할 → ④ 1줄 3연속 병합
- * 돌려주는 값: { text, blocks, stats, issues, removed, hits }
+ * 본문을 2줄 호흡 + 덩어리로 정리한다.
+ *  ① 덩어리(빈 줄) 경계를 살린다 → ② 블록 내 \n 제거 → ③ AI 칼럼투 제거
+ *  ④ 54자↑ 줄 분할 → ⑤ 덩어리 상한(일반 5줄·정보/캡션 6줄) → ⑥ 고아 1줄 덩어리를 앞 덩어리에 병합
+ * 돌려주는 값: { text, groups, kinds, blocks, stats, issues, removed, hits }
  */
 export function applyBlogRhythm(text) {
   const stripped = stripBanWords(String(text == null ? '' : text));
-  const flat = flattenBlocks(stripped.text);
-  const split = [];
-  flat.forEach((b) => { splitLongBlock(b).forEach((x) => split.push(x)); });
-  const merged = mergeShortRuns(split);
-  const out = merged.join('\n\n');
+  const chunks = [];
+  toGroups(stripped.text).forEach((g) => {
+    const kind = groupKind(g);
+    const lines = [];
+    g.forEach((raw) => {
+      const line = String(raw).replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim();
+      if (!line) return;
+      if (line.length > RHYTHM.blockMax) splitLongBlock(line, RHYTHM.blockMax).forEach((x) => lines.push(x));
+      else lines.push(line);
+    });
+    const cap = groupCap(kind);
+    for (let i = 0; i < lines.length; i += cap) chunks.push({ kind, lines: lines.slice(i, i + cap) });
+  });
+
+  // 고아 1줄 덩어리(본문·정보)는 앞 덩어리에 붙인다 — 빈 줄 과다 교정(성래 님 실측: 덩어리 2~5줄).
+  const out = [];
+  chunks.forEach((cur) => {
+    const prev = out[out.length - 1];
+    const joinable = prev && cur.kind === prev.kind && (cur.kind === 'prose' || cur.kind === 'info')
+      && prev.lines.length < Math.min(groupCap(prev.kind), RHYTHM.groupMergeTo)
+      && cur.lines.length <= RHYTHM.groupMin
+      && prev.lines.length + cur.lines.length <= groupCap(prev.kind);
+    if (joinable) {
+      prev.lines = prev.lines.concat(cur.lines);
+      return;
+    }
+    out.push({ kind: cur.kind, lines: cur.lines.slice() });
+  });
+
+  const groups = out.map((g) => g.lines);
+  const textOut = groups.map((g) => g.join('\n')).join('\n\n');
+  const lines = groups.reduce((acc, g) => acc.concat(g), []);
   return {
-    text: out,
-    blocks: merged,
-    stats: rhythmStats(out),
-    issues: lintRhythm(out),
+    text: textOut,
+    groups,
+    kinds: out.map((g) => g.kind),
+    blocks: lines,
+    stats: rhythmStats(textOut),
+    issues: lintRhythm(textOut),
     removed: stripped.removed,
     hits: stripped.hits
   };
@@ -258,9 +340,17 @@ export function applyBlogRhythm(text) {
 /** 발행 전 점검 — 고칠 것이 없으면 빈 배열. */
 export function lintRhythm(text) {
   const issues = [];
-  const s = rhythmStats(text);
-  const blocks = flattenBlocks(text);
-  const innerNewlines = toBlocks(String(text || '')).filter((b) => b.indexOf('\n') >= 0).length;
+  const raw = String(text || '');
+  const s = rhythmStats(raw);
+  const blocks = flattenBlocks(raw);
+  const groups = toGroups(raw);
+  const kinds = groups.map(groupKind);
+  const lines = groups.reduce((acc, g) => acc.concat(g), []);
+  const blankRun = (raw.match(/\n{3,}/g) || []).length;
+  // 빈 줄 비율 = 빈 줄 수 ÷ 전체 줄(빈 줄 포함) — 50%를 넘으면 '한 줄 걸러 빈 줄' 상태
+  const allLines = raw.replace(/\r\n?/g, '\n').split('\n');
+  const blankLines = allLines.filter((l) => !l.trim()).length;
+  const blankRatio = allLines.length ? blankLines / allLines.length : 0;
   if (!s.blocks) return [{ code: 'empty', level: 'warn', text: '본문이 비었습니다' }];
   if (s.oneLineRatio > RHYTHM.oneLineRatio) {
     issues.push({
@@ -272,10 +362,39 @@ export function lintRhythm(text) {
     issues.push({ code: 'one_line_run', level: 'warn', text: '1줄 문단 ' + s.oneLineRunMax + '연속 — 시처럼 보입니다' });
   }
   if (s.overMax > 0) {
-    issues.push({ code: 'over_max', level: 'warn', text: '3줄 초과 문단 ' + s.overMax + '개 — 54자 넘음' });
+    issues.push({ code: 'over_max', level: 'warn', text: '54자 초과 문단 ' + s.overMax + '개 — 문장을 둘로 나누세요' });
   }
-  if (innerNewlines > 0) {
-    issues.push({ code: 'inner_newline', level: 'warn', text: '문단 안 줄바꿈 ' + innerNewlines + '곳 — 한 생각은 이어 쓰세요' });
+  if (blankRun > 0) {
+    issues.push({ code: 'blank_run', level: 'warn', text: '빈 줄 ' + (blankRun + 1) + '줄 연속 ' + blankRun + '곳 — 빈 줄은 한 줄만' });
+  }
+  if (lines.length >= 8 && blankRatio > RHYTHM.blankRatioMax) {
+    issues.push({
+      code: 'blank_ratio', level: 'warn',
+      text: '빈 줄 비율 ' + Math.round(blankRatio * 100) + '% — 한 줄씩 빈 줄이 들어갔습니다(줄을 붙여 덩어리로)'
+    });
+  }
+  // 정보 줄·캡션 줄이 빈 줄로 끊겼는가 — 붙여야 하는 덩어리
+  const splitInfo = kinds.filter((k, i) => i > 0 && k === 'info' && kinds[i - 1] === 'info').length;
+  const splitCap = kinds.filter((k, i) => i > 0 && k === 'caption' && kinds[i - 1] === 'caption').length;
+  if (splitInfo > 0) issues.push({ code: 'info_gap', level: 'warn', text: '정보 줄이 빈 줄로 ' + splitInfo + '번 끊겼습니다 — 📍⏰🚗는 한 덩어리로 붙이세요' });
+  if (splitCap > 0) issues.push({ code: 'caption_gap', level: 'warn', text: '▲ 캡션이 빈 줄로 ' + splitCap + '번 끊겼습니다 — 한 덩어리로' });
+  // 고아 1줄 덩어리(본문) 연속
+  let orphanRun = 0;
+  let orphanRunMax = 0;
+  let orphanTotal = 0;
+  groups.forEach((g, i) => {
+    const k = kinds[i];
+    if (g.length === 1 && k === 'prose') {
+      orphanTotal++; orphanRun++; orphanRunMax = Math.max(orphanRunMax, orphanRun);
+    } else orphanRun = 0;
+  });
+  if (lines.length >= 6 && orphanRunMax >= 2) {
+    issues.push({ code: 'orphan_group', level: 'warn', text: '한 줄짜리 덩어리 ' + orphanTotal + '개 — 앞뒤 줄과 붙여 2~5줄 덩어리로' });
+  }
+  // 덩어리 상한 초과
+  const bigGroups = groups.filter((g, i) => g.length > groupCap(kinds[i])).length;
+  if (bigGroups > 0) {
+    issues.push({ code: 'group_over', level: 'warn', text: '덩어리 상한(' + RHYTHM.groupMax + '줄) 초과 ' + bigGroups + '개 — 덩어리를 나누세요' });
   }
   const hits = [];
   blocks.forEach((b) => AI_COLUMN_BAN.forEach((w) => { if (b.indexOf(w) >= 0) hits.push(w); }));
@@ -291,11 +410,27 @@ export function lintRhythm(text) {
 /** 프롬프트·화면에 그대로 넣는 규칙 문장(한 곳에서만 고친다). */
 export function rhythmPromptLines() {
   return [
-    '문단(블록) 하나 = 모바일 2줄: 22~44자(상한 54자). 넘으면 문장부호 뒤에서 나눈다.',
-    '문단 안 줄바꿈 금지. 문단 사이는 빈 줄 하나.',
-    '1줄(20자 이하) 문단은 전체 20% 이내, 3연속 금지.',
+    '한 줄 = 한 문장: 22~44자(상한 ' + RHYTHM.blockMax + '자). 넘으면 . ? ! 뒤에서 나누고 숫자+단위·괄호는 자르지 않는다.',
+    '2~4줄(최대 ' + RHYTHM.groupMax + '줄)을 빈 줄 없이 붙여 한 덩어리로 쓴다. 빈 줄은 **덩어리 사이에만 한 줄**.',
+    '📍⏰🚗💰 정보 줄과 ▲ 사진 캡션은 각각 한 덩어리로 붙인다(안에 빈 줄 금지, 최대 ' + RHYTHM.infoGroupMax + '줄).',
+    '한 줄짜리 덩어리를 연달아 두지 않는다(해시태그·소제목·인용구는 예외).',
+    '1줄(' + RHYTHM.oneLineMax + '자 이하) 줄은 전체 20% 이내, 3연속 금지.',
     '숫자+단위(1억 1,300만 원·-3.5%)·고유명사(성심당·대전 트램)·괄호·따옴표 안은 자르지 않는다.',
-    '금지 문구: ' + AI_COLUMN_BAN.slice(0, 8).join(' · ') + ' 등 AI 칼럼투.',
-    '사진 캡션은 "▲ 한 줄", 이모지는 소제목·정보 카드에만.'
+    '해시태그는 마지막 줄에 한 덩어리로.',
+    '금지 문구: ' + AI_COLUMN_BAN.slice(0, 8).join(' · ') + ' 등 AI 칼럼투.'
+  ];
+}
+
+/**
+ * 설명란(클립·쇼츠·릴스) 프롬프트 문장 — 5블록 구조.
+ * 확정: 성래 님 클립 설명 수정본(2026-11-22) + 제미니 협의(2026-11-22).
+ */
+export function descPromptLines() {
+  return [
+    '설명란은 5블록: ① 제목(' + RHYTHM.descTitleMax + '자 이내) ② 요약 1문장 ③ 정보(한 줄에 한 항목) ④ 행동 유도 2줄 ⑤ 해시태그 1줄.',
+    '블록 사이에만 빈 줄 1개, 블록 안은 줄바꿈 1개. 줄글 덩어리(: 한 문단에 세 문장 이상)로 쓰지 않는다.',
+    '정보 줄은 영업시간·주소·주차를 각각 한 줄로. 주소는 도로명+건물번호까지만(호수는 뺀다).',
+    '네이버 클립은 이모지 없이 담백하게, 유튜브 쇼츠·인스타 릴스는 정보 줄에 📍(주소)·⏰(영업)·🚗(주차)만 붙인다.',
+    '한 줄은 ' + RHYTHM.descLineMax + '자 이하. 마무리는 저장·방문 유도 두 줄.'
   ];
 }

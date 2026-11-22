@@ -737,7 +737,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const splitOne = T.splitLongBlock(longOne);
     ok('톤: 3줄(55자↑) 문단을 2줄로 나눈다', splitOne.length >= 2 && splitOne.every((x) => x.length <= T.RHYTHM.blockMax), splitOne.map((x) => x.length));
     ok('톤: 숫자+단위는 자르지 않는다', T.isProtectedCut('원금 1억 1,300만 원이 반토막', '원금 1억 1,300만 원이 반토막'.indexOf(',', 0)) === true);
-    ok('톤: 문단 안 줄바꿈을 없앤다', T.flattenBlocks('가나다\n라마바\n\n사아자').join('|') === '가나다 라마바|사아자');
+    ok('톤: 줄 안 공백만 정리하고 줄바꿈(덩어리)은 살린다', T.flattenBlocks('가나다\n라마바\n\n사아자').join('|') === '가나다|라마바|사아자');
     ok('톤: AI 칼럼투를 문단 첫머리에서 뗀다', T.stripBanWords('결론부터 말씀드리자면 계좌가 반토막 났습니다.').removed[0] === '결론부터 말씀드리자면' && T.stripBanWords('결론부터 말씀드리자면 계좌가 반토막 났습니다.').text.indexOf('결론부터') < 0);
     const fixed = T.applyBlogRhythm('오늘 하루에만\n계좌에서 205만 원이 증발했다.\n\n' + longOne);
     ok('톤: 정리하면 1줄 3연속이 사라지고 상한을 넘는 문단이 없다', fixed.stats.oneLineRunMax <= 2 && fixed.stats.overMax === 0, fixed.stats);
@@ -810,7 +810,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       /* 린터 통합 — 8항목 점수에 섞이지 않는다 */
       const lb = BL.lintBlog({ title: '[봉명동 삼겹살] 미미삼겹 유성점 솔직후기', body: goodBody, keywords: '봉명동맛집,삼겹살', photoCount: 18 });
       ok('린터: aiTone·hold 를 함께 돌려준다', !!lb.aiTone && typeof lb.hold === 'boolean' && !!lb.aiTone.dia && !!lb.aiTone.keywords);
-      ok('린터: 항목 수는 그대로(8 + 링크 3) — AI 티는 점수 밖', lb.items.length === 11 && lb.items.filter((i) => i.weight > 0).length === 8);
+      ok('린터: 항목 수(9 + 링크 3) — AI 티는 점수 밖', lb.items.length === 12 && lb.items.filter((i) => i.weight > 0).length === 9, lb.items.length);
       ok('린터: 8항목 점수는 AI 티와 무관', lb.score === Math.round(lb.items.reduce((s, it) => s + (it.state === 'pass' ? it.weight : it.state === 'near' ? it.weight / 2 : 0), 0)));
       ok('린터: AI 티가 치명적이면 hold 로 알린다',
         BL.lintBlog({ title: '삼겹살 맛집 고르는 방법', body: cliche }).hold === true);
@@ -1392,6 +1392,68 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('이미 불러오는 중이면 기다렸다 다시 그린다(0건 오표시 방지)', /if \(stale\) \{/.test(avsrc) && /cache\.loading \? waitAnalytics\(\)/.test(avsrc) && /export function waitAnalytics/.test(avsrc));
   } catch (err) {
     ok('쇼츠 3지표 진단 시험', false, (err && err.stack) || err);
+  }
+
+  /* ⑦ 줄바꿈 규칙 — 덩어리(블로그) + 5블록(클립·쇼츠·릴스) (2026-11-22) */
+  console.log('[7] 줄바꿈 규칙 (덩어리 · 설명란 5블록)');
+  try {
+    const imp = (f) => import('file://' + path.join(ROOT, 'js', f));
+    const tone = await imp('blogTone.js');
+    const desc = await imp('channelDesc.js');
+
+    /* 빈 줄 기준 덩어리 읽기 */
+    const g1 = tone.toGroups('줄1\n줄2\n\n줄3');
+    ok('toGroups: 덩어리 2개', g1.length === 2 && g1[0].length === 2 && g1[1].length === 1, g1);
+
+    /* 성격 판정 — 정보·캡션·해시태그 */
+    ok('정보 줄 덩어리 = info', tone.groupKind(['📍 위치 : 대전', '⏰ 영업 : 15:00']) === 'info');
+    ok('▲ 캡션 덩어리 = caption', tone.groupKind(['▲ 노란 간판', '유리문에 분필']) === 'caption');
+    ok('해시태그 한 줄 = hashtag', tone.groupKind(['#대전맛집 #진미오겹살']) === 'hashtag');
+
+    /* 1줄=1덩어리로 벌어진 초안을 2~5줄 덩어리로 접는다(이번 사고의 핵심) */
+    const spread = ['가게 앞에 줄이 길었다', '평일 저녁인데도 만석이었다', '대기 명단에 이름을 적었다', '삼십 분쯤 기다려 들어갔다'].join('\n\n');
+    const fixed = tone.applyBlogRhythm(spread);
+    ok('빈 줄 과다 → 덩어리로 묶인다', fixed.groups.length < 4 && fixed.groups.every((g) => g.length <= tone.RHYTHM.groupMax), fixed.groups);
+    ok('덩어리 사이만 빈 줄', fixed.text.split('\n\n').length === fixed.groups.length);
+    ok('고친 뒤 빈 줄 경고가 사라진다', !tone.lintRhythm(fixed.text).some((i) => i.code === 'blank_ratio'), tone.lintRhythm(fixed.text).map((i) => i.code));
+
+    /* 정보 줄은 안에서 끊지 않는다 */
+    const infoSplit = '📍 위치 : 대전 서구 용문로 41-80\n\n⏰ 영업 : 15:00~24:00\n\n🚗 주차 : 지하 2시간';
+    const infoFixed = tone.applyBlogRhythm(infoSplit);
+    ok('📍⏰🚗 는 한 덩어리로 붙는다', infoFixed.groups.length === 1 && infoFixed.groups[0].length === 3, infoFixed.groups);
+    ok('정보 줄이 끊긴 원문은 lint 가 잡는다', tone.lintRhythm(infoSplit).some((i) => i.code === 'info_gap'));
+
+    /* 설명란 5블록 — 성래 님이 손으로 고친 클립 문안 그대로 */
+    const runon = '대전 괴정동 손 까딱 안 하고 먹는 진미오겹살 | 계란찜까지 두툼한 제주 오겹살을 처음부터 끝까지 직원이 다 구워주는 괴정동 진미오겹살 본점입니다. 매일 15:00~24:00, 대전 서구 용문로 41-80 103·104호. 부풀어 오른 계란찜까지 꼭 같이 주문해 보세요. 저장해 두고 오늘 밤 달려가세요! #오늘클립챌린지 #대전맛집 #괴정동맛집 #진미오겹살 #대전오겹살';
+    const clip = desc.normalizeDesc(runon, 'clip');
+    const clipBlocks = tone.toGroups(clip);
+    ok('클립 설명 = 5블록', clipBlocks.length === 5, clipBlocks);
+    ok('클립 정보 줄은 한 줄에 하나', clipBlocks[2].length === 2 && clipBlocks[2][0].indexOf('15:00') >= 0, clipBlocks[2]);
+    ok('클립 주소에서 호수를 뺀다', clip.indexOf('103·104호') < 0 && clip.indexOf('41-80') >= 0);
+    ok('클립은 이모지를 쓰지 않는다', !/[📍⏰🚗]/.test(clip));
+    ok('해시태그는 마지막 블록', /^#/.test(clipBlocks[clipBlocks.length - 1][0]));
+    ok('5블록으로 접은 뒤 lint 통과', desc.lintDesc(clip, 'clip').length === 0, desc.lintDesc(clip, 'clip'));
+
+    /* 쇼츠·릴스는 정보 줄에 📍⏰🚗 */
+    const shorts = desc.normalizeDesc(runon, 'shorts');
+    ok('쇼츠 정보 줄에 이모지', shorts.indexOf('⏰') >= 0 && shorts.indexOf('📍') >= 0, shorts);
+    ok('빈 줄 덩어리 원문은 run_on 으로 잡는다', desc.lintDesc(runon, 'clip').some((i) => i.code === 'run_on'));
+
+    /* buildDesc — 제목이 상한을 넘으면 린터가 알린다 */
+    const longTitle = desc.buildDesc({ channel: 'clip', title: '대전 괴정동 진미오겹살 직원이 다 구워주는 집 후기 정말 좋았습니다', summary: '요약 한 문장입니다.', hashtags: ['#대전맛집'] });
+    ok('긴 제목은 title_long 경고', desc.lintDesc(longTitle, 'clip').some((i) => i.code === 'title_long'), longTitle);
+
+    /* 시드 규칙 파일과 모듈 값이 어긋나지 않는다 */
+    const seedDesc = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'channel_desc_rules_2026w48.json'), 'utf8'));
+    ok('시드 채널 한도 = 모듈 한도', ['clip', 'shorts', 'reels'].every((c) => seedDesc.channels[c].title_max === desc.DESC_RULES[c].titleMax && seedDesc.channels[c].chars_max === desc.DESC_RULES[c].charsMax), seedDesc.channels);
+    ok('시드 줄 상한 = 모듈 줄 상한', seedDesc.layout.desc_line_max === tone.RHYTHM.descLineMax && seedDesc.layout.group_max === tone.RHYTHM.groupMax);
+
+    /* 린터 항목 가중치 합 100 */
+    const seedLint = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'blog_lint_rules_2026w48.json'), 'utf8'));
+    const wsum = seedLint.rules.reduce((a, r) => a + Number(r.weight || 0), 0);
+    ok('블로그 린터 가중치 합 100 (줄바꿈 항목 포함)', wsum === 100 && seedLint.rules.some((r) => r.id === 'line_layout'), wsum);
+  } catch (err) {
+    ok('줄바꿈 규칙 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

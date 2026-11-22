@@ -1,6 +1,6 @@
 {
   "version": "2026w48",
-  "updated_at": "2026-11-18",
+  "updated_at": "2026-11-22",
   "source": "downloads/대전블로그_상위노출_벤치마킹_20261118.md §6-3·6-4 — 네이버 블로그 관련도순 상위 24건 실측(2026-11-18 12:00)",
   "note": "웹앱(js/blogLint.js)과 파이썬 CLI(tools/blog_lint_cli.py)가 같이 읽는 데이터입니다. 점수 가중치 합은 100입니다.",
   "benchmark": {
@@ -17,34 +17,96 @@
       "hashtags": 5
     },
     "ours_before": {
-      "content_ids": ["224480755004", "224459297302"],
-      "chars": [2764, 2999],
-      "photos": [15, 14],
-      "chars_per_photo": [184, 214],
-      "avg_paragraph_chars": [25.8, 29.7],
-      "short_lines": [37, 32],
-      "hashtags": [13, 0]
+      "content_ids": [
+        "224480755004",
+        "224459297302"
+      ],
+      "chars": [
+        2764,
+        2999
+      ],
+      "photos": [
+        15,
+        14
+      ],
+      "chars_per_photo": [
+        184,
+        214
+      ],
+      "avg_paragraph_chars": [
+        25.8,
+        29.7
+      ],
+      "short_lines": [
+        37,
+        32
+      ],
+      "hashtags": [
+        13,
+        0
+      ]
     }
   },
   "targets": {
     "title_window": 14,
-    "title_len": [26, 45],
+    "title_len": [
+      26,
+      45
+    ],
     "first_screen_chars": 400,
-    "body_len": [1700, 2300],
-    "body_warn": [1500, 2500],
+    "body_len": [
+      1700,
+      2300
+    ],
+    "body_warn": [
+      1500,
+      2500
+    ],
     "photos_min": 16,
-    "chars_per_photo": [85, 130],
+    "chars_per_photo": [
+      85,
+      130
+    ],
     "chars_per_photo_max": 140,
     "avg_line_max": 20,
     "short_lines_min": 60,
     "short_lines_warn": 50,
-    "hashtag_count": [8, 14],
+    "hashtag_count": [
+      8,
+      14
+    ],
     "hashtag_warn_over": 15,
     "core_tags_required": 3,
-    "short_line_max_chars": 16
+    "short_line_max_chars": 16,
+    "layout_line_max": 54,
+    "layout_blank_ratio_max": 0.5,
+    "layout_group_max": 5,
+    "layout_info_group_max": 6
   },
-  "coreTags": ["대전맛집", "유성맛집", "봉명동맛집"],
-  "titleLexicon": ["대전", "유성", "봉명동", "어은동", "궁동", "온천", "관평동", "둔산", "삼겹살", "칼국수", "고기", "맛집", "술집", "해장", "제육", "혼밥", "주차"],
+  "coreTags": [
+    "대전맛집",
+    "유성맛집",
+    "봉명동맛집"
+  ],
+  "titleLexicon": [
+    "대전",
+    "유성",
+    "봉명동",
+    "어은동",
+    "궁동",
+    "온천",
+    "관평동",
+    "둔산",
+    "삼겹살",
+    "칼국수",
+    "고기",
+    "맛집",
+    "술집",
+    "해장",
+    "제육",
+    "혼밥",
+    "주차"
+  ],
   "aiTone": {
     "version": "2026w48",
     "source": "downloads/스레드_꿀팁_수집_및_제미니_디벨롭_20261121.md §1-3(B2·B3·B6) · §3-2 · §4-3·4",
@@ -60,8 +122,15 @@
     "heading_spread_max": 4,
     "first_person_min": 2,
     "over_polite_max": 4,
-    "first_person_min_by_preset": { "jajo": 1, "review": 2, "info": 1 },
-    "keyword_count": [3, 5],
+    "first_person_min_by_preset": {
+      "jajo": 1,
+      "review": 2,
+      "info": 1
+    },
+    "keyword_count": [
+      3,
+      5
+    ],
     "keyword_fail": 6,
     "regex": {
       "first_person": "(?<![가-힣])(?:나|내|제|저|우리)(?=[는가도만한걸게에선를의]|[\\s,.!?~…]|$)",
@@ -77,22 +146,91 @@
       "dia_conclusion": "(?:추천|비추|재방문|또 갈|다시 갈|괜찮|좋았|만족|아쉬|결론|정리|총평|한 줄|다음에|다음엔|또 오)"
     },
     "patterns": [
-      { "id": "generic_intro", "no": 1, "label": "일반론 서론", "judge": "앞 150자에 1인칭·숫자·고유명사가 0개", "warn": "WARN", "fix": "첫 150자에 내 경험(1인칭)이나 숫자·장소명을 하나 넣으세요. 인사말·일반론 3문장은 지웁니다." },
-      { "id": "symmetric_headings", "no": 2, "label": "대칭 소제목", "judge": "소제목 3개↑ · 글자수 편차 ±2자 또는 같은 어미 100%", "warn": "WARN", "fix": "소제목 하나를 질문이나 단언으로 바꾸고 길이를 들쭉날쭉하게 두세요." },
-      { "id": "cliche_ending", "no": 3, "label": "결말 상투어", "judge": "마지막 2문단에 '도움이 되셨/기대해 봅니다/마치겠습니다' 류", "warn": "FAIL", "fix": "마지막 문단은 인사 대신 결론·다음 행동 한 줄로 끝내세요." },
-      { "id": "uniform_sentences", "no": 4, "label": "균일 문장 길이", "judge": "문장 길이 표준편차 SD < 6.0 (문장 8개 이상)", "warn": "WARN", "fix": "짧은 한 문장을 섞으세요. 3~5자 단문 하나가 AI 문체를 가장 크게 지웁니다." },
-      { "id": "no_numbers", "no": 5, "label": "수치 없는 주장", "judge": "숫자가 든 문단 비율 15% 미만 (문단 8개 이상)", "warn": "WARN", "fix": "가격·대기시간·영업시간 같은 숫자를 문단마다 하나씩 넣으세요." },
-      { "id": "first_person_absent", "no": 6, "label": "1인칭 부재", "judge": "경험 표현이 톤 프리셋 하한 미만", "warn": "WARN", "fix": "내가 본 것 한 줄을 넣으세요. 정보 정리 글은 1개면 충분합니다." },
-      { "id": "over_polite", "no": 7, "label": "과잉 친절", "judge": "'물론·다만·참고로·부담 없이' 4회 초과", "warn": "WARN", "fix": "양보·배려 접속사를 덜어내세요. 한 글에 두 번까지면 충분합니다." }
+      {
+        "id": "generic_intro",
+        "no": 1,
+        "label": "일반론 서론",
+        "judge": "앞 150자에 1인칭·숫자·고유명사가 0개",
+        "warn": "WARN",
+        "fix": "첫 150자에 내 경험(1인칭)이나 숫자·장소명을 하나 넣으세요. 인사말·일반론 3문장은 지웁니다."
+      },
+      {
+        "id": "symmetric_headings",
+        "no": 2,
+        "label": "대칭 소제목",
+        "judge": "소제목 3개↑ · 글자수 편차 ±2자 또는 같은 어미 100%",
+        "warn": "WARN",
+        "fix": "소제목 하나를 질문이나 단언으로 바꾸고 길이를 들쭉날쭉하게 두세요."
+      },
+      {
+        "id": "cliche_ending",
+        "no": 3,
+        "label": "결말 상투어",
+        "judge": "마지막 2문단에 '도움이 되셨/기대해 봅니다/마치겠습니다' 류",
+        "warn": "FAIL",
+        "fix": "마지막 문단은 인사 대신 결론·다음 행동 한 줄로 끝내세요."
+      },
+      {
+        "id": "uniform_sentences",
+        "no": 4,
+        "label": "균일 문장 길이",
+        "judge": "문장 길이 표준편차 SD < 6.0 (문장 8개 이상)",
+        "warn": "WARN",
+        "fix": "짧은 한 문장을 섞으세요. 3~5자 단문 하나가 AI 문체를 가장 크게 지웁니다."
+      },
+      {
+        "id": "no_numbers",
+        "no": 5,
+        "label": "수치 없는 주장",
+        "judge": "숫자가 든 문단 비율 15% 미만 (문단 8개 이상)",
+        "warn": "WARN",
+        "fix": "가격·대기시간·영업시간 같은 숫자를 문단마다 하나씩 넣으세요."
+      },
+      {
+        "id": "first_person_absent",
+        "no": 6,
+        "label": "1인칭 부재",
+        "judge": "경험 표현이 톤 프리셋 하한 미만",
+        "warn": "WARN",
+        "fix": "내가 본 것 한 줄을 넣으세요. 정보 정리 글은 1개면 충분합니다."
+      },
+      {
+        "id": "over_polite",
+        "no": 7,
+        "label": "과잉 친절",
+        "judge": "'물론·다만·참고로·부담 없이' 4회 초과",
+        "warn": "WARN",
+        "fix": "양보·배려 접속사를 덜어내세요. 한 글에 두 번까지면 충분합니다."
+      }
     ],
     "dia": {
       "label": "첫 400자 D.I.A.+",
       "elements": [
-        { "id": "question", "label": "질문·문제", "regex": "dia_question" },
-        { "id": "answer", "label": "답", "regex": "dia_answer" },
-        { "id": "condition", "label": "조건", "regex": "dia_condition" },
-        { "id": "target", "label": "대상", "regex": "dia_target" },
-        { "id": "conclusion", "label": "결론", "regex": "dia_conclusion" }
+        {
+          "id": "question",
+          "label": "질문·문제",
+          "regex": "dia_question"
+        },
+        {
+          "id": "answer",
+          "label": "답",
+          "regex": "dia_answer"
+        },
+        {
+          "id": "condition",
+          "label": "조건",
+          "regex": "dia_condition"
+        },
+        {
+          "id": "target",
+          "label": "대상",
+          "regex": "dia_target"
+        },
+        {
+          "id": "conclusion",
+          "label": "결론",
+          "regex": "dia_conclusion"
+        }
       ]
     }
   },
@@ -100,7 +238,7 @@
     {
       "id": "title_front",
       "label": "제목 앞배치",
-      "weight": 14,
+      "weight": 12,
       "pass": "앞 14자 안에 지역명 또는 메뉴명",
       "warn": "앞 14자에 지역·메뉴 없음",
       "fix": "제목 맨 앞에 [지역 + 메뉴]를 넣으세요. 예: [봉명동 삼겹살] 미미삼겹 …"
@@ -116,7 +254,7 @@
     {
       "id": "first_screen",
       "label": "첫 화면 정보",
-      "weight": 14,
+      "weight": 12,
       "pass": "본문 앞 400자에 주소·영업시간·전화 중 1개 이상",
       "warn": "앞 400자에 방문 팩트 없음",
       "fix": "도입 썰 3줄 뒤에 📍위치 ⏰영업 🚗주차 정보 카드를 바로 붙이세요."
@@ -124,7 +262,7 @@
     {
       "id": "body_len",
       "label": "본문 분량",
-      "weight": 12,
+      "weight": 11,
       "pass": "1,700~2,300자",
       "warn": "1,500자 미만·2,500자 초과",
       "fix": "정보를 늘리지 말고 덜어내세요. 감성 썰을 줄이고 사진으로 바꾸는 쪽이 빠릅니다."
@@ -132,7 +270,7 @@
     {
       "id": "photo_density",
       "label": "사진 밀도",
-      "weight": 14,
+      "weight": 12,
       "pass": "사진 16장 이상 · 사진 1장당 85~130자",
       "warn": "사진 16장 미만 또는 장당 140자 초과",
       "fix": "사진을 18~22장으로 늘리고 글자 덩어리를 95~120자 단위로 끊으세요."
@@ -140,7 +278,7 @@
     {
       "id": "line_rhythm",
       "label": "문단 호흡",
-      "weight": 12,
+      "weight": 11,
       "pass": "빈 줄 제외 평균 20자 이하",
       "warn": "평균 21자 초과",
       "fix": "한 줄에 한 정보만. 평균 15~18자로 끊으면 모바일 스크롤 리듬이 살아납니다."
@@ -148,7 +286,7 @@
     {
       "id": "short_lines",
       "label": "짧은 줄",
-      "weight": 12,
+      "weight": 11,
       "pass": "16자 이하 줄 60개 이상",
       "warn": "50개 미만",
       "fix": "짧은 줄을 65개 이상으로 늘리세요(가격·대기시간·단점은 한 줄씩)."
@@ -156,10 +294,19 @@
     {
       "id": "hashtags",
       "label": "해시태그",
-      "weight": 12,
+      "weight": 11,
       "pass": "8~14개 · 핵심 3개 포함",
       "warn": "15개 초과 또는 핵심 태그 빠짐",
       "fix": "10~12개로 유지하고 전부 본문·제목과 직접 연관된 키워드만 쓰세요(범용 태그는 스팸 필터 위험)."
+    },
+    {
+      "id": "line_layout",
+      "label": "줄바꿈 배치",
+      "weight": 10,
+      "pass": "한 줄 54자 이내 · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만",
+      "warn": "모든 줄 사이에 빈 줄(1줄=1덩어리) 또는 정보 줄이 끊김",
+      "fix": "한 줄 = 한 문장(22~44자). 2~5줄을 빈 줄 없이 붙여 덩어리로 만들고, 빈 줄은 덩어리 사이에만. 📍⏰🚗 정보 줄과 ▲ 캡션은 붙여서."
     }
-  ]
+  ],
+  "layout_source": "성래 님 클립 설명 수정본 + 발행 블로그 8편 DOM 실측(문단 108 / 덩어리 27) + 제미니 확정(2026-11-22)"
 }

@@ -84,10 +84,15 @@ const DIA_NEAR_AT = 3;   // 이만큼이면 주의
 
 export const cp = (s) => [...String(s == null ? '' : s)].length;
 
+/**
+ * 본문을 '줄(문단)' 단위로 나눈다 — 네이버 에디터의 문단과 1:1.
+ *   2026-11-22: 블로그 호흡을 '덩어리(빈 줄 묶음)'로 바꾸면서, AI 티 통계는 계속 줄 단위로
+ *   세도록 여기서는 한 줄 = 한 블록으로 나눈다(종전과 같은 분모를 유지한다).
+ */
 export function toBlocks(text) {
   return String(text == null ? '' : text)
     .replace(/\r\n?/g, '\n')
-    .split(/\n{2,}/)
+    .split('\n')
     .map((b) => b.trim())
     .filter(Boolean);
 }
@@ -96,7 +101,7 @@ export function toBlocks(text) {
 export function proseBlocks(text) {
   return toBlocks(text).filter((b) => !/^!\[[^\]]*\]\([^)]*\)$/.test(b)
     && !/^<\/?(img|br|div|p|figure|figcaption)\b/i.test(b)
-    && !/^\[사진\]/.test(b)
+    && !/^\[사진/.test(b)
     && !/^▲/.test(b));
 }
 

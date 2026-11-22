@@ -4,6 +4,12 @@
 ① 성래 님 **기존 발행글 8편 실측**(아래 §1, `m.blog.naver.com/youth-daejeon` HTML의 `se-text-paragraph` 직접 파싱)
 ② 제미니 고정방 「콘텐츠 허브 프로젝트 관리」 **확정안 A**(2026-11-21, `gemini.google.com/app/3cc80699c40a29c1`)
 
+
+> ⚠️ 2026-11-22 개정 — **덩어리(group) 규칙 추가.** 종전 v5 의 "문단 안 줄바꿈 금지 / 문단 사이 빈 줄"은
+> 모든 줄을 빈 줄로 띄워 모바일에서 두 배로 벌어지는 결과를 냈다(성래 님 지적, #46497).
+> 지금은 **한 줄 = 한 문장**, **2~5줄을 빈 줄 없이 붙여 덩어리**, **빈 줄은 덩어리 사이에만** 이다.
+> 확정 근거·수치·설명란 5블록은 `docs/LINE_BREAK_v1.md` 참고. (코드: `js/blogTone.js` §RHYTHM.group*)
+
 기계 판정은 `js/blogTone.js`(스튜디오·린터) 와 `hub-agent/notebook-agent/lib/draft.js`(초안 워커)가 같은 수치를 쓴다.
 v4(`BLOG_STANDARD_v4.md`)는 **정보 배치·사진 밀도·발행 리듬** 규칙으로 그대로 살아 있고, v5는 그 위에 **문장 호흡·말투**를 얹는다.
 

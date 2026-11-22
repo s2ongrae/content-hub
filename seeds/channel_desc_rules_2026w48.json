@@ -1,0 +1,25 @@
+{
+  "version": "2026w48b",
+  "updated_at": "2026-11-22",
+  "source": "성래 님 네이버 클립 설명 수정본(2026-11-22 15:2x) · 발행 블로그 8편 DOM 실측(문단 108 / 덩어리 27) · 제미니 협의 확정(2026-11-22)",
+  "note": "본문·설명란 줄바꿈 규칙. 웹앱(js/blogTone.js · js/channelDesc.js)과 파이썬 CLI(tools/blog_lint_cli.py · tools/channel_desc_cli.py)가 같이 읽습니다.",
+  "layout": {
+    "line_target": [22, 44],
+    "line_max": 54,
+    "group_min": 2,
+    "group_max": 5,
+    "info_group_max": 6,
+    "blank_ratio_max": 0.5,
+    "desc_title_max": 34,
+    "desc_line_max": 54
+  },
+  "info_emoji": { "hours": "⏰", "address": "📍", "parking": "🚗" },
+  "blocks": ["title", "summary", "info", "action", "hashtags"],
+  "channels": {
+    "clip": { "label": "네이버 클립", "title_max": 34, "chars_max": 3000, "emoji": false },
+    "shorts": { "label": "유튜브 쇼츠", "title_max": 34, "chars_max": 5000, "emoji": true },
+    "reels": { "label": "인스타 릴스", "title_max": 34, "chars_max": 2200, "emoji": true },
+    "ig_feed": { "label": "인스타 피드", "title_max": 34, "chars_max": 2200, "emoji": true },
+    "daangn": { "label": "당근 스토리", "title_max": 40, "chars_max": 1000, "emoji": true }
+  }
+}

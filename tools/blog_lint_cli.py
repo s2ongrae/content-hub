@@ -48,6 +48,10 @@ DEFAULT_TARGETS = {
     "hashtag_warn_over": 15,
     "core_tags_required": 3,
     "short_line_max_chars": 16,
+    "layout_line_max": 54,
+    "layout_blank_ratio_max": 0.5,
+    "layout_group_max": 5,
+    "layout_info_group_max": 6,
 }
 DEFAULT_CORE = ["대전맛집", "유성맛집", "봉명동맛집"]
 DEFAULT_LEXICON = [
@@ -55,6 +59,10 @@ DEFAULT_LEXICON = [
     "삼겹살", "칼국수", "고기", "맛집", "술집", "해장", "제육", "혼밥", "주차",
 ]
 
+INFO_HEAD_RE = re.compile("^(?:\U0001F4CD|\u23F0|\U0001F697|\U0001F4B0|\U0001F4DE|\u260E|\U0001F4CC|\u2714|\U0001F551|\U0001F550|\U0001F552|\U0001F17F|\u23F3|\U0001F374|\U0001F699|\U0001F39F)")
+CAPTION_HEAD_RE = re.compile(r"^(?:\u25B2|\u25B3)")
+HASHTAG_LINE_RE = re.compile(r"^#[^\s#]+(?:\s+#[^\s#]+)*$")
+PHOTO_MARK_RE = re.compile(r"^(?:\[(?:사진|\U0001F4F8)[^\]]*\]|!\[[^\]]*\]\([^)]*\))$")
 IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 HTML_ONLY_RE = re.compile(r"^</?(img|br|div|p|figure|figcaption)\b", re.I)
 TAG_RE = re.compile(r"#[^\s#.,!?()\[\]{}\"'<>]+")
@@ -119,6 +127,31 @@ def prose_lines(body: str) -> list[str]:
             continue
         out.append(line)
     return out
+
+
+def layout_groups(body: str) -> list[list[str]]:
+    """빈 줄 기준 덩어리 → 덩어리 안의 줄 배열(줄바꿈 배치 판정용)."""
+    out: list[list[str]] = []
+    for g in re.split(r"\n{2,}", str(body or "").replace("\r\n", "\n")):
+        lines = [l.strip() for l in g.split("\n") if l.strip()]
+        if lines:
+            out.append(lines)
+    return out
+
+
+def layout_kind(lines: list[str]) -> str:
+    first = lines[0].strip() if lines else ""
+    if PHOTO_MARK_RE.match(first):
+        return "photo"
+    if CAPTION_HEAD_RE.match(first):
+        return "caption"
+    if len(lines) == 1 and HASHTAG_LINE_RE.match(first):
+        return "hashtag"
+    if all(INFO_HEAD_RE.match(l.strip()) for l in lines):
+        return "info"
+    if len(lines) == 1 and (re.match(r"^\*\*[^*].*\*\*$", first) or re.match(r"^#{1,6}\s", first)):
+        return "heading"
+    return "prose"
 
 
 def photos_of(body: str, given: int | None) -> int:
@@ -223,6 +256,35 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
         if short >= t["short_lines_warn"]:
             return "near", f"{short}개", f"{t['short_lines_min'] - short}개 부족"
         return "warn", f"{short}개", f"{cap}자 이하 문단이 {short}개뿐 — 목표 {t['short_lines_min']}개"
+
+    if rule_id == "line_layout":
+        lines = prose_lines(body)
+        if not lines:
+            return "warn", "—", "본문을 넣어 주세요"
+        # 2026-11-22 성래 님 실측: 한 줄 22~44자(상한 54) · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만.
+        line_max = int(t.get("layout_line_max", 54))
+        blank_max = float(t.get("layout_blank_ratio_max", 0.5))
+        groups = layout_groups(body)
+        kinds = [layout_kind(g) for g in groups]
+        over = sum(1 for l in lines if len(l) > line_max)
+        info_gap = sum(1 for i, k in enumerate(kinds) if i > 0 and k == "info" and kinds[i - 1] == "info")
+        orphans = sum(1 for i, g in enumerate(groups) if len(g) == 1 and kinds[i] == "prose")
+        all_lines = str(body or "").replace("\r\n", "\n").split("\n")
+        blank_ratio = (sum(1 for l in all_lines if not l.strip()) / len(all_lines)) if all_lines else 0
+        bad = []
+        if over:
+            bad.append(f"{line_max}자 초과 {over}줄")
+        if info_gap:
+            bad.append(f"정보 줄이 빈 줄로 끊김 {info_gap}곳")
+        if len(lines) >= 8 and blank_ratio > blank_max:
+            bad.append(f"빈 줄 {round(blank_ratio * 100)}%")
+        if len(lines) >= 6 and orphans >= 2:
+            bad.append(f"한 줄 덩어리 {orphans}개")
+        if not bad:
+            return "pass", f"{len(groups)}덩어리", f"덩어리 {len(groups)}개 · 줄 {len(lines)}개"
+        if len(bad) == 1:
+            return "near", bad[0], "줄을 붙여 덩어리로 만들면 한 번에 해결됩니다"
+        return "warn", " · ".join(bad[:2]), f"한 줄 {line_max}자 이내 · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만."
 
     if rule_id == "hashtags":
         n = len(tags)
