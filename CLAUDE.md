@@ -34,6 +34,7 @@
 | `js/api.js` | GAS 호출(30s AbortController, 429/5xx만 3회 재시도, 멱등키, 미설정 시 `ERR_NO_CONFIG`) |
 | `js/quickApprove.js` | 폰 10초 승인 카드 스택 |
 | `js/trackChannels.js` · `js/channelView.js` · `js/postView.js` | 채널 드릴다운 — 트랙별 운영 채널 상수(`seeds/track_channels.json` 사본, 시험이 3곳 대조) · `#/perf` 유튜브·인스타 서브탭 · `#/post` 상세. `docs/CHANNEL_DRILLDOWN_v1.md` |
+| `js/igAudit.js` · `seeds/ig_audit_rules.json` | **인스타 계정 100점 진단(2026-11-23)** — `#/perf` 인스타 탭 맨 아래 카드. 프로필을 긁지 않고 사람이 넣은 값만 채점하고, 게시일(`published_at`)이 있으면 최근 게시일·30일 편수를 미리 채운다. 값은 브라우저 `localStorage`에만. `docs/IG_AUDIT_v1.md` |
 | `gas/PostDetail.gs` | `get_post_detail` · `upsert_media_meta` · `list_media_meta` + `Media_Meta` 시트(첫 올리기 때 자동 생성). 배포는 새 파일 추가 후 새 버전 |
 | `js/seriesView.js` | `#/series` — 시리즈(대본 복사·보드에 DRAFT 생성)·키워드팩·훅 A/B 체크리스트(편별 `localStorage`) |
 | `manifest.webmanifest` · `icons/` | 홈 화면 앱(PWA). Service Worker 없음 |

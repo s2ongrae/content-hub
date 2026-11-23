@@ -11,8 +11,9 @@
  * 외부 썸네일은 CSP(img-src 'self' data:)가 막아서 그리지 않는다 — 제목·숫자만.
  */
 
-import { getAnalytics } from './analyticsView.js?v=20261121r';
-import { trackChannelsOf, CHANNEL_LABEL } from './trackChannels.js?v=20261119o';
+import { getAnalytics } from './analyticsView.js?v=20261123a';
+import { trackChannelsOf, CHANNEL_LABEL } from './trackChannels.js?v=20261123a';
+import { renderInstagramAudit, autoFactsFromRows } from './igAudit.js?v=20261123a';
 
 /* 소스별로 이 화면이 다루는 표면 */
 const SOURCE_SURFACES = { youtube: ['shorts'], instagram: ['reels', 'feed'] };
@@ -135,6 +136,18 @@ export async function renderChannelView(main, ctx, source) {
   const host = h('div');
   main.appendChild(host);
 
+  /* 인스타 계정 진단은 자동 수집 없이도 쓸 수 있어야 한다(GAS 미연결·수집 지연에도 그린다). */
+  const appendAudit = async (rows) => {
+    if (source !== 'instagram') return;
+    let rules = null;
+    try {
+      const res = await fetch('seeds/ig_audit_rules.json', { cache: 'no-cache' });
+      if (res.ok) rules = await res.json();
+    } catch (e) { /* 시드가 없으면 기본값으로 돌린다 */ }
+    if (!host.isConnected) return;
+    renderInstagramAudit(host, ctx, { rules, auto: autoFactsFromRows(rows || [], brand) });
+  };
+
   if (!surfaces.length) {
     host.appendChild(h('div', { class: 'panel' },
       h('h3', null, SOURCE_LABEL[source] + ' 채널 없음'),
@@ -149,6 +162,7 @@ export async function renderChannelView(main, ctx, source) {
 
   if (cache.error === 'ERR_NO_CONFIG') {
     host.appendChild(h('div', { class: 'panel' }, h('p', { class: 'hint', text: 'GAS 를 연결하면 자동 수집 숫자가 여기에 보입니다.' })));
+    await appendAudit([]);
     return;
   }
   if (cache.error) {
@@ -156,6 +170,7 @@ export async function renderChannelView(main, ctx, source) {
       ? '자동 수집 읽기 기능이 서버에 아직 없습니다 — GAS 를 재배포하면 보입니다.'
       : '자동 수집 숫자를 읽지 못했습니다(' + cache.error + '). 잠시 뒤 새로고침해 보세요.';
     host.appendChild(banner ? banner('info', 'ⓘ', '수집분 준비 중', msg) : h('div', { class: 'panel' }, h('p', { class: 'hint', text: msg })));
+    await appendAudit([]);
     return;
   }
 
@@ -221,4 +236,8 @@ export async function renderChannelView(main, ctx, source) {
       toAll, h('span', { text: ' — 영상별 조회·평균 시청률·반응률과 병목 처방은 [전체] 탭에서 봅니다.' })));
   }
   host.appendChild(panel);
+
+  /* ③ 인스타 계정 진단(2026-11-23) — 프로필은 긁지 않고, 사람이 넣은 값만 채점한다.
+     마지막 릴스 경과일·30일 편수는 자동 수집 행에 게시일(published_at)이 있으면 미리 채운다. */
+  await appendAudit(cache.rows);
 }

@@ -310,7 +310,7 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
 
 
 AI_TONE_DEFAULTS = {
-    "version": "2026w48",
+    "version": "2026w48b",
     "hold_at": 2,
     "intro_chars": 150,
     "first_chars": 400,
@@ -322,6 +322,23 @@ AI_TONE_DEFAULTS = {
     "heading_spread_max": 4,
     "first_person_min": 2,
     "over_polite_max": 4,
+    "translationese_min": 4,
+    "translationese_near": 2,
+    "translationese_min_chars": 300,
+    "translationese_terms": [
+        {"label": "~에 대해(서)", "pattern": "에 대해"},
+        {"label": "~에 대한", "pattern": "에 대한"},
+        {"label": "~에 있어(서)", "pattern": "에 있어"},
+        {"label": "~를 통해(서)", "pattern": "를 통해"},
+        {"label": "~에 의해", "pattern": "에 의해"},
+        {"label": "~로 인해", "pattern": "로 인해"},
+        {"label": "~할 수 있습니다", "pattern": "할 수 있"},
+        {"label": "~것이 중요합니다", "pattern": "것이 중요하"},
+        {"label": "~가지고 있다", "pattern": "가지고 있"},
+        {"label": "~라는 점에서", "pattern": "라는 점에서"},
+        {"label": "~경향이 있다", "pattern": "경향이 있"},
+        {"label": "결론적으로", "pattern": "결론적으로"},
+    ],
     "first_person_min_by_preset": {"jajo": 1, "review": 2, "info": 1},
     "keyword_count": [3, 5],
     "keyword_fail": 6,
@@ -330,6 +347,7 @@ AI_TONE_DEFAULTS = {
         "experience": r"(?:직접|실제로|써보니|써 보고|가보니|가 봤|먹어보니|먹어 봤|앉아보니|느꼈|느낀|개인적으로|내 기준|솔직히)",
         "cliche": r"(?:도움이 되셨|도움이 되었|기대해 봅니다|기대해봅니다|응원합니다|응원하겠습니다|마치겠습니다|마무리하겠습니다|알아보았습니다|이상으로 (?:마치|정리)|그럼 다음에)",
         "over_polite": r"(?:물론|다만|참고로|혹시라도|부담 없이|부담없이|편하게|편한 마음)",
+        "translationese": r"(?:에 대해|에 대한|에 있어|를 통해|에 의해|로 인해|할 수 있|것이 중요하|가지고 있|라는 점에서|경향이 있|결론적으로)",
         "proper": r"(?:[가-힣]{2,}(?:동|구|시|역|점|로|길)|[A-Za-z]{2,})",
         "number": r"[0-9]",
         "dia_question": r"(?:\?|까\?|나요|인가요|을까|ㄹ까|궁금|고민|헷갈|모르겠|찾는다면|고를 때|정할 때|알아야)",
@@ -346,6 +364,7 @@ AI_TONE_DEFAULTS = {
         {"id": "no_numbers", "no": 5, "label": "수치 없는 주장"},
         {"id": "first_person_absent", "no": 6, "label": "1인칭 부재"},
         {"id": "over_polite", "no": 7, "label": "과잉 친절"},
+        {"id": "translationese", "no": 8, "label": "번역투"},
     ],
     "dia": {
         "label": "첫 400자 D.I.A.+",
@@ -457,7 +476,8 @@ def ai_tone_scan(body: str, keywords, preset: str, cfg: dict) -> dict:
     total = len(text)
     stats = {"blocks": len(blocks), "chars": total, "headings": 0, "heading_spread": 0,
              "sentences": 0, "sentence_sd": 0.0, "first_person": 0, "experience": 0,
-             "number_blocks": 0, "number_ratio": 0.0, "intro_chars": 0, "over_polite": 0}
+             "number_blocks": 0, "number_ratio": 0.0, "intro_chars": 0, "over_polite": 0,
+             "translationese": 0}
 
     def item(pid: str, state: str, value: str, note: str) -> dict:
         d = next((p for p in defs if p["id"] == pid), {"id": pid, "no": 0, "label": pid})
@@ -555,6 +575,28 @@ def ai_tone_scan(body: str, keywords, preset: str, cfg: dict) -> dict:
         pats.append(item("over_polite", "warn", f"{polite}회", f"양보 접속사가 {polite}회 — 2회 이하로 덜어내세요"))
     else:
         pats.append(item("over_polite", "pass", f"{polite}회", f"상한 {c['over_polite_max']}회 이내"))
+
+    # ⑧ 번역투 (2026-11-23)
+    terms = c.get("translationese_terms") or AI_TONE_DEFAULTS["translationese_terms"]
+    counts = []
+    for t in terms:
+        n = _count_re(text, re.escape(t["pattern"]))
+        if n:
+            counts.append((t["label"], n))
+    counts.sort(key=lambda x: -x[1])
+    hit = sum(n for _, n in counts)
+    stats["translationese"] = hit
+    top = " · ".join(f"{lb} {n}" for lb, n in counts[:2])
+    if total < int(c.get("translationese_min_chars", 300)):
+        pats.append(item("translationese", "near", f"본문 {total}자", "본문이 짧아 번역투를 판정하지 않습니다"))
+    elif hit >= int(c.get("translationese_min", 4)):
+        pats.append(item("translationese", "warn", f"{hit}회" + (f" · {top}" if top else ""),
+                         f"번역투가 {hit}회 — 능동형으로 바꾸세요"))
+    elif hit >= int(c.get("translationese_near", 2)):
+        pats.append(item("translationese", "near", f"{hit}회" + (f" · {top}" if top else ""),
+                         "두세 번은 괜찮습니다 — 한 번 더 줄여 보세요"))
+    else:
+        pats.append(item("translationese", "pass", f"{hit}회", "번역투 거의 없음"))
 
     hits = [p for p in pats if p["state"] in ("warn", "fail")]
     fails = [p for p in pats if p["state"] == "fail"]
@@ -723,7 +765,7 @@ def print_report(result: dict) -> None:
     if not ai:
         return
     print("-" * 66)
-    print(f"AI 티 7패턴 — 적발 {ai.get('count', 0)}개" + (" (발행 보류)" if hold else ""))
+    print(f"AI 티 8패턴 — 적발 {ai.get('count', 0)}개" + (" (발행 보류)" if hold else ""))
     if hold:
         print("⛔ 발행 보류 — " + " · ".join(ai.get("hold_reasons") or []))
     for p in ai.get("patterns") or []:
@@ -737,7 +779,7 @@ def print_report(result: dict) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="대전청년 블로그 발행 전 린터 (8항목 + AI 티 7패턴·D.I.A.+)")
+    ap = argparse.ArgumentParser(description="대전청년 블로그 발행 전 린터 (8항목 + AI 티 8패턴·D.I.A.+)")
     ap.add_argument("draft", help="초안 md 경로 ('-' 이면 표준입력)")
     ap.add_argument("--photo", type=int, default=None, help="촬영 사진 수(안 주면 본문의 ![]() 개수)")
     ap.add_argument("--keyword", default="", help="노리는 검색어, 쉼표 구분")

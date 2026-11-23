@@ -1,9 +1,12 @@
 /**
- * js/blogAiTone.js — 블로그 'AI 티 7패턴' + 첫 400자 D.I.A.+ 게이트 (2026-11-21, #44584)
+ * js/blogAiTone.js — 블로그 'AI 티 8패턴' + 첫 400자 D.I.A.+ 게이트 (2026-11-21, #44584 · 2026-11-23 번역투 추가)
  *
  * 근거
  *  · 수집·기획서 downloads/스레드_꿀팁_수집_및_제미니_디벨롭_20261121.md §1-3(B1~B9) · §3-2 · §4
  *  · 제미니 고정방 확정: 7패턴 기계 판정표 + '7패턴 중 2개↑ 적발 시 발행 보류 경고'
+ *  · 2026-11-23 추가(8패턴 '번역투'): 인스타 @reelbuilder_ 의 'humanizer 스킬(번역투 제거)' +
+ *    @lazy_owen 클로드 세팅 영상에서 본 'AI 문체 잡기' 계열을 우리 린터에 옮겼다.
+ *    문장을 고치지는 않고 세기만 한다 — 고치는 사람은 성래 님이다.
  *  · 우리 판단(§4-3·4): 소제목은 `###`가 아니라 **굵은 한 줄**이라 전처리로 인식하고,
  *    1인칭 부재는 FAIL이 아니라 WARN(톤 프리셋별 임계값)으로 낮춘다 — 성래 님 자조·정보 톤 보호.
  *  · 추가 판단 1: '균일 문장길이'(패턴 4)를 문단(블록)이 아니라 **문장** 단위로 잰다.
@@ -22,7 +25,7 @@
 
 export const AI_TONE_DEFAULTS = {
   version: '2026w48',
-  hold_at: 2,                 // 7패턴 중 이만큼 적발되면 '발행 보류' 경고
+  hold_at: 2,                 // 8패턴 중 이만큼 적발되면 '발행 보류' 경고
   intro_chars: 150,           // 패턴 1(일반론 서론)을 보는 앞부분
   first_chars: 400,           // D.I.A.+ 첫 화면
   sd_min: 6.0,                // 패턴 4: 문장 길이 표준편차가 이보다 작으면 '균일'
@@ -33,6 +36,23 @@ export const AI_TONE_DEFAULTS = {
   heading_spread_max: 4,      // 패턴 2: 소제목 글자수 최대-최소 차(±2자)
   first_person_min: 2,        // 패턴 6: 1인칭 기본 하한(프리셋이 덮어쓴다)
   over_polite_max: 4,         // 패턴 7: 과잉 친절 표현 상한
+  translationese_min: 4,      // 패턴 8: 번역투 표현이 이만큼이면 '고칠 것'
+  translationese_near: 2,     // 패턴 8: 이만큼이면 '주의'
+  translationese_min_chars: 300, // 패턴 8: 본문이 이보다 짧으면 판정하지 않는다
+  translationese_terms: [
+    { label: '~에 대해(서)', pattern: '에 대해' },
+    { label: '~에 대한', pattern: '에 대한' },
+    { label: '~에 있어(서)', pattern: '에 있어' },
+    { label: '~를 통해(서)', pattern: '를 통해' },
+    { label: '~에 의해', pattern: '에 의해' },
+    { label: '~로 인해', pattern: '로 인해' },
+    { label: '~할 수 있습니다', pattern: '할 수 있' },
+    { label: '~것이 중요합니다', pattern: '것이 중요하' },
+    { label: '~가지고 있다', pattern: '가지고 있' },
+    { label: '~라는 점에서', pattern: '라는 점에서' },
+    { label: '~경향이 있다', pattern: '경향이 있' },
+    { label: '결론적으로', pattern: '결론적으로' }
+  ],
   first_person_min_by_preset: { jajo: 1, review: 2, info: 1 },
   keyword_count: [3, 5],      // B3: 본문 등장 권장 범위
   keyword_fail: 6,            // B3: 이 이상이면 과반복(발행 보류)
@@ -41,6 +61,7 @@ export const AI_TONE_DEFAULTS = {
     experience: '(?:직접|실제로|써보니|써 보고|가보니|가 봤|먹어보니|먹어 봤|앉아보니|느꼈|느낀|개인적으로|내 기준|솔직히)',
     cliche: '(?:도움이 되셨|도움이 되었|기대해 봅니다|기대해봅니다|응원합니다|응원하겠습니다|마치겠습니다|마무리하겠습니다|알아보았습니다|이상으로 (?:마치|정리)|그럼 다음에)',
     over_polite: '(?:물론|다만|참고로|혹시라도|부담 없이|부담없이|편하게|편한 마음)',
+    translationese: '(?:에 대해|에 대한|에 있어|를 통해|에 의해|로 인해|할 수 있|것이 중요하|가지고 있|라는 점에서|경향이 있|결론적으로)',
     proper: '(?:[가-힣]{2,}(?:동|구|시|역|점|로|길)|[A-Za-z]{2,})',
     number: '[0-9]',
     dia_question: '(?:\\?|까\\?|나요|인가요|을까|ㄹ까|궁금|고민|헷갈|모르겠|찾는다면|고를 때|정할 때|알아야)',
@@ -63,7 +84,9 @@ export const AI_TONE_DEFAULTS = {
     { id: 'first_person_absent', no: 6, label: '1인칭 부재', judge: '경험 표현(직접·써보니·가보니·느낀)이 하한 미만 — WARN',
       fix: '내가 본 것 한 줄을 넣으세요. 정보 정리 글은 1개면 충분합니다.' },
     { id: 'over_polite', no: 7, label: '과잉 친절', judge: '"물론·다만·참고로·부담 없이" 4회 초과',
-      fix: '양보·배려 접속사를 덜어내세요. 한 글에 두 번까지면 충분합니다.' }
+      fix: '양보·배려 접속사를 덜어내세요. 한 글에 두 번까지면 충분합니다.' },
+    { id: 'translationese', no: 8, label: '번역투', judge: '"~에 대해·~를 통해·~할 수 있습니다·결론적으로" 류가 4회 이상',
+      fix: '"~를 통해 알 수 있습니다" → "보니 알겠더라", "~에 대한 정보" → "가격·주차 정보"처럼 능동형·명사형으로 바꾸세요.' }
   ],
   dia: {
     label: '첫 400자 D.I.A.+',
@@ -180,7 +203,7 @@ export function aiToneScan(input, cfg) {
   const stats = {
     blocks: blocks.length, chars: total, headings: 0, headingSpread: 0,
     sentences: 0, sentenceSd: 0, firstPerson: 0, experience: 0,
-    numberBlocks: 0, numberRatio: 0, introChars: 0, overPolite: 0
+    numberBlocks: 0, numberRatio: 0, introChars: 0, overPolite: 0, translationese: 0
   };
   const def = (id) => c.patterns.find((p) => p.id === id) || { id, no: 0, label: id, judge: '', fix: '' };
 
@@ -274,6 +297,30 @@ export function aiToneScan(input, cfg) {
     const d = def('over_polite');
     if (polite > c.over_polite_max) patterns.push(patternResult(d, 'warn', polite + '회', '양보 접속사가 ' + polite + '회 — 2회 이하로 덜어내세요'));
     else patterns.push(patternResult(d, 'pass', polite + '회', '상한 ' + c.over_polite_max + '회 이내'));
+  }
+
+  /* ⑧ 번역투 — '~에 대해·~를 통해·~할 수 있습니다·결론적으로'가 4회 이상 (2026-11-23) */
+  {
+    const d = def('translationese');
+    const terms = (Array.isArray(c.translationese_terms) && c.translationese_terms.length)
+      ? c.translationese_terms
+      : AI_TONE_DEFAULTS.translationese_terms;
+    const counts = terms
+      .map((t) => ({ label: t.label, n: countRe(text, t.pattern) }))
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n);
+    const hit = counts.reduce((a, b) => a + b.n, 0);
+    stats.translationese = hit;
+    const top = counts.slice(0, 2).map((x) => x.label + ' ' + x.n).join(' · ');
+    if (total < c.translationese_min_chars) {
+      patterns.push(patternResult(d, 'near', '본문 ' + total + '자', '본문이 짧아 번역투를 판정하지 않습니다'));
+    } else if (hit >= c.translationese_min) {
+      patterns.push(patternResult(d, 'warn', hit + '회' + (top ? ' · ' + top : ''), '번역투가 ' + hit + '회 — 능동형으로 바꾸세요'));
+    } else if (hit >= c.translationese_near) {
+      patterns.push(patternResult(d, 'near', hit + '회' + (top ? ' · ' + top : ''), '두세 번은 괜찮습니다 — 한 번 더 줄여 보세요'));
+    } else {
+      patterns.push(patternResult(d, 'pass', hit + '회', '번역투 거의 없음'));
+    }
   }
 
   const hits = patterns.filter((p) => p.state === 'warn' || p.state === 'fail');

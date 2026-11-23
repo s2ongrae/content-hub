@@ -747,12 +747,18 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('톤: 정상 글이면 경고 0건', T.lintRhythm('오늘 하루에만 계좌에서 205만 원이 증발했고 수익률은 마이너스 3.5퍼센트였다.\n\n장 마감하고 화면을 보는데 헛웃음부터 나왔다.').length === 0, T.lintRhythm('오늘 하루에만 계좌에서 205만 원이 증발했고 수익률은 마이너스 3.5퍼센트였다.\n\n장 마감하고 화면을 보는데 헛웃음부터 나왔다.'));
     ok('키트에 2줄 호흡 점검이 붙는다(원문은 안 바뀜)', kit.rhythm && kit.rhythm.stats.blocks >= 2 && kit.blocks.map((b) => b.text).join('\n\n') === memo);
 
-    /* AI 티 7패턴 · 첫 400자 D.I.A.+ (#44584, 2026-11-21) */
+    /* AI 티 8패턴 · 첫 400자 D.I.A.+ (#44584, 2026-11-21) */
     {
       const aiSeed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'blog_lint_rules_2026w48.json'), 'utf8')).aiTone;
       const AI = await import('file://' + path.join(ROOT, 'js', 'blogAiTone.js'));
       const BL = await import('file://' + path.join(ROOT, 'js', 'blogLint.js'));
-      ok('AI 티: 시드에 7패턴 · D.I.A.+ 5요소', aiSeed.patterns.length === 7 && aiSeed.dia.elements.length === 5);
+      ok('AI 티: 시드에 8패턴 · D.I.A.+ 5요소', aiSeed.patterns.length === 8 && aiSeed.dia.elements.length === 5);
+      ok('AI 티: 8번째 패턴은 번역투이고 WARN이다',
+        aiSeed.patterns[7].id === 'translationese' && aiSeed.patterns[7].label === '번역투'
+        && Array.isArray(aiSeed.translationese_terms) && aiSeed.translationese_terms.length >= 8);
+      ok('AI 티: 화면 기본값에도 번역투 규칙이 있다',
+        AI.AI_TONE_DEFAULTS.translationese_min === aiSeed.translationese_min
+        && AI.AI_TONE_DEFAULTS.translationese_terms.length === aiSeed.translationese_terms.length);
       ok('AI 티: 화면 기본값과 시드 임계값이 같다', AI.AI_TONE_DEFAULTS.hold_at === aiSeed.hold_at
         && AI.AI_TONE_DEFAULTS.sd_min === aiSeed.sd_min
         && AI.AI_TONE_DEFAULTS.regex.cliche === aiSeed.regex.cliche
@@ -782,6 +788,19 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
         AI.lintAiTone({ body: bland }, aiSeed).patterns.find((p) => p.id === 'generic_intro').state === 'warn');
       ok('AI 티: 첫 400자가 비면 D.I.A.+는 고칠 것', AI.diaGate({ body: bland }, aiSeed).state === 'warn');
 
+      /* ⑧ 번역투 — 기계적으로 세기만 한다(고치지 않음) */
+      const transBody = '이번 글에서는 봉명동 삼겹살집에 대해 알아보겠습니다. 가격에 대한 정보를 통해 선택에 도움을 드리고자 합니다. 웨이팅은 상황에 따라 달라질 수 있습니다. 주차는 건물 뒤를 통해 들어갈 수 있습니다. 결론적으로 평일 방문이 좋다고 할 수 있습니다. 이 글을 통해 맛집 고르는 방법을 알 수 있습니다.' + ' 본문을 조금 더 늘려 판정 조건을 채웁니다.';
+      const tr = AI.lintAiTone({ body: transBody }, aiSeed);
+      const trItem = tr.patterns.find((p) => p.id === 'translationese');
+      ok('AI 티: 번역투를 WARN으로 잡는다', trItem && trItem.state === 'warn', trItem && trItem.value);
+      ok('AI 티: 번역투 횟수가 통계에 남는다', tr.stats.translationese >= 4, tr.stats.translationese);
+      ok('AI 티: 번역투가 없는 사람 글은 통과',
+        AI.lintAiTone({ body: goodBody + '\n\n고기는 두툼했고 불판은 약했다. 다음엔 평일 6시에 갈 생각이다.' }, aiSeed)
+          .patterns.find((p) => p.id === 'translationese').state !== 'warn');
+      ok('AI 티: 짧은 본문은 번역투를 판정하지 않는다(주의)',
+        AI.lintAiTone({ body: '짧은 글이다. 이 글을 통해 알 수 있습니다.' }, aiSeed)
+          .patterns.find((p) => p.id === 'translationese').state === 'near');
+
       const cliche = '앞 문단입니다.\n\n두 번째 문단입니다.\n\n이상으로 삼겹살 맛집 고르는 방법에 대해 알아보았습니다.';
       const cf = AI.lintAiTone({ body: cliche }, aiSeed);
       ok('AI 티: 결말 상투어는 FAIL이고 혼자서도 보류',
@@ -806,6 +825,43 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       ok('AI 티: 키워드 3회는 권장 범위', AI.keywordCheck({ body: kw3, keywords: '삼겹살' }, aiSeed).items[0].state === 'pass');
       ok('AI 티: 없는 키워드는 WARN', AI.keywordCheck({ body: kw3, keywords: '봉명동맛집' }, aiSeed).items[0].state === 'warn');
       ok('AI 티: 키워드를 안 넣으면 판정하지 않는다', AI.keywordCheck({ body: kw3 }, aiSeed).items.length === 0);
+
+      /* 인스타 계정 진단(2026-11-23) — 프로필은 긁지 않고 사람이 넣은 값만 채점한다 */
+      {
+        const igSeed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'ig_audit_rules.json'), 'utf8'));
+        const IG = await import('file://' + path.join(ROOT, 'js', 'igAudit.js'));
+        const weightSum = (brand) => igSeed.tracks[brand].items
+          .reduce((s, id) => s + igSeed.items.find((x) => x.id === id).weight, 0);
+        ok('인스타 진단: 시드 트랙 2개 · 항목 8개', Object.keys(igSeed.tracks).length === 2 && igSeed.items.length === 8);
+        ok('인스타 진단: 트랙 A 가중치 합 92 · 트랙 B 84',
+          weightSum('daejeon_youth') === 92 && weightSum('ppiyak_kimmary') === 84,
+          [weightSum('daejeon_youth'), weightSum('ppiyak_kimmary')]);
+
+        const perfect = { brand: 'daejeon_youth', bio: '대전 청년의 생존기 & 솔직 맛집 술상 🍻',
+          linkKind: 'blog', highlights: 3, lastPostDays: 2, reels30: 5,
+          firstLine: '여기 몇 시에 가야 안 기다려요?', firstComment: 'yes', carousel: 'yes' };
+        const r1 = IG.auditInstagram(perfect, igSeed);
+        ok('인스타 진단: 다 채우면 100점 A', r1.score === 100 && r1.grade === 'A', r1.score + '/' + r1.grade);
+
+        const empty = IG.auditInstagram({ brand: 'daejeon_youth' }, igSeed);
+        ok('인스타 진단: 빈 값은 40점 미만 · 고칠 것 목록', empty.score < 40 && empty.todo.length >= 5, empty.score);
+        ok('인스타 진단: 모르는 값은 0점이 아니라 절반(주의)', IG.auditInstagram({ brand: 'daejeon_youth', bio: '대전 맛집' }, igSeed)
+          .items.find((i) => i.id === 'highlights').state === 'near');
+
+        const b = IG.auditInstagram({ brand: 'ppiyak_kimmary', bio: '메리 집사', linkKind: 'youtube',
+          highlights: 3, lastPostDays: 1, reels30: 4, firstLine: '메리 오늘 3번 넘어짐', firstComment: 'yes' }, igSeed);
+        ok('인스타 진단: 트랙 B는 캐러셀 항목을 빼고 100점으로 환산', b.score === 100 && b.items.every((i) => i.id !== 'carousel'), b.score);
+
+        const isoDaysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
+        const rows = [
+          { source: 'instagram', channel: 'reels', brand: 'daejeon_youth', external_id: 'a', published_at: isoDaysAgo(2) },
+          { source: 'instagram', channel: 'reels', brand: 'daejeon_youth', external_id: 'b', published_at: isoDaysAgo(10) },
+          { source: 'instagram', channel: 'reels', brand: 'daejeon_youth', external_id: 'a', published_at: isoDaysAgo(2) }
+        ];
+        const auto = IG.autoFactsFromRows(rows, 'daejeon_youth');
+        ok('인스타 진단: 같은 영상은 한 번만 세고 최근 게시일을 뽑는다', auto.reels30 === 2 && auto.lastPostDays >= 0);
+        ok('인스타 진단: 게시일이 없으면 비워 둔다', IG.autoFactsFromRows([{ source: 'instagram', channel: 'reels', external_id: 'x' }], 'daejeon_youth').lastPostDays === null);
+      }
 
       /* 린터 통합 — 8항목 점수에 섞이지 않는다 */
       const lb = BL.lintBlog({ title: '[봉명동 삼겹살] 미미삼겹 유성점 솔직후기', body: goodBody, keywords: '봉명동맛집,삼겹살', photoCount: 18 });

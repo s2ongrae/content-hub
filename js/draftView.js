@@ -11,8 +11,8 @@
  */
 
 import { api } from './api.js';
-import { applyBlogRhythm } from './blogTone.js?v=20261122h';
-import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261122a';
+import { applyBlogRhythm } from './blogTone.js?v=20261123a';
+import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261123a';
 
 
 /** 채널별 복사 문안 — 줄바꿈 규칙을 적용한다(사실·문장은 그대로, 배치만). */

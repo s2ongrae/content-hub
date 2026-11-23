@@ -14,8 +14,8 @@
  * 판정은 기계적으로 센 값만 쓴다. 사람이 봐야 하는 것은 이 린터가 판정하지 않는다.
  */
 
-import { AI_TONE_DEFAULTS, lintAiTone } from './blogAiTone.js?v=20261121';
-import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261122h';
+import { AI_TONE_DEFAULTS, lintAiTone } from './blogAiTone.js?v=20261123a';
+import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261123a';
 
 const RULES_URL = 'seeds/blog_lint_rules_2026w48.json';
 
@@ -66,7 +66,7 @@ export async function loadLintRules(force = false) {
       coreTags: json.coreTags || DEFAULT_CORE,
       titleLexicon: json.titleLexicon || DEFAULT_LEXICON,
       rules: (json.rules && json.rules.length ? json.rules : DEFAULT_RULES),
-      aiTone: json.aiTone || AI_TONE_DEFAULTS,          // AI 티 7패턴 · D.I.A.+ · 키워드 3~5회 (2026-11-21)
+      aiTone: json.aiTone || AI_TONE_DEFAULTS,          // AI 티 8패턴 · D.I.A.+ · 키워드 3~5회 (2026-11-21)
       benchmark: json.benchmark || null,
       version: json.version || '2026w48'
     };
@@ -358,7 +358,7 @@ export function lintBlog(input, ruleSet) {
     hashtags: hashtagsOf(m.body, m.tags).length
   };
 
-  /* AI 티 7패턴 · 첫 400자 D.I.A.+ · 키워드 3~5회 — 점수(9항목)에는 넣지 않는다.
+  /* AI 티 8패턴 · 첫 400자 D.I.A.+ · 키워드 3~5회 — 점수(9항목)에는 넣지 않는다.
      이유: 7패턴 중 2개↑ 적발은 '발행 보류 경고'(hold)로 따로 보여주고, 점수는 실측 상위권 기준 그대로 둔다. */
   const aiTone = lintAiTone(m, set.aiTone);
 
