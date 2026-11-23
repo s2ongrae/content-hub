@@ -1538,6 +1538,7 @@ a.cmp-card:hover { border-color: var(--accent); }
 .ig-field textarea, .ig-field input, .ig-field select {
   width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg-soft); color: var(--tx); font: inherit; font-size: 14px;
+  color-scheme: dark;   /* 네이티브 select·number 화살표가 흰 바탕으로 그려지지 않게 */
 }
 .ig-field textarea { resize: vertical; min-height: 44px; }
 .ig-hint { font-size: 11px; color: var(--tx-3); }
