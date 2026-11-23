@@ -1539,6 +1539,10 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       ['승인 빈 상태가 제작 탭을 가리킨다', files['quickApprove.js'].indexOf('제작 탭에서 새로 만들면') >= 0],
       ['승인·검수 버튼 "다시 쓰기"', files['quickApprove.js'].indexOf("'다시 쓰기'") >= 0 && files['app.js'].indexOf("text: '다시 쓰기'") >= 0],
       ['발행 전 글 점검 화면', files['lintView.js'].indexOf('발행 전 글 점검') >= 0],
+      ['점검: 허브 카드 불러오기', files['lintView.js'].indexOf('허브 카드에서 불러오기') >= 0],
+      ['점검: 카드에 본문 저장', files['lintView.js'].indexOf('이 카드에 본문 저장') >= 0],
+      ['점검: 수동 초안과 카드 값을 섮지 않는다', files['lintView.js'].indexOf('contenthub.lint_card.v1') >= 0 && files['lintView.js'].indexOf('contenthub.lint_draft.v1') >= 0],
+      ['점검: 저장은 payload.blog 병합', files['lintView.js'].indexOf('Object.assign({}, orig') >= 0 && files['lintView.js'].indexOf('patch: { blog: next }') >= 0],
       ['상태 표준: 검수 대기·발행 준비', files['app.js'].indexOf("REVIEW: '검수 대기', READY: '발행 준비'") >= 0],
       ['NEEDS_HUMAN = 직접 확인', files['app.js'].indexOf("NEEDS_HUMAN: '직접 확인'") >= 0]
     ];

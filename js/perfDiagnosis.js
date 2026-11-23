@@ -24,8 +24,8 @@
  * 화면은 createElement/textContent 만 쓴다(CSP — HTML 문자열 금지).
  */
 
-import { getAnalytics, waitAnalytics } from './analyticsView.js?v=20261123b';
-import { currentRows } from './channelView.js?v=20261123b';
+import { getAnalytics, waitAnalytics } from './analyticsView.js?v=20261123c';
+import { currentRows } from './channelView.js?v=20261123c';
 
 /* ───────────── 기준값(우리 기준) ───────────── */
 

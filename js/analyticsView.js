@@ -14,7 +14,7 @@
  *    화면은 이 값을 '있는 그대로' 넘기고, 없는 값을 추정해 채우지 않는다(js/perfDiagnosis.js 가 판단).
  */
 
-import { isTrackRow } from './trackChannels.js?v=20261123b';
+import { isTrackRow } from './trackChannels.js?v=20261123c';
 
 const CH_LABEL = { shorts: '쇼츠', longform: '롱폼', channel: '채널', reels: '릴스', feed: '피드' };
 const SOURCE_LABEL = { youtube: '유튜브', instagram: '인스타' };

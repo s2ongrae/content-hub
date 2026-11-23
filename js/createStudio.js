@@ -14,8 +14,8 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261123b';
-import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261123b';
+import { produceSection } from './produceView.js?v=20261123c';
+import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261123c';
 import {
   FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
   normalizeMaterials, emptyMaterials, materialSummary, hasMaterial, factsOf, autoOrderPhotos, photoRole,
@@ -23,12 +23,12 @@ import {
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
   errorText, orderLine, titleOptions, firstPrice, FEED_CARDS,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
-} from './studioLogic.js?v=20261123b';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261123b';
-import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261123b';
-import { lintAiTone } from './blogAiTone.js?v=20261123b';
-import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261123b';
-import { paintAiClip } from './aiClip.js?v=20261123b';
+} from './studioLogic.js?v=20261123c';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261123c';
+import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261123c';
+import { lintAiTone } from './blogAiTone.js?v=20261123c';
+import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261123c';
+import { paintAiClip } from './aiClip.js?v=20261123c';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';

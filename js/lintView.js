@@ -6,9 +6,11 @@
  * 초안은 이 브라우저에만 저장한다(새로고침해도 남게).
  */
 
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261123b';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261123c';
 
 const DRAFT_KEY = 'contenthub.lint_draft.v1';
+/* 카드에서 불러온 값은 수동 초안과 섞지 않는다(수동 메모가 지워지지 않게 별도 키). */
+const CARD_KEY = 'contenthub.lint_card.v1';
 
 function readDraft() {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY)) || {}; } catch (e) { return {}; }
@@ -16,6 +18,17 @@ function readDraft() {
 
 function writeDraft(d) {
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch (e) { /* 무시 */ }
+}
+
+function readCard() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CARD_KEY)) || {};
+    return d && d.id ? d : null;
+  } catch (e) { return null; }
+}
+
+function writeCard(d) {
+  try { localStorage.setItem(CARD_KEY, JSON.stringify(d || {})); } catch (e) { /* 무시 */ }
 }
 
 const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것', fail: '보류' };
@@ -74,20 +87,79 @@ function aiTonePanel(h, r) {
   return wrap;
 }
 
+/** 블로그 본문 후보 — 채널마다 부르는 이름이 다르다(body·script·caption·text). */
+function blogBodyOf(doc) {
+  if (!doc || typeof doc !== 'object') return '';
+  for (const k of ['body', 'script', 'caption', 'text', 'description']) {
+    if (typeof doc[k] === 'string' && doc[k].trim()) return doc[k];
+  }
+  return '';
+}
+
+/** 카드 payload 에 남은 사진 수 — studio.media → media → photos 순. 배열이 아예 없으면 null(모르는 값은 비워 둔다). */
+function photoCountOf(payload) {
+  const p = payload || {};
+  const lists = [p.studio && p.studio.media, p.media, p.photos];
+  for (const arr of lists) {
+    if (Array.isArray(arr)) {
+      return arr.filter((x) => !x || !x.kind || /photo/i.test(String(x.kind))).length;
+    }
+  }
+  return null;
+}
+
+const STATUS_ORDER = { REVIEW: 0, READY: 1, DRAFT: 2, DRAFTING: 3, GENERATING: 3, EDITING: 4, PUBLISHING: 6, PUBLISHED: 7, LINKED: 8, NEEDS_HUMAN: 9, PARTIAL_FAIL: 10 };
+const sortCards = (list) => list.slice().sort((a, b) => {
+  const oa = STATUS_ORDER[a.status] == null ? 5 : STATUS_ORDER[a.status];
+  const ob = STATUS_ORDER[b.status] == null ? 5 : STATUS_ORDER[b.status];
+  if (oa !== ob) return oa - ob;
+  return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+});
+
+const cut = (s, n) => { const a = Array.from(String(s || '')); return a.length > n ? a.slice(0, n).join('') + '…' : a.join(''); };
+
 export async function renderLintView(main, ctx) {
-  const { h, pageHead, toast } = ctx;
+  const { h, pageHead, toast, api, state, statusLabel } = ctx;
   const rules = await loadLintRules();
   const t = rules.targets;
   const draft = readDraft();
+  const contents = Array.isArray(state.contents) ? state.contents : [];
+  const savedCard = readCard();
+  let cardState = (savedCard && savedCard.brand === state.brand && contents.some((c) => c.content_id === savedCard.id))
+    ? savedCard
+    : null;
+  const init = cardState ? cardState.values : draft;
 
   main.appendChild(pageHead('🔍 발행 전 글 점검',
     '상위 24건 실측 9항목(줄바꿈 배치 포함) + AI 티 8패턴·첫 400자 의도 검사 — 통과하면 그대로 올리면 됩니다'));
 
-  const titleEl = h('input', { type: 'text', value: draft.title || '', placeholder: '예: [봉명동 삼겹살] 미미삼겹 유성점 솔직후기 : …', autocomplete: 'off' });
+  /* ── 허브 카드에서 불러오기 (2026-11-23) — 수동 복붙은 그대로 두고 위에 얹는다 ── */
+  const cardSel = h('select', { style: 'width:100%', 'aria-label': '허브 카드 고르기' });
+  cardSel.appendChild(h('option', { value: '', text: contents.length ? '카드를 고르면 제목·본문을 채우고 바로 검사합니다' : '이 브랜드에 카드가 없어요' }));
+  sortCards(contents).forEach((c) => {
+    const label = '[' + statusLabel(c.status) + '] ' + (c.blog_title || c.place_name || c.content_id);
+    cardSel.appendChild(h('option', { value: c.content_id, text: cut(label, 26) }));
+  });
+  cardSel.disabled = !contents.length;
+
+  const cardInfo = h('p', { class: 'hint', text: contents.length ? '카드를 고르면 제목·본문·검색어를 채우고 바로 점검합니다. 아래 칸에서 고친 본문은 [이 카드에 본문 저장]을 눌러야 카드에 들어갑니다.' : '서버를 연결하면 이 브랜드의 카드가 여기에 나옵니다.' });
+  const saveCardBtn = h('button', { class: 'btn sm primary', type: 'button', text: '이 카드에 본문 저장', disabled: true });
+  const openCardBtn = h('button', { class: 'ghost-btn sm', type: 'button', text: '카드 상세 열기' });
+  saveCardBtn.hidden = true;
+  openCardBtn.hidden = true;
+
+  const cardPanel = h('div', { class: 'panel' },
+    h('h3', null, '허브 카드에서 불러오기', h('span', { class: 'tag', text: '선택 즉시 검사' })),
+    h('label', { class: 'field' }, h('span', { class: 'field-label', text: '카드' }), cardSel),
+    cardInfo,
+    h('div', { class: 'row', style: 'margin-top:8px;gap:8px' }, saveCardBtn, openCardBtn));
+  main.appendChild(cardPanel);
+
+  const titleEl = h('input', { type: 'text', value: init.title || '', placeholder: '예: [봉명동 삼겹살] 미미삼겹 유성점 솔직후기 : …', autocomplete: 'off' });
   const bodyEl = h('textarea', { rows: '14', placeholder: '본문을 붙여넣으세요(정보 카드 → 외관 → 메뉴 → 먹방 → 총평)' });
-  bodyEl.value = draft.body || '';
-  const photoEl = h('input', { type: 'number', min: '0', inputmode: 'numeric', value: draft.photoCount || '', placeholder: '예: 20' });
-  const kwEl = h('input', { type: 'text', value: draft.keywords || '', placeholder: '봉명동맛집, 삼겹살, 늦게까지', autocomplete: 'off' });
+  bodyEl.value = init.body || '';
+  const photoEl = h('input', { type: 'number', min: '0', inputmode: 'numeric', value: init.photoCount || '', placeholder: '예: 20' });
+  const kwEl = h('input', { type: 'text', value: init.keywords || '', placeholder: '봉명동맛집, 삼겹살, 늦게까지', autocomplete: 'off' });
 
   const form = h('div', { class: 'panel' },
     h('h3', null, '초안', h('span', { class: 'tag', text: rules.version })),
@@ -183,8 +255,131 @@ export async function renderLintView(main, ctx) {
     panel.scrollIntoView({ block: 'start' });
   }
 
+  /* ── 카드 모드: 불러오기 · 다시 저장 (수동 복붙 흐름은 아래 그대로) ── */
+  let loadSeq = 0;
+
+  function cardValues() {
+    return { title: titleEl.value, body: bodyEl.value, photoCount: photoEl.value, keywords: kwEl.value };
+  }
+
+  function cardDirty() {
+    if (!cardState) return false;
+    const a = cardValues();
+    const b = cardState.base || {};
+    return ['title', 'body', 'photoCount', 'keywords'].some((k) => String(a[k] == null ? '' : a[k]) !== String(b[k] == null ? '' : b[k]));
+  }
+
+  function refreshCardBar() {
+    saveCardBtn.hidden = !cardState;
+    openCardBtn.hidden = !cardState;
+    if (!cardState) return;
+    const body = Array.from(String(bodyEl.value || '').replace(/\s+/g, ' ').trim()).length;
+    const bits = ['카드 ' + cardState.id, body ? '본문 ' + body.toLocaleString('ko-KR') + '자' : '블로그 본문 없음'];
+    if (photoEl.value !== '') bits.push('사진 ' + photoEl.value + '장');
+    if (cardDirty()) bits.push('고친 내용은 아직 카드에 저장되지 않았어요');
+    cardInfo.textContent = bits.join(' · ');
+    saveCardBtn.disabled = !cardDirty();
+  }
+
+  function applyValues(v) {
+    titleEl.value = v.title || '';
+    bodyEl.value = v.body || '';
+    photoEl.value = v.photoCount == null ? '' : String(v.photoCount);
+    kwEl.value = v.keywords || '';
+  }
+
+  /** 카드를 골랐을 때 — 상세를 읽어 4칸을 채우고 바로 검사한다. 늦게 온 응답은 버린다. */
+  async function loadCard(id) {
+    const seq = ++loadSeq;
+    cardInfo.textContent = '카드 불러오는 중…';
+    try {
+      const res = await api.getContentDetail(id);
+      if (seq !== loadSeq) return;
+      const d = (res && res.data) || {};
+      const meta = d.meta || {};
+      const payload = d.payload || {};
+      const doc = (payload.blog && typeof payload.blog === 'object') ? payload.blog : {};
+      const item = contents.find((c) => c.content_id === id) || {};
+      const body = blogBodyOf(doc);
+      const photos = photoCountOf(payload);
+      const values = {
+        title: String(doc.title || item.blog_title || '').trim(),
+        body: body,
+        photoCount: photos == null ? '' : String(photos),
+        keywords: String(item.target_keywords || meta.target_keywords || '').trim()
+      };
+      applyValues(values);
+      cardState = { id: d.content_id || id, brand: state.brand, values: Object.assign({}, values), base: Object.assign({}, values) };
+      writeCard(cardState);
+      refreshCardBar();
+      paintCounters();
+      paintResult();
+      if (body.trim()) toast('카드 ' + cardState.id + ' 를 불러왔어요 · 바로 점검했습니다', 'ok');
+      else toast('이 카드에는 블로그 본문이 없어요 — 본문을 넣고 [이 카드에 본문 저장]을 누르세요', 'err');
+    } catch (err) {
+      if (seq !== loadSeq) return;
+      cardSel.value = '';
+      cardInfo.textContent = '카드를 불러오지 못했어요. 서버 연결을 확인해 주세요.';
+      toast('카드를 불러오지 못했어요 — 서버 연결을 확인해 주세요', 'err');
+    }
+  }
+
+  /** 고친 제목·본문을 그 카드의 payload.blog 에만 쓴다(해시태그·메모·임시저장 주소 보존). */
+  async function saveToCard() {
+    if (!cardState) return;
+    const id = cardState.id;
+    saveCardBtn.disabled = true;
+    saveCardBtn.textContent = '저장 중…';
+    try {
+      const res = await api.getContentDetail(id);
+      const d = (res && res.data) || {};
+      const payload = d.payload || {};
+      const orig = (payload.blog && typeof payload.blog === 'object') ? payload.blog : {};
+      const next = Object.assign({}, orig, {
+        title: titleEl.value.trim(),
+        body: bodyEl.value,
+        updated_at: new Date().toISOString()
+      });
+      await api.updateContent({
+        content_id: id,
+        expected_version: d.version,
+        blog_title: titleEl.value.trim(),
+        patch: { blog: next }
+      });
+      const values = cardValues();
+      cardState = { id: id, brand: state.brand, values: Object.assign({}, values), base: Object.assign({}, values) };
+      writeCard(cardState);
+      /* 보드·선택 목록의 제목도 같이 맞춘다(서버를 다시 읽지 않고 이 화면만) */
+      const item = contents.find((c) => c.content_id === id);
+      if (item) item.blog_title = titleEl.value.trim();
+      saveCardBtn.textContent = '이 카드에 본문 저장';
+      refreshCardBar();
+      toast('카드에 저장했어요 · 본문 ' + Array.from(String(bodyEl.value).replace(/\s+/g, ' ').trim()).length.toLocaleString('ko-KR') + '자', 'ok');
+    } catch (err) {
+      saveCardBtn.textContent = '이 카드에 본문 저장';
+      refreshCardBar();
+      const code = err && err.code;
+      if (code === 'ERR_VERSION_CONFLICT') toast('다른 곳에서 먼저 바뀌었어요 — 카드를 다시 불러온 뒤 저장해 주세요', 'err');
+      else toast((ctx.friendlyError && ctx.friendlyError(err)) || '저장하지 못했어요', 'err');
+    }
+  }
+
+  cardSel.addEventListener('change', () => {
+    const id = cardSel.value;
+    if (!id) { loadSeq++; cardState = null; writeCard(null); refreshCardBar(); return; }
+    loadCard(id);
+  });
+  saveCardBtn.addEventListener('click', saveToCard);
+  openCardBtn.addEventListener('click', () => { if (cardState && ctx.openDetail) ctx.openDetail(cardState.id); });
+
   runBtn.addEventListener('click', () => {
-    saveDraft();
+    if (cardState) {
+      cardState.values = cardValues();
+      writeCard(cardState);
+      refreshCardBar();
+    } else {
+      saveDraft();
+    }
     paintCounters();
     paintResult();
     const r = lintBlog({ title: titleEl.value, body: bodyEl.value, photoCount: photoEl.value === '' ? undefined : Number(photoEl.value), keywords: kwEl.value }, rules);
@@ -193,10 +388,19 @@ export async function renderLintView(main, ctx) {
       r.pass ? 'ok' : 'err');
   });
 
-  [titleEl, bodyEl, photoEl, kwEl].forEach((el) => el.addEventListener('input', () => { saveDraft(); paintCounters(); }));
+  /* 카드 모드에서는 수동 초안(DRAFT_KEY)을 건드리지 않는다 — 써 둔 메모가 지워지지 않게. */
+  [titleEl, bodyEl, photoEl, kwEl].forEach((el) => el.addEventListener('input', () => {
+    if (cardState) { cardState.values = cardValues(); writeCard(cardState); refreshCardBar(); }
+    else saveDraft();
+    paintCounters();
+  }));
 
+  if (cardState) {
+    cardSel.value = cardState.id;
+    refreshCardBar();
+  }
   paintCounters();
-  if (draft.title || draft.body) paintResult();
+  if ((cardState && (cardState.values.title || cardState.values.body)) || draft.title || draft.body) paintResult();
 
   /* 기준 요약 */
   const guide = h('div', { class: 'panel' },

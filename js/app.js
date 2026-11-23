@@ -9,18 +9,18 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123b';
-import { renderPostView } from './postView.js?v=20261123b';
-import { trackChannelsOf } from './trackChannels.js?v=20261123b';
-import { renderLintView } from './lintView.js?v=20261123b';
-import { loadDaangnSeed } from './daangnView.js?v=20261123b';
-import { getAnalytics } from './analyticsView.js?v=20261123b';
-import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123b';
-import { renderCreateView } from './create-view.js?v=20261123b';
-import { renderCreateStudio } from './createStudio.js?v=20261123b';
-import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123b';
-import { draftSection, draftPreview } from './draftView.js?v=20261123b';
-import { produceSection } from './produceView.js?v=20261123b';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123c';
+import { renderPostView } from './postView.js?v=20261123c';
+import { trackChannelsOf } from './trackChannels.js?v=20261123c';
+import { renderLintView } from './lintView.js?v=20261123c';
+import { loadDaangnSeed } from './daangnView.js?v=20261123c';
+import { getAnalytics } from './analyticsView.js?v=20261123c';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123c';
+import { renderCreateView } from './create-view.js?v=20261123c';
+import { renderCreateStudio } from './createStudio.js?v=20261123c';
+import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123c';
+import { draftSection, draftPreview } from './draftView.js?v=20261123c';
+import { produceSection } from './produceView.js?v=20261123c';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -532,7 +532,7 @@ function renderRoute() {
   if (moreTab) moreTab.classList.toggle('is-active', MORE_ROUTES.indexOf(tabRoute) >= 0);
   const main = $('#main');
   clear(main);
-  const ctx = { h, state, api, toast, friendlyError, banner, pageHead, relTime, BRANDS, brandChannels, channelLabel, channelState, channelIcon, CHANNELS, renderRoute, openDetail };
+  const ctx = { h, state, api, toast, friendlyError, banner, pageHead, relTime, BRANDS, brandChannels, channelLabel, channelState, channelIcon, CHANNELS, statusLabel, renderRoute, openDetail };
   const view = {
     board: renderBoard,
     approve: renderApprove,

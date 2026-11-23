@@ -14,8 +14,8 @@
  * 판정은 기계적으로 센 값만 쓴다. 사람이 봐야 하는 것은 이 린터가 판정하지 않는다.
  */
 
-import { AI_TONE_DEFAULTS, lintAiTone } from './blogAiTone.js?v=20261123b';
-import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261123b';
+import { AI_TONE_DEFAULTS, lintAiTone } from './blogAiTone.js?v=20261123c';
+import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261123c';
 
 const RULES_URL = 'seeds/blog_lint_rules_2026w48.json';
 

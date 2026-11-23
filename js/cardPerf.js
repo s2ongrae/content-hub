@@ -16,7 +16,7 @@
  *  · 숫자를 모르면 0이 아니라 null 로 두고 화면이 '수집 전'을 고른다.
  */
 
-import { CHANNEL_LABEL, DONE_STATES, trackChannelsOf } from './trackChannels.js?v=20261123b';
+import { CHANNEL_LABEL, DONE_STATES, trackChannelsOf } from './trackChannels.js?v=20261123c';
 
 const NF = (n) => (Number(n) || 0).toLocaleString('ko-KR');
 
