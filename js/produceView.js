@@ -19,19 +19,20 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123i';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123i';
+import { buildEDL } from './yt/edl.js?v=20261123j';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123j';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
-  MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S
-} from './produceLogic.js?v=20261123i';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123i';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123i';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123i';
+  MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S,
+  PACE_IDS, PACE_LABELS, PACE_NOTES
+} from './produceLogic.js?v=20261123j';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261123j';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261123j';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123j';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -865,6 +866,7 @@ export function produceSection(ctx) {
         hookPos: state.hook_pos, hookHold: state.hook_hold,
         frameLock: state.frame_lock, frameLockImage: state.frame_lock_image, frameLockSeconds: state.frame_lock_seconds,
         motion: state.motion, motionQuality: state.motion_quality
+        , pace: state.pace
       });
       return { cr, b };
     };
@@ -965,6 +967,13 @@ export function produceSection(ctx) {
         ? '모션 없이 지금과 똑같이 자르기만 해요(원본 그대로).'
         : '3초 이상 클립에 줌인·줌아웃을 번갈아 넣고, 훅 끝에 펀치줌 1회. 1080p 가로 원본은 최대 1.12배.' })));
 
+    // 템포(2026-11-23) — 성래 님 v5 지적 "긴박함도 없다". 컷 리듬·자막 표시·TTS 속도·모션·블러 여백을 한 번에 바꾼다.
+    box.append(h('div', { class: 'pr-field' },
+      h('span', { class: 'pr-label', text: '템포 (숏폼 긴박함)' }),
+      h('select', { class: 'pr-sel', 'aria-label': '템포', onchange: (e) => change((st) => { st.pace = e.target.value; }) },
+        ...PACE_IDS.map((id) => h('option', { value: id, selected: state.pace === id ? '' : null, text: PACE_LABELS[id] }))),
+      h('span', { class: 'pr-check-s', text: (PACE_NOTES[state.pace] || '') + (state.pace === 'fast' ? ' 컷 목록도 1~1.8초로 짧게 잡아야 긴박해져요.' : '') })));
+
     box.append(...orderBlock('render', {
       sendText: '노트북에 렌더 오더 보내기',
       compute: () => {
@@ -981,6 +990,8 @@ export function produceSection(ctx) {
           renderWarn = { title: '서버(GAS)가 컷을 아직 몰라요.', text: '컷 ' + sentCuts + '곳이 오더에 실리지 않았어요. 이대로 승인하면 자르지 않은 영상이 만들어져요 — 포털 오더함에서 거절하고, GAS 를 새 버전으로 배포한 뒤 다시 보내 주세요.' };
         } else if (!drive && capN > 0 && Number(d.captions) !== capN) {
           renderWarn = { title: '서버(GAS)가 자막을 아직 몰라요.', text: '자막 ' + capN + '큐가 오더에 실리지 않았어요. 이대로 승인하면 자막 없는 클린 마스터만 나와요 — 포털 오더함에서 거절하고, GAS 를 새 버전으로 배포한 뒤 다시 보내 주세요.' };
+        } else if (payload.pace && d.pace !== payload.pace) {
+          renderWarn = { title: '서버(GAS)가 템포를 아직 몰라요.', text: '고른 템포(' + payload.pace + ')가 오더에 실리지 않아 기본 템포로 렌더돼요 — 포털 오더함에서 거절하고, GAS 를 새 버전으로 배포한 뒤 다시 보내 주세요.' };
         }
       },
       onDone: async () => {

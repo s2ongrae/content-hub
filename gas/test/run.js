@@ -307,6 +307,21 @@ eq('fit 은 소문자로 큐에 실린다', A.env.fetched[A.env.fetched.length -
 ok('fit 이 payload 키에 들어간다', Object.keys(A.env.fetched[A.env.fetched.length - 1].body.payload).indexOf('fit') >= 0);
 ['auto', 'left', 'CROPX'].forEach((f) => eq('거부: fit=' + f, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { fit: f }), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
 
+console.log('\n[8b-2c] 템포(pace) · 자막 비트 — fast 만 싣고, 비트는 4번째에 남긴다');
+A.env.setFetchReply(okReply);
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { pace: ' FAST ' }), { brand: 'daejeon_youth' });
+ok('pace=fast 오더 접수', o.ok, o);
+const rpace = A.env.fetched[A.env.fetched.length - 1].body;
+eq('pace 는 소문자로 큐에 실린다', rpace.payload.pace, 'fast');
+eq('응답에도 고른 템포를 돌려준다(허브가 확인)', o.ok && o.data.pace, 'fast');
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { pace: 'standard' }), { brand: 'daejeon_youth' });
+ok('standard 는 큐에 싣지 않는다(기본값·큐 글자 절약)', !('pace' in A.env.fetched[A.env.fetched.length - 1].body.payload));
+['turbo', 'warp', 'none'].forEach((pc) => eq('거부: pace=' + pc, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { pace: pc }), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { captions: [[0, 2, '비 오는 날 뭐 하지', 'hook'], [2, 5, '이 값이면 안 아깜다', 'payoff']] }), { brand: 'daejeon_youth' });
+ok('자막 4번째 비트를 그대로 넘긴다', o.ok && JSON.stringify(A.env.fetched[A.env.fetched.length - 1].body.payload.captions) === JSON.stringify([[0, 2, '비 오는 날 뭐 하지', 'hook'], [2, 5, '이 값이면 안 아깜다', 'payoff']]), A.env.fetched[A.env.fetched.length - 1].body.payload);
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodRender, { captions: [[0, 2, '장면 설명', 'scene']] }), { brand: 'daejeon_youth' });
+ok('모르는 비트는 버리고 문장만 보낸다(예전 허브 호환)', JSON.stringify(A.env.fetched[A.env.fetched.length - 1].body.payload.captions) === JSON.stringify([[0, 2, '장면 설명']]), A.env.fetched[A.env.fetched.length - 1].body.payload.captions);
+
 console.log('\n[8h] 사진 입력(content_render images) — 25장 · 영상 8개와 별개');
 A.env.setFetchReply(okReply);
 const photoNames = Array.from({ length: 25 }, (_, i) => '사진' + pad(i + 1) + '_' + (i < 2 ? '외관' : (i < 4 ? '음식' : '분위기')) + '.jpg');

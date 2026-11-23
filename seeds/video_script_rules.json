@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
-  "updated_at": "2026-11-21",
-  "note": "대전 청년 숏폼 대본 규칙 — 사용자 공유 인사이트 4개(분량·금지어·단계 구조·톤 복제)를 기계가 읽는 표로 옮긴 것. 구현: hub-agent/notebook-agent/lib/script.js",
+  "version": "1.1",
+  "updated_at": "2026-11-23",
+  "note": "대전 청년 숏폼 대본 규칙 — 사용자 공유 인사이트 4개(분량·금지어·단계 구조·톤 복제)를 기계가 읽는 표로 옮긴 것. 2026-11-23: 구조를 훅/몸통/CTA 3단계에서 기승전결 5비트로 바꾸고 템포 프리셋을 더했다. 구현: hub-agent/notebook-agent/lib/{script,story,pace,wrap_ko}.js · content-hub/js/{produceLogic,wrapKo}.js",
   "length": {
     "15": { "min": 80, "max": 110 },
     "30": { "min": 180, "max": 220 },
@@ -14,7 +14,34 @@
     "cta_ratio": 0.12,
     "cta_min": 2,
     "cta_max": 3,
-    "roles": ["hook", "body", "cta"]
+    "roles": ["hook", "body", "cta"],
+    "note": "훅/몸통/CTA 3단계는 2026-11-23 부터 아래 story.beats(기승전결 5비트)로 대체됐다. 옛 값은 호환용으로 남긴다."
+  },
+  "story": {
+    "note": "장면 장면을 설명하는 '중계형' 대본을 막는다. 마지막은 반드시 payoff(판단 한 줄). 서커스 v5 지적 반영(2026-11-23).",
+    "beats": [
+      { "id": "hook", "label": "훅", "share": 0.15, "hint": "상황·문제를 한 문장으로" },
+      { "id": "info", "label": "핵심 정보", "share": 0.25, "hint": "가격·자리 같은 확인된 사실 1~2개" },
+      { "id": "build", "label": "빌드업", "share": 0.25, "hint": "긴장을 올린다" },
+      { "id": "climax", "label": "클라이맥스", "share": 0.25, "hint": "가장 센 장면·반전" },
+      { "id": "payoff", "label": "한 줄 결론", "share": 0.10, "hint": "값어치에 대한 판단 한 문장" }
+    ],
+    "caption_field": "captions[i][3] = beat (또는 {start,end,text,beat})",
+    "strict_on": ["pace=fast", "새 영상 대본 오더"],
+    "warn_only": ["예전 카드·사람이 쓴 대본"]
+  },
+  "pace": {
+    "note": "컷 리듬·자막 표시·TTS 속도·모션·블러 여백을 한 번에 정한다. 노트북 lib/pace.js · GAS RENDER_PACES 와 같은 값.",
+    "default": "standard",
+    "ids": ["calm", "standard", "fast"],
+    "fast": { "cut_s": [1.0, 1.8], "cue_show_max_s": 2.4, "min_show_s": 0.6, "motion": "dynamic", "narration_hype_rate": "+26%", "blur_darken": -0.06, "blur_radius": 12 },
+    "standard": { "cut_s": [1.4, 3.0], "cue_show_max_s": 3.0, "min_show_s": 0.8, "motion": "auto", "narration_hype_rate": "+18%", "blur_darken": -0.15, "blur_radius": 20 },
+    "calm": { "cut_s": [2.0, 4.0], "cue_show_max_s": 3.5, "min_show_s": 0.8, "motion": "calm", "narration_hype_rate": "+12%", "blur_darken": -0.15, "blur_radius": 20 }
+  },
+  "line_wrap": {
+    "note": "자막은 어절 단위로만 나누고 의존명사·보조용언을 줄 첫머리에 두지 않는다(2026-11-23). 규칙 본체: hub-agent lib/wrap_ko.js · content-hub js/wrapKo.js",
+    "no_line_start": ["중", "것", "건", "수", "줄", "때", "데", "듯", "만큼", "뿐", "채", "척", "김", "터", "판", "법", "대로", "때문", "등", "및", "부터", "까지", "보다", "처럼"],
+    "codes": ["orphan_start", "short_tail", "over_cpl"]
   },
   "hook_form": {
     "note": "질문형 훅 70% (2026-11-21) — 무음으로 보는 시청자를 첫 1초에 글자로 잡는다. 본문 규준은 hub-agent lib/template.js·content-hub js/videoTemplate.js 한 곳에 있다.",

@@ -7,7 +7,12 @@
  * 노트북은 굽기 직전에 한 번 더 막는다). 한쪽만 바꾸지 말고 시험의 같은 값 표로 맞춘다.
  *
  * FAIL = 굽지 못하는 문제(시간 역전·겹침·3줄 이상·빈 자막·태그·화자 표기), WARN = 알리고 진행할 수 있는 문제.
+ *
+ * 줄바꿈(2026-11-23): 글자 수뿐 아니라 **의미 단위**도 본다 — '대기 / 중'처럼 의존명사가
+ * 둘째 줄 첫머리에 홀로 서면 WARN(orphan_start). 규칙 본체는 js/wrapKo.js 한 곳이다.
  */
+
+import { lintLines } from './wrapKo.js?v=20261123j';
 
 export const CPL = { daejeon_youth: 12, ppiyak_kimmary: 11 };
 export const MIN_DUR = 1.0;
@@ -61,6 +66,8 @@ export function checkSrt(cues, brand) {
     if (slot) add(n, 'FAIL', 'slot', '채우지 않은 칸([ ])이 남아 있어요 — 영상에서 확인한 값으로 채워 주세요');
     if (!slot && /^\s*(\[[^\]]{1,12}\]|\([^)]{1,12}\)|[가-힣A-Za-z0-9]{1,8}\s*:)\s/.test(body) && /^\s*(\[|\(|[가-힣A-Za-z0-9]{1,8}\s*:)/.test(lines[0])) add(n, 'FAIL', 'speaker', '화자 표기는 쓸 수 없어요');
     lines.forEach((ln, li) => { if (ln.length > cpl) add(n, 'WARN', 'cpl', (li + 1) + '번째 줄이 ' + ln.length + '자예요(최대 ' + cpl + '자)'); });
+    // 의미 단위 줄바꿈 — 사람이 고친 자막도 같은 규칙으로 알려 준다(노트북 srt.js 와 같은 값).
+    lintLines(lines, cpl, { shortTail: false }).forEach((w) => add(n, 'WARN', w.code, w.msg));
     const dur = c.end - c.start;
     if (dur > 0 && dur < MIN_DUR - 1e-6) add(n, 'WARN', 'short', '표시 시간이 ' + dur.toFixed(2) + '초예요(최소 ' + MIN_DUR + '초)');
     if (dur > MAX_DUR + 1e-6) add(n, 'WARN', 'long', '표시 시간이 ' + dur.toFixed(2) + '초예요(최대 ' + MAX_DUR + '초)');

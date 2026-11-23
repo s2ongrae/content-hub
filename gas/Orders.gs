@@ -191,6 +191,10 @@ const RENDER_FITS = ['crop', 'blur', 'pad'];   // 프레이밍 — 비우면 노
 // 자동 줌·모션(2026-11-21) — 노트북 lib/motion.js PRESET_IDS · 허브 js/produceLogic.js MOTION_IDS 와 같은 값.
 //   motion 은 'auto'(기본 · 오늘 오더도 모션이 붙는다) · dynamic · calm · none. none 이면 예전과 완전 동일.
 const RENDER_MOTIONS = ['auto', 'dynamic', 'calm', 'none'];
+/* 템포 프리셋(2026-11-23) — 노트북 lib/pace.js · 허브 js/produceLogic.js PACE_IDS 와 같은 값. */
+const RENDER_PACES = ['calm', 'standard', 'fast'];
+/* 자막 배열 4번째 = 스토리 비트(2026-11-23) — 노트북 lib/story.js 와 같은 값. */
+const RENDER_BEATS = ['hook', 'info', 'build', 'climax', 'payoff'];
 const RENDER_MOTION_QUALITY = ['standard', 'high'];   // standard = linear(≤1.15배) / high = cubic 강제
 const RENDER_MAX_INPUTS = 8;
 /* 완제품(2026-11-20): 자막 번인·내레이션. 큐 payload 4,000자 때문에 40큐까지 인라인,
@@ -231,7 +235,11 @@ function hubRenderCues_(raw, label, withTone) {
     if (withTone) {
       if (tone !== null && tone !== '' && ['hype', 'calm'].indexOf(tone) === -1) throw bad(label + '[' + i + '] 의 톤은 hype · calm 중 하나여야 합니다.');
       out.push([r2(start), r2(end), t].concat(tone ? [tone] : []));
-    } else out.push([r2(start), r2(end), t]);
+    } else {
+      // 자막 4번째는 스토리 비트 — 모르는 값은 버리고 문장만 보낸다(예전 허브 호환).
+      const beat = tone !== null && tone !== '' && RENDER_BEATS.indexOf(String(tone)) !== -1 ? String(tone) : '';
+      out.push([r2(start), r2(end), t].concat(beat ? [beat] : []));
+    }
   }
   return out;
 }
@@ -416,6 +424,12 @@ function hubRenderPayload_(payload) {
     if (RENDER_MOTION_QUALITY.indexOf(mq) === -1) throw bad('motion_quality 는 ' + RENDER_MOTION_QUALITY.join(' · ') + ' 중 하나여야 합니다.');
     out.motion_quality = mq;
   }
+  // 템포(2026-11-23) — standard 는 기본값이라 큐에 싣지 않는다(허브 produceLogic 과 같은 규칙).
+  if (payload.pace !== undefined && payload.pace !== null && payload.pace !== '') {
+    const pc = String(payload.pace).trim().toLowerCase();
+    if (RENDER_PACES.indexOf(pc) === -1) throw bad('pace 는 ' + RENDER_PACES.join(' · ') + ' 중 하나여야 합니다.');
+    if (pc !== 'standard') out.pace = pc;
+  }
   const cuts = hubRenderCuts_(payload.cuts, names.length);
   if (cuts.length) out.cuts = cuts;
   // 사진 길이·전환(2026-11-21): 비우면 노트북이 자막 길이로 계산한다(장당 3.0초 이상)
@@ -591,6 +605,7 @@ function hubOrderResult_(json, type, workspace, prompt, queueType, cutCount, cue
     cuts: (typeof cutCount === 'number') ? cutCount : undefined,
     captions: (typeof cues.captions === 'number') ? cues.captions : undefined,
     narration: (typeof cues.narration === 'number') ? cues.narration : undefined,
+    pace: cues.pace ? String(cues.pace) : undefined,
     approval_expires_at: String((json && json.approval_expires_at) || (item && item.approval_expires_at) || '')
   };
 }
@@ -838,7 +853,7 @@ function handleHubOrder_(ss, payload, ctx) {
   const queueType = isDraft ? 'content_draft' : (realRender ? 'content_render' : 'claude_prompt');
   const out = hubOrderResult_(json, type, workspace, prompt, queueType,
     realRender ? (body.payload.cuts ? body.payload.cuts.length : 0) : undefined,
-    realRender ? { captions: (body.payload.captions || []).length, narration: (body.payload.narration || []).length } : undefined);
+    realRender ? { captions: (body.payload.captions || []).length, narration: (body.payload.narration || []).length, pace: body.payload.pace || '' } : undefined);
   appendSystemHealth_({
     eventType: 'HUB_ORDER', status: 'SUCCESS', actor: 'api',
     detail: type + ' → ' + (out.order_id || '(id 없음)') + ' · ' + workspace

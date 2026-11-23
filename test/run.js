@@ -477,6 +477,15 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       const N = require(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'srt.js'));
       return shared.every(([cues, code]) => R.checkSrt(cues, 'daejeon_youth').map((i) => i.level + ':' + i.code).includes(code) && N.checkSrt(cues, 'daejeon_youth').map((i) => i.level + ':' + i.code).includes(code));
     })() : true);
+    /* ── 의미 단위 줄바꿈(2026-11-23) — js/wrapKo.js ── */
+    const WK = await import('file://' + path.join(ROOT, 'js', 'wrapKo.js') + '?v=test-wrap');
+    ok('줄바꿈: “대기 / 중”으로 갈라지지 않는다', (() => { const l = WK.wrapText('철구 속 오토바이 대기 중', 12, 2, true); return l.length === 2 && !l.slice(1).some((x) => WK.isNoStart(x.trim().split(/\s+/)[0])); })(), WK.wrapText('철구 속 오토바이 대기 중', 12, 2, true));
+    ok('줄바꿈 검사기: 의존명사로 시작하는 줄을 참는다', WK.lintLines(['철구 속 오토바이 대기', '중'], 12).some((i) => i.code === 'orphan_start') && WK.lintLines(['철구 속 오토바이', '대기 중'], 12).length === 0);
+    ok('허브 자막 검사도 같은 WARN(orphan_start)을 낸다 — “대기 / 중”', codesOf([Cq(1, 2.5, '철구 속 오토바이 대기\n중')]).includes('WARN:orphan_start'));
+    ok('허브·노트북 줄바꿈 결과가 같다(같은 표본 4개)', fs.existsSync(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'wrap_ko.js')) ? (() => {
+      const NK = require(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'wrap_ko.js'));
+      return ['철구 속 오토바이 대기 중', '비 오는 날 실내 데이트로 딱', '온라인 예매 19,700원이면', '천장 실크 곡예 다음은 철구'].every((t) => JSON.stringify(NK.wrapText(t, 12, 2, true)) === JSON.stringify(WK.wrapText(t, 12, 2, true)));
+    })() : true);
 
     /* ── 2·3단계 오더(payload) ── */
     const stBase = { contentId: 'KM-1', brand: 'ppiyak_kimmary' };
@@ -1229,6 +1238,15 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면 도움말이 프리셋 동작을 밝힌다(3초 이상 · 펀치 1회 · 1080p 가로 1.12배)', /3초 이상 클립에 줌인·줌아웃/.test(pv) && /훅 끝에 펀치줌 1회/.test(pv) && /1080p 가로 원본은 최대 1\.12배/.test(pv));
     ok('GAS: motion·motion_quality 두 키를 검사해 넘긴다', /RENDER_MOTIONS = \['auto', 'dynamic', 'calm', 'none'\]/.test(orders) && /out\.motion = mo/.test(orders) && /RENDER_MOTION_QUALITY = \['standard', 'high'\]/.test(orders) && /out\.motion_quality = mq/.test(orders));
     ok('4계층 값이 같다(화면 · GAS · 노트북)', PL.MOTION_IDS.join(',') === 'auto,dynamic,calm,none' && fs.existsSync(path.join(ROOT, 'js', 'produceLogic.js')) && /MOTION_IDS/.test(pv));
+    /* ── 템포 프리셋(2026-11-23) — fast: 컷 1~1.8초·자막 0.6초·모션 dynamic ── */
+    ok('템포 3종(calm·standard·fast) · 기본 standard', PL.PACE_IDS.join(',') === 'calm,standard,fast' && PL.defaultState().pace === 'standard' && /긴박/.test(PL.PACE_LABELS.fast));
+    ok('상태: 고른 템포가 남고(새로고침 유지), 모르는 값은 standard', PL.normalizeState({ pace: 'fast' }).pace === 'fast' && PL.normalizeState({ pace: 'warp' }).pace === 'standard' && PL.normalizeState({ inputs: ['a.mp4'] }).pace === 'standard');
+    ok('오더: fast 만 싣고 standard 는 안 싣는다(큐 글자 절약)', PL.buildRenderPayload(Object.assign({}, base, { pace: 'fast' })).payload.pace === 'fast' && !('pace' in PL.buildRenderPayload(Object.assign({}, base)).payload));
+    ok('오더: 모르는 템포는 거부', !PL.buildRenderPayload(Object.assign({}, base, { pace: 'turbo' })).ok);
+    ok('자막 4번째 비트를 보존하고 모르는 비트는 버린다', JSON.stringify(PL.normalizeCues([[0, 2, '훅', 'hook']], '자막').cues) === JSON.stringify([[0, 2, '훅', 'hook']]) && PL.normalizeCues([[0, 2, '장면', 'scene']], '자막').cues[0].length === 3);
+    ok('제작 ④ 화면에 템포 선택 칸이 있다', /템포 \(숏폼 긴박함\)/.test(pv) && /PACE_IDS\.map/.test(pv) && /pace: state\.pace/.test(pv));
+    ok('GAS: pace 를 검사하고 fast 만 넘긴다', /RENDER_PACES = \['calm', 'standard', 'fast'\]/.test(orders) && /out\.pace = pc/.test(orders) && /RENDER_BEATS/.test(orders));
+    ok('4계층 템포 값이 같다(화면 · GAS · 노트북)', PL.PACE_IDS.join(',') === 'calm,standard,fast' && (fs.existsSync(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'pace.js')) ? require(path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'pace.js')).PACE_IDS.join(',') === PL.PACE_IDS.join(',') : true));
     // 대본 AI 가 뽑은 질문형 훅 → 제작 스텝퍼 훅 칸(2026-11-21)
     const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
     ok('대본 결과의 훅·보조 글자를 카드 production 에 남긴다', /hook: draft\.hook \|\| null/.test(csSrc) && /hook_sub: draft\.hook_sub \|\| null/.test(csSrc));

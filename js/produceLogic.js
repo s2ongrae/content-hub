@@ -10,8 +10,8 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261123i';
-import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261123i';
+import { tcToSec } from './yt/edl.js?v=20261123j';
+import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261123j';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -29,12 +29,25 @@ export const FRAME_LOCK_IMAGE_RE = /\.(jpe?g|png|webp)$/i;
 export const MOTION_IDS = ['auto', 'dynamic', 'calm', 'none'];
 export const MOTION_LABELS = { auto: '자동(추천)', dynamic: '다이나믹', calm: '차분하게', none: '끔' };
 export const MOTION_QUALITIES = ['standard', 'high'];
+/* 템포 프리셋(2026-11-23) — 노트북 lib/pace.js · 허브 GAS RENDER_PACES 와 같은 값.
+   fast: 컷 1.0~1.8초 · 자막 최소 0.6초 · 모션 dynamic · 가로 원본 blur 여백 덜 어둡게.
+   standard 는 지금까지와 같은 값이라 오더에 싣지 않는다(큐 글자 절약). */
+export const PACE_IDS = ['calm', 'standard', 'fast'];
+export const PACE_LABELS = { calm: '차분 (컷 2~4초)', standard: '기본 (컷 1.4~3초)', fast: '긴박 (컷 1~1.8초·쇼츠 몰아치기)' };
+export const PACE_NOTES = {
+  calm: '한 장면을 오래 보여 주는 설명형. TTS 도 느리다.',
+  standard: '지금까지의 기본값. 컷 1.4~3초 · 자막 0.8초부터 · 모션 자동.',
+  fast: '1~1.8초 컷 전환 · 자막 0.6초부터 · 모션 다이나믹 · TTS 더 빠르게 · 블러 여백 덜 어둡게. 긴박한 쇼츠용.'
+};
 /* 완제품(2026-11-20): 자막 번인·내레이션. 큐가 많으면 큐 payload(4,000자)를 넘으므로 40큐까지 인라인,
    그보다 많으면 payload_source:'drive' 로 보내고 노트북이 카드 payload(production)에서 읽는다. */
 export const MAX_CUES_INLINE = 40;
 export const MAX_PAYLOAD_CHARS = 3800;
 export const MAX_CUES = 400;                  // 노트북 상한과 같은 값
 const MAX_CUE_TEXT = 200;
+/* 스토리 5비트(2026-11-23) — 노트북 lib/story.js 와 같은 값. 자막 배열 4번째가 이 비트다. */
+export const STORY_BEATS = ['hook', 'info', 'build', 'climax', 'payoff'];
+export const STORY_BEAT_LABELS = { hook: '훅', info: '핵심 정보', build: '빌드업', climax: '클라이맥스', payoff: '한 줄 결론' };
 
 /* 내 육성 녹음(2026-11-23) — 허브 gas/Bgm.gs·Orders.gs · 노트북 lib/voice.js 와 같은 값.
    기본은 'tts' 다. human 일 때만 오더에 voice_mode·voice_file 이 실리고, TTS 화면·오더는 글자 하나 바뀌지 않는다. */
@@ -112,7 +125,7 @@ export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', b
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', voice_mode: 'tts', voice_file: '', voice_offset_ms: 0, voice_fallback_tts: false, voice_meta: null, template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '', motion: 'auto', motion_quality: 'standard' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', voice_mode: 'tts', voice_file: '', voice_offset_ms: 0, voice_fallback_tts: false, voice_meta: null, template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '', motion: 'auto', motion_quality: 'standard', pace: 'standard' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -162,6 +175,8 @@ export function normalizeState(raw) {
   // 자동 줌·모션(2026-11-21) — 옛 저장값에는 없으므로 비면 auto(기본값)로 돈다.
   s.motion = MOTION_IDS.indexOf(String(raw.motion || '')) >= 0 ? String(raw.motion) : 'auto';
   s.motion_quality = MOTION_QUALITIES.indexOf(String(raw.motion_quality || '')) >= 0 ? String(raw.motion_quality) : 'standard';
+  // 템포(2026-11-23) — 옛 저장값에는 없으므로 비면 standard(지금까지와 같다).
+  s.pace = PACE_IDS.indexOf(String(raw.pace || '')) >= 0 ? String(raw.pace) : 'standard';
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
@@ -313,20 +328,25 @@ export function normalizeCues(raw, label, opts) {
   raw.forEach((c, i) => {
     let start, end, text, extra;
     if (Array.isArray(c)) { start = Number(c[0]); end = Number(c[1]); text = String(c[2] == null ? '' : c[2]); extra = c[3]; }
-    else if (c && typeof c === 'object') { start = Number(c.start); end = Number(c.end); text = String(c.text == null ? '' : c.text); extra = c.tone; }
+    else if (c && typeof c === 'object') { start = Number(c.start); end = Number(c.end); text = String(c.text == null ? '' : c.text); extra = o.tones ? c.tone : c.beat; }
     else { errors.push(label + ' ' + (i + 1) + '번 큐 모양이 올바르지 않아요'); return; }
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) { errors.push(label + ' ' + (i + 1) + '번 큐의 시작·끝(초)이 올바르지 않아요'); return; }
     const t = text.replace(/\s+/g, ' ').trim();
     if (!t) { errors.push(label + ' ' + (i + 1) + '번 큐의 문장이 비어 있어요'); return; }
     if (t.length > MAX_CUE_TEXT) { errors.push(label + ' ' + (i + 1) + '번 큐의 문장이 너무 길어요(' + MAX_CUE_TEXT + '자까지)'); return; }
     if (o.tones && extra !== undefined && extra !== null && extra !== '' && o.tones.indexOf(String(extra)) < 0) { errors.push(label + ' ' + (i + 1) + '번 큐의 톤은 ' + o.tones.join(' · ') + ' 중 하나여야 해요'); return; }
-    cues.push([Math.round(start * 100 + 1e-9) / 100, Math.round(end * 100 + 1e-9) / 100, t].concat(o.tones && extra ? [String(extra)] : []));
+    // 자막은 4번째를 비트로 보존한다(2026-11-23) — 렌더·검사가 장면 중계인지 판단하는 데 쓴다.
+    const beat = !o.tones && extra !== undefined && extra !== null && STORY_BEATS.indexOf(String(extra)) >= 0 ? String(extra) : '';
+    const row = [Math.round(start * 100 + 1e-9) / 100, Math.round(end * 100 + 1e-9) / 100, t];
+    if (o.tones && extra) row.push(String(extra));
+    else if (beat) row.push(beat);
+    cues.push(row);
   });
   return { cues, errors };
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, voiceMode, voiceFile, voiceOffsetMs, voiceFallback, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds, motion, motionQuality }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, voiceMode, voiceFile, voiceOffsetMs, voiceFallback, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds, motion, motionQuality, pace }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -420,6 +440,10 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   const mq = String(motionQuality || 'standard').trim().toLowerCase();
   if (MOTION_QUALITIES.indexOf(mq) < 0) errors.push('모션 화질은 ' + MOTION_QUALITIES.join(' · ') + ' 중 하나여야 해요');
   else if (mq !== 'standard') payload.motion_quality = mq;
+  // 템포(2026-11-23) — standard 는 지금까지와 같은 값이라 싣지 않는다(큐 글자 절약).
+  const pc = String(pace || 'standard').trim().toLowerCase();
+  if (pc && PACE_IDS.indexOf(pc) < 0) errors.push('템포는 ' + PACE_IDS.join(' · ') + ' 중 하나여야 해요');
+  else if (pc !== 'standard') payload.pace = pc;
   if (errors.length) return { ok: false, errors };
   const willBurn = burnSubtitles !== false && (cap.cues.length > 0 || source === 'drive');  if (!willBurn && burnSubtitles === false && (cap.cues.length > 0 || source === 'drive')) payload.burn_subtitles = false;
   else if (willBurn && sub !== 'auto') payload.sub_style = sub;
