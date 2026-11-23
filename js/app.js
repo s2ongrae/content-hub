@@ -9,18 +9,18 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123d';
-import { renderPostView } from './postView.js?v=20261123d';
-import { trackChannelsOf } from './trackChannels.js?v=20261123d';
-import { renderLintView } from './lintView.js?v=20261123d';
-import { loadDaangnSeed } from './daangnView.js?v=20261123d';
-import { getAnalytics } from './analyticsView.js?v=20261123d';
-import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123d';
-import { renderCreateView } from './create-view.js?v=20261123d';
-import { renderCreateStudio } from './createStudio.js?v=20261123d';
-import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123d';
-import { draftSection, draftPreview } from './draftView.js?v=20261123d';
-import { produceSection } from './produceView.js?v=20261123d';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123f';
+import { renderPostView } from './postView.js?v=20261123f';
+import { trackChannelsOf } from './trackChannels.js?v=20261123f';
+import { renderLintView } from './lintView.js?v=20261123f';
+import { loadDaangnSeed } from './daangnView.js?v=20261123f';
+import { getAnalytics } from './analyticsView.js?v=20261123f';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123f';
+import { renderCreateView } from './create-view.js?v=20261123f';
+import { renderCreateStudio } from './createStudio.js?v=20261123f';
+import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123f';
+import { draftSection, draftPreview } from './draftView.js?v=20261123f';
+import { produceSection } from './produceView.js?v=20261123f';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -521,8 +521,11 @@ function renderRoute() {
   const seg = String(route).split('/');
   const routeRoot = seg[0] || 'board';
   const routeSub = seg[1] || '';
-  /* 상세(#/post)는 따로 탭이 없다 — 들어온 곳(성과분석·내 블로그) 탭을 켜 둔다 */
-  const tabRoute = routeRoot === 'post' ? (/[?&]source=blog(&|$)/.test(location.hash) ? 'blog' : 'perf') : routeRoot;
+  /* 상세(#/post)는 따로 탭이 없다 — 들어온 곳(성과분석·내 블로그) 탭을 켜 둔다.
+     빠른 카드(#/capture)는 제작 안의 화면이라 [제작]을 켜 둔다. */
+  const tabRoute = routeRoot === 'post'
+    ? (/[?&]source=blog(&|$)/.test(location.hash) ? 'blog' : 'perf')
+    : (routeRoot === 'capture' ? 'create' : routeRoot);
   document.querySelectorAll('[data-route]').forEach((tab) => {
     if (tab.dataset.route === tabRoute) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
@@ -1005,7 +1008,7 @@ function renderKnowHow(main) {
   const tags = h('input', { type: 'text', placeholder: '태그: 첫 문장, 자막, 썸네일', autocomplete: 'off' });
   const memo = h('textarea', { placeholder: '왜 먹혔는지 / 무엇을 따라 할지 한두 줄' });
 
-  form.appendChild(h('h3', null, '규칙 추가'));
+  form.appendChild(h('h3', null, '노하우 적기'));
   form.appendChild(h('label', { class: 'field' }, h('span', { class: 'field-label', text: '제목 *' }), title));
   const g = h('div', { class: 'form-grid two' });
   g.appendChild(h('label', { class: 'field' }, h('span', { class: 'field-label', text: '원문 링크' }), url));
@@ -1060,7 +1063,7 @@ function renderKnowHow(main) {
   }
 
   panel.appendChild(h('div', { class: 'row', style: 'margin-top:12px' },
-    h('button', { class: 'ghost-btn', type: 'button', text: '⬇ JSON 내보내기', onclick: () => exportKnowhow() })));
+    h('button', { class: 'ghost-btn', type: 'button', text: '⬇ 파일로 내보내기', onclick: () => exportKnowhow() })));
   main.appendChild(panel);
 }
 

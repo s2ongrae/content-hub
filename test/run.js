@@ -717,7 +717,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       return rep.ok && rep.report.voice === undefined;
     })());
     ok('화면: ④ 에 방식 라디오·녹음 카드·파일 고르기·미리듣기가 있다', /내 목소리\(녹음\)/.test(pv) && /buildRecordingCard/.test(pv) && /uploadVoice/.test(pv) && /createObjectURL/.test(pv) && /voice_fallback_tts/.test(pv));
-    ok('화면: 녹음 파일을 올리면 방식이 human 으로 바뀐다(다시 tts 로 돌릴 수 있다)', /s\.voice_mode = 'human'/.test(pv) && /s\.voice_mode = 'tts'/.test(pv));
+    ok('화면: 녹음 파일을 올리면 방식이 human 으로 바뀐다(없음·TTS 로 되돌릴 수 있다)', /s\.voice_mode = 'human'/.test(pv) && /s\.narrate = v !== 'none'/.test(pv) && /value: 'none'/.test(pv));
     ok('업로드: 2MB 조각 · 이름은 서버가 만든다(voice_put)', /api\.post\('voice_put'/.test(fs.readFileSync(path.join(ROOT, 'js', 'uploadVideo.js'), 'utf8')) && /UPLOAD_PART_BYTES/.test(fs.readFileSync(path.join(ROOT, 'js', 'uploadVideo.js'), 'utf8')));
   } catch (err) {
     ok('제작 스텝퍼 시험', false, (err && err.stack) || err);

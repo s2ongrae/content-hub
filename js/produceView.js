@@ -19,8 +19,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123d';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123d';
+import { buildEDL } from './yt/edl.js?v=20261123e';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123e';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -28,10 +28,10 @@ import {
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S
-} from './produceLogic.js?v=20261123d';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123d';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123d';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123d';
+} from './produceLogic.js?v=20261123e';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261123e';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261123e';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123e';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -798,14 +798,21 @@ export function produceSection(ctx) {
       }
     });
 
+    // 3갈래 — 없음 / AI TTS / 내 목소리. 예전의 '내레이션(TTS) 넣기' 체크박스를 이 하나로 합쳤다(같은 state.narrate).
+    const mode = state.voice_mode === 'human' ? 'human' : (state.narrate ? 'tts' : 'none');
+    const pick = (v) => change((s) => {
+      s.voice_mode = v === 'human' ? 'human' : 'tts';
+      s.narrate = v !== 'none';
+    });
     return h('div', { class: 'pr-field' },
-      h('span', { class: 'pr-label', text: '내레이션 방식' }),
-      h('div', { class: 'pr-row', role: 'radiogroup', 'aria-label': '내레이션 방식' },
-        h('label', { class: 'pr-radio' }, h('input', { type: 'radio', name: 'voice-mode-' + contentId, value: 'tts', checked: state.voice_mode !== 'human' ? '' : null, onchange: () => change((s) => { s.voice_mode = 'tts'; }) }), h('span', { text: 'AI TTS 목소리(기본)' })),
-        h('label', { class: 'pr-radio' }, h('input', { type: 'radio', name: 'voice-mode-' + contentId, value: 'human', checked: state.voice_mode === 'human' ? '' : null, onchange: () => change((s) => { s.voice_mode = 'human'; }) }), h('span', { text: '내 목소리(녹음)' }))),
-      h('span', { class: 'pr-check-s', text: state.voice_mode === 'human'
+      h('span', { class: 'pr-label', text: '내레이션' }),
+      h('div', { class: 'pr-row', role: 'radiogroup', 'aria-label': '내레이션' },
+        h('label', { class: 'pr-radio' }, h('input', { type: 'radio', name: 'voice-mode-' + contentId, value: 'none', checked: mode === 'none' ? '' : null, onchange: () => pick('none') }), h('span', { text: '없음' })),
+        h('label', { class: 'pr-radio' }, h('input', { type: 'radio', name: 'voice-mode-' + contentId, value: 'tts', checked: mode === 'tts' ? '' : null, onchange: () => pick('tts') }), h('span', { text: 'AI TTS 목소리' })),
+        h('label', { class: 'pr-radio' }, h('input', { type: 'radio', name: 'voice-mode-' + contentId, value: 'human', checked: mode === 'human' ? '' : null, onchange: () => pick('human') }), h('span', { text: '내 목소리(녹음)' }))),
+      h('span', { class: 'pr-check-s', text: mode === 'human'
         ? '카드의 문장을 폰으로 읽어 통녹음 1파일(.m4a)로 올려요. 노트북이 잡음을 정리하고 대본에 맞춰 자막·큐 시각을 다시 계산해요.'
-        : '지금과 같아요 — 카드 대본으로 edge-tts 가 읽어요.' }),
+        : (mode === 'tts' ? (narN ? '카드 내레이션 ' + narN + '큐(톤 hype/calm) · 현장음 -15dB 덕킹 — 지금과 같아요.' : (capN ? '내레이션 대본이 없어 자막 문장을 차분하게 읽어요.' : '자막도 내레이션도 없어 켜도 효과가 없어요.')) : '내레이션은 넣지 않아요(자막만).')}),
       state.voice_mode === 'human' ? h('div', { class: 'pr-subbox' },
         h('div', { class: 'pr-row' }, cardBtn, copyBtn),
         cardHost,
@@ -882,8 +889,6 @@ export function produceSection(ctx) {
       h('span', { class: 'pr-label', text: '완제품 옵션 (자막·내레이션)' }),
       check('자막을 구워서 완제품으로', state.burn, (v) => change((s) => { s.burn = v; }),
         capN ? '카드 자막 ' + capN + '큐 · 1080×1920 기준 · 하단 안전선 안 · 2줄까지' : '카드에 자막이 없어요 — 구울 것이 없습니다'),
-      check('내레이션(TTS) 넣기', state.narrate, (v) => change((s) => { s.narrate = v; }),
-        narN ? '카드 내레이션 ' + narN + '큐 (톤 hype/calm) · 현장음 -15dB 덕킹' : (capN ? '내레이션 대본이 없어 자막 문장을 차분하게 읽어요' : '자막도 내레이션도 없어 켜도 효과가 없어요')),
       voicePanel(),
       h('div', { class: 'pr-two' },
         h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '자막 크기 기준' }),
