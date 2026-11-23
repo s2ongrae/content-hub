@@ -36,6 +36,20 @@ export const MAX_PAYLOAD_CHARS = 3800;
 export const MAX_CUES = 400;                  // 노트북 상한과 같은 값
 const MAX_CUE_TEXT = 200;
 
+/* 내 육성 녹음(2026-11-23) — 허브 gas/Bgm.gs·Orders.gs · 노트북 lib/voice.js 와 같은 값.
+   기본은 'tts' 다. human 일 때만 오더에 voice_mode·voice_file 이 실리고, TTS 화면·오더는 글자 하나 바뀌지 않는다. */
+export const VOICE_MODES = ['tts', 'human'];
+export const VOICE_EXT_RE = /\.(mp3|m4a|wav)$/i;
+export const VOICE_NAME_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|m4a|wav)$/i;
+export const VOICE_PART_BYTES = 2 * 1024 * 1024;
+export const VOICE_MAX_BYTES = 30 * 1024 * 1024;
+export const VOICE_MIN_BYTES = 8 * 1024;
+export const VOICE_MAX_PARTS = 16;
+export const VOICE_OFFSET_LIMIT_MS = 3000;
+export const VOICE_CUES_PER_PART = 8;         // 녹음 카드 한 파트 = 8큐(기획 §4-1)
+export const VOICE_GAP_S = 1.2;               // 문장 사이 쉼(카드에 그대로 적는다)
+export const VOICE_LONG_WARN_S = 60;          // 60초가 넘으면 화면이 한 번 더 물어본다
+
 /* ── 영상 올리기(구글 드라이브) — GAS gas/Upload.gs 와 같은 값 ── */
 export const UPLOAD_PART_BYTES = 2 * 1024 * 1024;
 export const UPLOAD_MAX_BYTES = 1500 * 1024 * 1024;
@@ -64,14 +78,17 @@ export function finishOf(brand) { return BRAND_FINISH[brand] || BRAND_FINISH.dae
  * ⑦ 사람 확인 7가지 — 허브가 이미 만든 것(컷·9:16·음량·자막 굽기·BGM·커버)을 사람이 눈과 귀로 확인한다.
  * 아이디 r1~r7 은 저장값 호환을 위해 그대로 둔다. brand 로 달라지는 칸은 finishOf 로 채운다.
  */
-export function reviewSteps(brand) {
+export function reviewSteps(brand, opts) {
   const f = finishOf(brand);
+  const human = !!(opts && opts.voiceMode === 'human');
   return [
     { id: 'r1', title: '화면·소리 규격', rule: '⑥ 결과 표에 FAIL 이 없고, 1080×1920 · 30fps · 최종 -14.0±0.5 LUFS · 진짜 피크 -1.5 이하' },
     { id: 'r2', title: '자막 글자 대조', rule: '상호·메뉴·가격·숫자를 영상과 대조했어요(AI 가 그럴듯하게 틀리는 곳). 확인 못 한 숫자는 [채우기]' },
     { id: 'r3', title: '자막 위치·글꼴', rule: '글꼴 ' + f.font + '(없으면 ' + f.fontFallback + ') · 훅은 위쪽, 본문은 아래쪽 안전영역 · 줄당 ' + f.cpl + '자·2줄 · 가장자리에 안 잘림' },
     { id: 'r4', title: '자막 흐름', rule: '말과 자막이 맞게 나오고, 한 줄 읽을 시간이 있어요(1.0초 이상). 강조할 말이 있으면 ' + f.color + ' 로 표시할지 정해요' },
-    { id: 'r5', title: 'AI 보조 안내', rule: 'AI 가 자막을 만들었다면 마지막 2초 우측 "AI 자막 보조"가 보여요 + 업로드 본문에 "자막: AI 보조" 한 줄' },
+    { id: 'r5', title: 'AI 보조 안내', rule: human
+      ? 'AI 가 자막을 만들었다면 마지막 2초 우측 "AI 자막 보조"가 보여요 + 업로드 본문에 "자막: AI 보조" 한 줄. 음성은 내 목소리(육성)라 AI 가 아니에요 — 인스타 AI 표기는 끄고, 클립만 "AI 활용"을 켜요'
+      : 'AI 가 자막을 만들었다면 마지막 2초 우측 "AI 자막 보조"가 보여요 + 업로드 본문에 "자막: AI 보조" 한 줄' },
     { id: 'r6', title: 'BGM·소리 균형', rule: '말소리가 BGM 에 묻히지 않아요(현장음 있으면 -24dB, 없으면 -16dB) · 끝 1초 페이드아웃 · 남의 음원을 쓰지 않았어요' },
     { id: 'r7', title: '커버·제목', rule: '커버(1080×1080) 피사체 중앙 · 눈 감음 없음 · 제목 4단어 이내 · 커버 문구와 첫 자막의 숫자가 같아요' }
   ];
@@ -95,7 +112,7 @@ export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', b
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '', motion: 'auto', motion_quality: 'standard' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', voice_mode: 'tts', voice_file: '', voice_offset_ms: 0, voice_fallback_tts: false, voice_meta: null, template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '', motion: 'auto', motion_quality: 'standard' };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -119,6 +136,16 @@ export function normalizeState(raw) {
   s.narrate = raw.narrate === true;                  // 내레이션은 명시적으로 켜야 한다
   s.sub_style = SUB_STYLES.indexOf(String(raw.sub_style || '')) >= 0 ? String(raw.sub_style) : 'auto';
   s.voice = typeof raw.voice === 'string' && /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/.test(raw.voice) ? raw.voice : '';
+  // 내 육성 녹음(2026-11-23) — 옛 저장값에는 없으므로 비면 tts(기본)로 돈다.
+  s.voice_mode = raw.voice_mode === 'human' ? 'human' : 'tts';
+  s.voice_file = typeof raw.voice_file === 'string' && VOICE_NAME_RE.test(raw.voice_file) ? raw.voice_file.slice(0, 80) : '';
+  s.voice_offset_ms = Number.isFinite(Number(raw.voice_offset_ms)) && Math.round(Number(raw.voice_offset_ms)) === Number(raw.voice_offset_ms) && Math.abs(Number(raw.voice_offset_ms)) <= VOICE_OFFSET_LIMIT_MS ? Number(raw.voice_offset_ms) : 0;
+  s.voice_fallback_tts = raw.voice_fallback_tts === true;
+  s.voice_meta = (raw.voice_meta && typeof raw.voice_meta === 'object') ? {
+    duration_s: Number.isFinite(Number(raw.voice_meta.duration_s)) && Number(raw.voice_meta.duration_s) > 0 ? Math.round(Number(raw.voice_meta.duration_s) * 10) / 10 : null,
+    bytes: Number.isFinite(Number(raw.voice_meta.bytes)) && Number(raw.voice_meta.bytes) > 0 ? Math.round(Number(raw.voice_meta.bytes)) : null,
+    uploaded_at: String(raw.voice_meta.uploaded_at || '').slice(0, 40)
+  } : null;
   // 채널 템플릿(2026-11-21) — 고른 값·문구를 상태에 남겨 새로고침해도 유지한다.
   s.template = TEMPLATE_IDS.indexOf(String(raw.template || '')) >= 0 ? String(raw.template) : 'auto';
   ['title', 'badge', 'hook', 'outro'].forEach((k) => {
@@ -299,7 +326,7 @@ export function normalizeCues(raw, label, opts) {
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds, motion, motionQuality }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, voiceMode, voiceFile, voiceOffsetMs, voiceFallback, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds, motion, motionQuality }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -351,6 +378,22 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   }
   if (narrate === true) payload.narrate = true;
   if (voice) payload.voice = String(voice);
+  // 내 육성 녹음(2026-11-23) — human 일 때만 싣는다. TTS 오더는 payload 가 지금과 글자까지 같다.
+  const vm = String(voiceMode || 'tts').trim().toLowerCase();
+  if (VOICE_MODES.indexOf(vm) < 0) errors.push('내레이션 방식은 ' + VOICE_MODES.join(' · ') + ' 중 하나여야 해요');
+  if (vm === 'human') {
+    const vf = String(voiceFile || '').trim();
+    if (!vf) errors.push('내 육성 녹음을 고르셨는데 녹음 파일이 없어요 — ④에서 파일을 올려 주세요');
+    else if (!VOICE_NAME_RE.test(vf) || vf.indexOf('..') >= 0) errors.push('녹음 파일 이름이 올바르지 않아요(mp3·m4a·wav 이름만)');
+    else payload.voice_mode = 'human';
+    if (payload.voice_mode === 'human') {
+      payload.voice_file = vf;
+      const off = Math.round(Number(!voiceOffsetMs ? 0 : voiceOffsetMs));
+      if (!Number.isFinite(off) || Math.abs(off) > VOICE_OFFSET_LIMIT_MS) errors.push('녹음 앞 자를 길이는 ±' + VOICE_OFFSET_LIMIT_MS + 'ms 안이어야 해요');
+      else if (off) payload.voice_offset_ms = off;
+      if (voiceFallback === true) payload.voice_fallback_tts = true;
+    }
+  }
   // 채널 시그니처 템플릿 — template 은 'auto' 도 늘 싣는다(노트북이 브랜드 기본을 고른다).
   const tf = buildTemplateFields({ template, title, badge, hook, hook_sub: hookSub, outro, hookPos, hookHold });
   errors.push(...tf.errors);
@@ -425,7 +468,86 @@ export function buildStagePayload(stage, { contentId, brand, state }) {
   return errors.length ? { ok: false, errors } : { ok: true, payload };
 }
 
+/* ── 내 육성 녹음(2026-11-23) — 화면 보조 계산(DOM·네트워크 없음) ── */
+
+/** 서버가 쓰는 이름 — <content_id>_voice.<ext>. 화면은 이름을 고르지 않는다(사용자가 아무 이름으로 보내도 된다). */
+export function voiceServerName(contentId, fileName) {
+  const m = /\.(mp3|m4a|wav)$/i.exec(String(fileName || ''));
+  const ext = m ? m[1].toLowerCase() : 'm4a';
+  return String(contentId || '') + '_voice.' + ext;
+}
+
+/**
+ * 녹음 파일 자체 검사 — 올리기 전에 화면에서 먼저 막는다(서버도 같은 상한을 본다).
+ * 반환 { ok, ext, name, parts, errors, warnings }
+ */
+export function checkVoiceFile(file, contentId) {
+  const errors = [];
+  const warnings = [];
+  const f = file || {};
+  const raw = String(f.name || '');
+  if (!file) errors.push('파일이 없습니다.');
+  else {
+    if (!VOICE_EXT_RE.test(raw)) errors.push('녹음은 mp3 · m4a · wav 만 올릴 수 있어요: ' + raw.slice(0, 40));
+    const size = Number(f.size);
+    if (!Number.isFinite(size) || size <= 0) errors.push('파일이 비어 있어요');
+    else if (size < VOICE_MIN_BYTES) errors.push('파일이 너무 작아요(' + Math.max(1, Math.round(size / 1024)) + 'KB) — 녹음이 제대로 됐는지 확인해 주세요');
+    else if (size > VOICE_MAX_BYTES) errors.push('파일이 너무 커요(' + Math.round(size / 1048576) + 'MB, 최대 ' + Math.round(VOICE_MAX_BYTES / 1048576) + 'MB)');
+    if (Number.isFinite(size) && size > 5 * 1024 * 1024) warnings.push('파일이 큽니다 — 1분 통녹음이 보통 1MB 안팎이에요(더 긴 녹음인가요?)');
+  }
+  const parts = Number.isFinite(Number(f.size)) && Number(f.size) > 0 ? Math.ceil(Number(f.size) / VOICE_PART_BYTES) : 0;
+  if (parts > VOICE_MAX_PARTS) errors.push('파일이 너무 큽니다(조각 ' + parts + '개, 최대 ' + VOICE_MAX_PARTS + ')');
+  return { ok: errors.length === 0, ext: (VOICE_EXT_RE.exec(raw) || [])[1] || '', name: voiceServerName(contentId, raw), parts, errors, warnings };
+}
+
+const TONE_KO = { hype: '호들갑', calm: '차분' };
+
+/**
+ * 녹음 카드 — 사용자가 폰을 보고 읽는 글(기획 §4-1). 큐가 8개를 넘으면 파트로 나뉜다(파일도 파트별).
+ * AI 호출 없이 카드의 production.narration 만으로 만든다(토큰 0).
+ * 반환 { ok, parts:[{no, from, to, text}], text, cues, seconds, perPart }
+ */
+export function buildRecordingCard(o) {
+  const opt = o || {};
+  const contentId = String(opt.contentId || '');
+  const brandLabel = opt.brand === 'ppiyak_kimmary' ? '삐약 김메리' : '대전 청년';
+  const kind = opt.kind === 'reels' ? '릴스' : '쇼츠';
+  const cues = Array.isArray(opt.narration) ? opt.narration : [];
+  const perPart = Math.max(1, Math.min(20, Number(opt.perPart) || VOICE_CUES_PER_PART));
+  if (!cues.length) return { ok: false, error: '카드에 내레이션 대본이 없어요 — 허브 기획에서 대본을 먼저 만들어 주세요.', parts: [], text: '', cues: 0, seconds: 0, perPart };
+  const head = '녹음 카드 — ' + contentId + ' (' + brandLabel + ' · ' + kind + ')' +
+    '\n※ 조용한 방에서, 폰을 수건 위에 두고 입에서 20~30cm. 평소보다 10% 천천히.' +
+    '\n※ 시작 전 3초 쉬고, 문장 사이는 ' + VOICE_GAP_S + '초씩 쉬어 주세요. 실수하면 그 문장만 다시 읽으면 됩니다(앞부분은 잘라냅니다).';
+  const chunk = (list, offset) => list.map((c, i) => {
+    const start = Number(Array.isArray(c) ? c[0] : c.start) || 0;
+    const end = Number(Array.isArray(c) ? c[1] : c.end) || 0;
+    const text = String(Array.isArray(c) ? c[2] : c.text || '').trim();
+    const tone = String((Array.isArray(c) ? c[3] : c.tone) || 'calm');
+    const sec = Math.max(0.5, Math.round((end - start) * 10) / 10);
+    return '[#' + String(offset + i + 1).padStart(2, '0') + '] ' + sec.toFixed(1) + '초 · ' + text.length + '자 · ' + (TONE_KO[tone] || '차분') + '\n"' + text + '"\n(' + VOICE_GAP_S + '초)';
+  });
+  const parts = [];
+  for (let i = 0; i < cues.length; i += perPart) {
+    const slice = cues.slice(i, i + perPart);
+    const from = i + 1, to = i + slice.length;
+    const title = cues.length > perPart ? '[파트 ' + (parts.length + 1) + ' · ' + from + '~' + to + '번]' : '[전체 ' + from + '~' + to + '번]';
+    parts.push({ no: parts.length + 1, from, to, text: head + '\n\n' + title + '\n' + chunk(slice, i).join('\n') + '\n\n다 읽었으면 이 파일을 채팅으로 보내 주세요(이름은 아무래도 됩니다).' });
+  }
+  const seconds = Math.round(cues.reduce((a, c) => a + Math.max(0, (Number(Array.isArray(c) ? c[1] : c.end) || 0) - (Number(Array.isArray(c) ? c[0] : c.start) || 0)), 0) * 10) / 10;
+  return { ok: true, parts, text: parts.map((p) => p.text).join('\n\n———\n\n'), cues: cues.length, seconds, perPart };
+}
+
+/** 대본 길이(초) vs 실제 녹음 길이 — 재녹음 판단의 근거(기획 §8). */
+export function voiceLengthGap(scriptSeconds, voiceSeconds) {
+  const s = Number(scriptSeconds), v = Number(voiceSeconds);
+  if (!Number.isFinite(s) || s <= 0 || !Number.isFinite(v) || v <= 0) return null;
+  const diff = Math.round((v - s) * 10) / 10;
+  const pct = Math.round((v / s - 1) * 100);
+  return { script_s: Math.round(s * 10) / 10, voice_s: Math.round(v * 10) / 10, diff_s: diff, pct, long: pct > 20 };
+}
+
 /** 큐 상태 코드 → 화면 문구(코드값은 화면에 그대로 보이지 않는다). 모르는 값은 '확인 필요'로. */
+
 const ORDER_STATUS_KO = {
   WAITING_APPROVAL: '승인 대기', PENDING: '실행 대기', RUNNING: '실행 중', DONE: '완료', FAILED: '실패',
   REJECTED: '거절됨', EXPIRED: '승인 기한 지남', REVIEW_NEEDED: '확인 필요', TIMEOUT_REVIEW: '확인 필요', PARTIAL: '일부만 진행'
@@ -573,6 +695,19 @@ export function parseReport(input) {
   if (r.bgm && typeof r.bgm === 'object') out.bgm = { name: str(r.bgm.name, 80), volume_db: Number(r.bgm.volume_db), source: str(r.bgm.source, 10), credit: str(r.bgm.credit, 500), credit_required: r.bgm.credit_required === true };
   if (r.limiter && typeof r.limiter === 'object') out.limiter = { measured_lufs: Number(r.limiter.measured_lufs), gain_db: Number(r.limiter.gain_db), ceiling_db: Number(r.limiter.ceiling_db) };
   if (r.cuts && typeof r.cuts === 'object') out.cuts = { applied: Number(r.cuts.applied) || 0, removed_seconds: Number(r.cuts.removed_seconds) || 0 };
+  // 내 육성 녹음(2026-11-23) — 노트북 report 의 voice_* 를 화면에 그대로 보여 준다(숨기지 않는다)
+  if (r.voice_mode) {
+    const num = (v) => (v === null || v === undefined || v === '') ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
+    out.voice = {
+      mode: str(r.voice_mode, 10), used: r.voice_used === true, status: str(r.voice_status, 20),
+      cues: Number(r.voice_cues) || 0, score_avg: num(r.voice_score_avg), drift_ms_max: num(r.voice_drift_ms_max),
+      snr_db: num(r.voice_snr_db), tempo: num(r.voice_tempo),
+      mismatch: (Array.isArray(r.voice_mismatch_cues) ? r.voice_mismatch_cues : []).slice(0, 10).map(Number),
+      low: (Array.isArray(r.voice_low_score_cues) ? r.voice_low_score_cues : []).slice(0, 10).map(Number),
+      fallback_reason: str(r.voice_fallback_reason, 200), error: str(r.voice_error, 200),
+      notes: (Array.isArray(r.voice_notes) ? r.voice_notes : []).slice(0, 5).map((x) => str(x, 140))
+    };
+  }
   return { ok: true, report: out };
 }
 
@@ -609,7 +744,7 @@ export function stepStatus(state, brand) {
   if (fr && Array.isArray(fr.checks)) {
     makeDone = compareStandard(fr, 'final').every((r) => r.status !== 'FAIL') && fr.checks.every((c) => c.status !== 'FAIL');
   }
-  const reviewDone = reviewSteps(brand).every((x) => s.review[x.id] === true);
+  const reviewDone = reviewSteps(brand, { voiceMode: s.voice_mode }).every((x) => s.review[x.id] === true);
   return {
     material: parsed.names.length > 0 && parsed.errors.length === 0,
     plan: s.plan,

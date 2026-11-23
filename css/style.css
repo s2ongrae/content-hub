@@ -761,12 +761,16 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
 .prog > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s ease; }
 .gate { display: grid; gap: 6px; }
 .gate-row {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
   padding: 8px 10px; border-radius: 9px;
   background: var(--bg-soft); border: 1px solid var(--line-soft);
   font-size: 12.5px; color: var(--tx-2);
 }
 .gate-row .gv { margin-left: auto; font-size: 11.5px; font-weight: 800; white-space: nowrap; }
+/* 폰에서는 기준 값을 다음 줄로 내린다 — 긴 기준 문구가 카드 밖으로 나가 가로 스크롤을 만들던 문제(2026-11-23) */
+@media (max-width: 699px) {
+  .gate-row .gv { margin-left: 0; flex: 1 0 100%; white-space: normal; }
+}
 .gate-row .gv.ok { color: var(--ok); }
 .gate-row .gv.no { color: var(--danger); }
 .gate-row .gv.na { color: var(--tx-3); }
@@ -1555,3 +1559,13 @@ a.cmp-card:hover { border-color: var(--accent); }
   .ig-audit-form { grid-template-columns: 1fr; }
   .ig-score-v { font-size: 26px; }
 }
+
+/* 내 육성 녹음 (④ 완제품 옵션, 2026-11-23) — 360px 에서도 3단계로 끝난다 */
+.pr-subbox { display: grid; gap: 8px; padding: 10px 12px; margin-top: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); }
+.pr-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--tx); cursor: pointer; }
+.pr-radio input[type="radio"] { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+.pr-cardbox { display: grid; gap: 8px; }
+.pr-card { margin: 0; padding: 10px 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--tx); background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+@media (prefers-color-scheme: dark) { .pr-card { background: #15171b; } }
+.pr-subbox audio { display: block; }

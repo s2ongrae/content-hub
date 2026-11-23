@@ -19,19 +19,19 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123c';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261123c';
+import { buildEDL } from './yt/edl.js?v=20261123d';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123d';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
-  MOTION_IDS, MOTION_LABELS
-} from './produceLogic.js?v=20261123c';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123c';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123c';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123c';
+  MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S
+} from './produceLogic.js?v=20261123d';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261123d';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261123d';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123d';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -694,6 +694,131 @@ export function produceSection(ctx) {
     paintCuts();
   }
 
+  /* ── ④ 내 육성 녹음(2026-11-23) — 통녹음 1파일을 올려 TTS 대신 내 목소리로 ──
+   *  3단계: ① 방식 고르기 → ② 카드 복사해서 폰으로 → ③ 파일 고르기(즉시 조각 업로드) → 미리듣기/다시 올리기.
+   *  TTS 를 고른 지금 화면은 글자 하나 바뀌지 않는다(라디오만 추가). */
+  const voiceUp = { busy: false, msg: '', kind: '', pct: 0, previewUrl: '', duration: null };
+
+  function voicePanel() {
+    const card = buildRecordingCard({ contentId, brand, narration: cardNarration });
+    const cardHost = h('div', { class: 'pr-cardbox', style: 'display:none' });
+    const cardBtn = h('button', {
+      class: 'btn sm', type: 'button', text: '녹음 카드 보기',
+      onclick: () => {
+        if (!card.ok) { toast(card.error, 'err'); return; }
+        cardHost.style.display = cardHost.style.display === 'none' ? '' : 'none';
+        if (cardHost.style.display === '' && !cardHost.childElementCount) {
+          cardHost.append(...card.parts.map((p, i) => h('div', { class: 'pr-field' },
+            h('span', { class: 'pr-label', text: card.parts.length > 1 ? '파트 ' + p.no + ' (' + p.from + '~' + p.to + '번)' : '카드 전문' }),
+            h('pre', { class: 'pr-card', text: p.text }))));
+        }
+      }
+    });
+    const copyBtn = h('button', {
+      class: 'btn sm', type: 'button', text: '카드 복사',
+      onclick: () => { if (!card.ok) { toast(card.error, 'err'); return; } copyText(card.text, () => toast('녹음 카드를 복사했어요 — 폰으로 붙여넣고 읽어 주세요', 'ok')); }
+    });
+
+    const fileIn = h('input', { type: 'file', accept: '.m4a,.mp3,.wav,audio/mp4,audio/mpeg,audio/wav', class: 'pr-file', 'aria-label': '녹음 파일 고르기' });
+    const barIn = h('div', { class: 'pr-bar-in', style: 'width:0%' });
+    const bar = h('div', { class: 'pr-bar', role: 'img', 'aria-label': '녹음 올리는 중', style: 'display:none' }, barIn);
+    const line = h('div', { class: 'pr-upline', role: 'status', 'aria-live': 'polite' });
+    const preview = h('audio', { controls: '', preload: 'none', style: 'width:100%;margin-top:6px' });
+    const setLine = (text, kind) => { line.textContent = text; line.className = 'pr-upline' + (kind ? ' ' + kind : ''); };
+    const meta = state.voice_meta || null;
+    const gap = meta && meta.duration_s ? voiceLengthGap(card.seconds, meta.duration_s) : null;
+    const info = [];
+    if (state.voice_file) {
+      info.push(h('div', { class: 'pr-uprow' },
+        h('div', { class: 'pr-upinfo' },
+          h('strong', { text: state.voice_file }),
+          h('span', { class: 'pr-sub', text: (meta && meta.bytes ? formatBytes(meta.bytes) + ' · ' : '') + (meta && meta.duration_s ? meta.duration_s.toFixed(1) + '초' : '길이 모름') })),
+        h('div', { class: 'pr-row' }, h('button', { class: 'btn sm', type: 'button', text: '다시 올리기', onclick: () => fileIn.click() }))));
+      if (voiceUp.previewUrl) preview.src = voiceUp.previewUrl;
+      else preview.style.display = 'none';
+      info.push(preview);
+      if (gap) {
+        info.push(h('span', { class: 'pr-check-s', text: '대본 ' + gap.script_s.toFixed(1) + '초 · 녹음 ' + gap.voice_s.toFixed(1) + '초(' + (gap.pct >= 0 ? '+' : '') + gap.pct + '%)' +
+          (gap.long ? ' — 20% 넘게 길어요. 빠르게 다시 읽거나 컷을 줄이는 게 좋아요(노트북이 1.15배까지만 당겨요).' : ' — 길이가 맞습니다.') }));
+      }
+    }
+    const offset = h('input', { class: 'pr-in', type: 'number', min: '-3000', max: '3000', step: '100', value: String(state.voice_offset_ms || 0), 'aria-label': '녹음 앞 자를 길이(ms)',
+      onchange: (e) => { const v = Math.round(Number(e.target.value) || 0); change((s) => { s.voice_offset_ms = Math.max(-3000, Math.min(3000, v)); }); } });
+
+    fileIn.addEventListener('change', async () => {
+      const f = (fileIn.files || [])[0];
+      fileIn.value = '';
+      if (!f || voiceUp.busy) return;
+      const chk = checkVoiceFile({ name: f.name, size: f.size }, contentId);
+      if (!chk.ok) { setLine(chk.errors[0], 'err'); return; }
+      if (chk.warnings.length) setLine(chk.warnings[0], '');
+      // 길이를 먼저 잡는다(미리듣기와 '대본 vs 녹음' 대조에 쓴다) — 실패해도 올리기는 계속
+      voiceUp.duration = null;
+      let url = '';
+      try {
+        url = URL.createObjectURL(f);
+        voiceUp.duration = await new Promise((resolve) => {
+          const a = new Audio();
+          const done = (v) => resolve(Number.isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null);
+          a.addEventListener('loadedmetadata', () => done(a.duration));
+          a.addEventListener('error', () => resolve(null));
+          setTimeout(() => resolve(null), 4000);
+          a.src = url;
+        });
+      } catch (e) { /* 길이를 몰라도 올린다 */ }
+      if (voiceUp.duration && voiceUp.duration > VOICE_LONG_WARN_S && !window.confirm('녹음이 ' + Math.round(voiceUp.duration) + '초예요. 쇼츠 내레이션은 보통 20~45초입니다. 이대로 올릴까요?')) {
+        if (url) URL.revokeObjectURL(url);
+        return;
+      }
+      voiceUp.busy = true; fileIn.setAttribute('disabled', '');
+      bar.style.display = ''; barIn.style.width = '0%';
+      setLine(chk.name + ' — 올리는 중…', '');
+      try {
+        await uploadVoice({
+          api, contentId, file: f,
+          onProgress: (p) => { barIn.style.width = Math.round((p.sent / p.total) * 100) + '%'; setLine(chk.name + ' — ' + p.index + '/' + p.parts + '조각 · ' + formatBytes(p.sent) + ' / ' + formatBytes(p.total), ''); }
+        });
+        if (voiceUp.previewUrl) URL.revokeObjectURL(voiceUp.previewUrl);
+        voiceUp.previewUrl = url || '';
+        change((s) => {
+          s.voice_file = chk.name;
+          s.voice_meta = { duration_s: voiceUp.duration, bytes: f.size, uploaded_at: new Date().toISOString() };
+          s.voice_mode = 'human';
+        });
+        toast('녹음을 올렸어요 — ④ 오더를 보내면 이 목소리로 만들어요', 'ok');
+      } catch (err) {
+        if (url) URL.revokeObjectURL(url);
+        const code = err && err.code;
+        const text = isNotDeployedCode(code) ? '서버(GAS)에 녹음 올리기(voice_put)가 아직 없어요 — Bgm.gs 를 새 버전으로 배포하면 켜져요.'
+          : (code === 'ERR_PAYLOAD_TOO_LARGE' ? '서버가 조각을 너무 크다고 거절했어요(GAS 재배포 확인).' : ((err && err.message) || '올리지 못했어요'));
+        setLine(text, 'err');
+      } finally {
+        voiceUp.busy = false; fileIn.removeAttribute('disabled'); bar.style.display = 'none';
+        paintList();
+      }
+    });
+
+    return h('div', { class: 'pr-field' },
+      h('span', { class: 'pr-label', text: '내레이션 방식' }),
+      h('div', { class: 'pr-row', role: 'radiogroup', 'aria-label': '내레이션 방식' },
+        h('label', { class: 'pr-radio' }, h('input', { type: 'radio', name: 'voice-mode-' + contentId, value: 'tts', checked: state.voice_mode !== 'human' ? '' : null, onchange: () => change((s) => { s.voice_mode = 'tts'; }) }), h('span', { text: 'AI TTS 목소리(기본)' })),
+        h('label', { class: 'pr-radio' }, h('input', { type: 'radio', name: 'voice-mode-' + contentId, value: 'human', checked: state.voice_mode === 'human' ? '' : null, onchange: () => change((s) => { s.voice_mode = 'human'; }) }), h('span', { text: '내 목소리(녹음)' }))),
+      h('span', { class: 'pr-check-s', text: state.voice_mode === 'human'
+        ? '카드의 문장을 폰으로 읽어 통녹음 1파일(.m4a)로 올려요. 노트북이 잡음을 정리하고 대본에 맞춰 자막·큐 시각을 다시 계산해요.'
+        : '지금과 같아요 — 카드 대본으로 edge-tts 가 읽어요.' }),
+      state.voice_mode === 'human' ? h('div', { class: 'pr-subbox' },
+        h('div', { class: 'pr-row' }, cardBtn, copyBtn),
+        cardHost,
+        fileIn, bar, line,
+        ...info,
+        h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '녹음 앞 자를 길이(ms · 잡담·대기 제거 · +면 앞을 잘라요)' }), offset),
+        check('실패하면 TTS 로 대신 넣기', state.voice_fallback_tts === true, (v) => change((s) => { s.voice_fallback_tts = v; }),
+          '끄면 실패 시 오더가 반려되고 어느 큐가 어긋났는지 알려 줘요(권장). 켜면 실패한 것만 TTS 로 대신 넣어요.'),
+        h('span', { class: 'pr-check-s', text: '자막은 AI 가 만든 대본을 씁니다 — 마무리에서 "AI 자막 보조"는 그대로 켜 둡니다.' }),
+        h('span', { class: 'pr-check-s', text: '발행 표시: 음성은 내 목소리(육성)라 AI 가 아니에요 — 인스타 AI 표기는 끄고, 네이버 클립만 "AI 활용"을 켜요(유튜브는 그대로 아니요).' })
+      ) : null);
+  }
+
   /** 단계 라벨만 갱신(입력 중인 칸을 지키려고 목록 전체를 다시 그리지 않는다) */
 
   /* ── ④ 클린 마스터 ── */
@@ -717,13 +842,15 @@ export function produceSection(ctx) {
     const narRes = normalizeCues(cardNarration, '내레이션', { tones: ['hype', 'calm'] });
     const buildNow = () => {
       const cr = cutsForOrder(state, state.inputs);
+      const human = state.voice_mode === 'human';
       const b = buildRenderPayload({
         contentId, brand, inputs: state.inputs, profile: state.profile, cropX: state.crop_x,
         cuts: cr.ok ? cr.cuts : undefined,
         captions: capRes.cues.length ? capRes.cues : undefined,
-        narration: state.narrate ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
+        narration: (human || state.narrate) ? (narRes.cues.length ? narRes.cues : undefined) : undefined,
         burnSubtitles: state.burn, subStyle: state.sub_style,
-        narrate: state.narrate && !narRes.cues.length, voice: state.voice || undefined,
+        narrate: !human && state.narrate && !narRes.cues.length, voice: state.voice || undefined,
+        voiceMode: state.voice_mode, voiceFile: state.voice_file, voiceOffsetMs: state.voice_offset_ms, voiceFallback: state.voice_fallback_tts,
         template: state.template, title: state.title, badge: state.badge, hook: state.hook, hookSub: state.hook_sub, outro: state.outro,
         hookPos: state.hook_pos, hookHold: state.hook_hold,
         frameLock: state.frame_lock, frameLockImage: state.frame_lock_image, frameLockSeconds: state.frame_lock_seconds,
@@ -738,14 +865,15 @@ export function produceSection(ctx) {
     const narN = narRes.cues.length;
     const willBurn = state.burn && (capN > 0 || (built.ok && built.payload.payload_source === 'drive'));
     const drive = built.ok && built.payload.payload_source === 'drive';
+    const human = state.voice_mode === 'human';
 
     box.append(
       note('노트북이 ' + (cutRes.ok && cutRes.cuts.length ? '정해 둔 컷 ' + cutRes.cuts.length + '곳(약 ' + cutSm.seconds.toFixed(1) + '초)을 먼저 잘라내고, ' : '') + '영상을 9:16(1080×1920)·30fps로 맞추고 음량을 ' + p.lufs.toFixed(0) + ' LUFS로 평탄화해요. ' +
         (state.burn ? '카드에 저장된 자막을 구워 완제품(_final.mp4)까지 만들어요. ' : '자막은 굽지 않고 클린 마스터만 만들어요. ') +
-        (state.narrate ? '내레이션(TTS)은 그 구간만큼 현장음을 -15dB 덕킹해요.' : '내레이션은 넣지 않아요.')),
+        (human ? '내 목소리(육성)는 잡음 정리·대본 강제정렬을 거쳐 같은 자리에 얹고, 그 구간만큼 현장음을 -15dB 덕킹해요.' : (state.narrate ? '내레이션(TTS)은 그 구간만큼 현장음을 -15dB 덕킹해요.' : '내레이션은 넣지 않아요.'))),
       h('div', { class: 'pr-pipe' },
         ...['정보 읽기'].concat(cutRes.ok && cutRes.cuts.length ? ['컷 편집'] : [], ['이어붙이기', '9:16 맞춤'])
-          .concat(state.narrate ? ['내레이션', '음량 2회 측정'] : ['음량 2회 측정'])
+          .concat(human ? ['육성 정렬', '내레이션', '음량 2회 측정'] : (state.narrate ? ['내레이션', '음량 2회 측정'] : ['음량 2회 측정']))
           .concat(state.burn ? ['자막 굽기', '규격 검수'] : ['규격 검수'])
           .map((t, i) => h('span', { class: 'pr-pipe-i' }, h('b', { text: String(i + 1) }), t))));
 
@@ -756,6 +884,7 @@ export function produceSection(ctx) {
         capN ? '카드 자막 ' + capN + '큐 · 1080×1920 기준 · 하단 안전선 안 · 2줄까지' : '카드에 자막이 없어요 — 구울 것이 없습니다'),
       check('내레이션(TTS) 넣기', state.narrate, (v) => change((s) => { s.narrate = v; }),
         narN ? '카드 내레이션 ' + narN + '큐 (톤 hype/calm) · 현장음 -15dB 덕킹' : (capN ? '내레이션 대본이 없어 자막 문장을 차분하게 읽어요' : '자막도 내레이션도 없어 켜도 효과가 없어요')),
+      voicePanel(),
       h('div', { class: 'pr-two' },
         h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '자막 크기 기준' }),
           h('select', { class: 'pr-sel', 'aria-label': '자막 크기 기준', onchange: (e) => change((s) => { s.sub_style = e.target.value; }) },
@@ -835,6 +964,7 @@ export function produceSection(ctx) {
         let blocked = '';
         if (!b.ok) blocked = '① 재료부터 채워 주세요 — ' + b.errors[0];
         else if (!cr.ok) blocked = '③ 컷 목록을 확인해 주세요 — ' + cr.error;
+        else if (state.voice_mode === 'human' && !narRes.cues.length) blocked = '내 목소리로 만들려면 카드에 내레이션 대본이 있어야 해요 — 기획에서 대본을 먼저 만들어 주세요.';
         return { built: b, ready: b.ok && cr.ok, blockedText: blocked };
       },
       afterSend: (d, payload) => {
@@ -889,6 +1019,21 @@ export function produceSection(ctx) {
         box.appendChild(resultTable(r.report.checks.map((x) => ({ name: x.id || '-', status: x.status, msg: x.msg }))));
       }
       if (r.report.cuts && r.report.cuts.applied) box.appendChild(note('컷 ' + r.report.cuts.applied + '곳 · ' + r.report.cuts.removed_seconds + '초를 잘랐어요.'));
+      // 내 육성 녹음 결과(2026-11-23) — 썼는지·얼마나 잘 맞았는지·어느 큐가 어긋났는지
+      const vr = r.report.voice;
+      if (vr && vr.mode === 'human') {
+        box.appendChild(h('h4', { class: 'pr-h4', text: '내 육성 녹음' }));
+        box.appendChild(note(vr.used
+          ? '내 목소리로 넣었어요 · 큐 ' + vr.cues + '개 · 평균 정렬 ' + (vr.score_avg === null ? '-' : vr.score_avg) +
+            (vr.drift_ms_max === null ? '' : ' · 밀림 최대 ' + vr.drift_ms_max + 'ms') +
+            (vr.snr_db === null ? '' : ' · 잡음 ' + vr.snr_db + 'dB') +
+            (vr.tempo ? ' · ' + vr.tempo + '배로 당김' : '')
+          : '내 목소리를 넣지 못했어요 — ' + (vr.error || vr.fallback_reason || '이유를 모름') + (vr.fallback_reason ? ' (TTS 로 대신 넣었어요)' : '')));
+        if (vr.mismatch && vr.mismatch.length) box.appendChild(note('대본과 어긋난 큐: ' + vr.mismatch.map((i) => '#' + String(i + 1).padStart(2, '0')).join(' · ') + ' — 그 문장만 다시 녹음하면 돼요.'));
+        if (vr.notes && vr.notes.length) vr.notes.forEach((t) => box.appendChild(note(t)));
+      } else if (state.voice_mode === 'human') {
+        box.appendChild(note('내 목소리를 골랐는데 결과는 TTS 로 나왔어요 — 서버(GAS)가 육성 녹음을 아직 모를 수 있어요. Bgm.gs 를 새 버전으로 배포한 뒤 다시 보내 주세요.'));
+      }
       if (r.report.out) box.appendChild(note('결과 파일: ' + r.report.out + ' (노트북 out/' + contentId + '/)'));
       box.appendChild(resultFiles());
     }
@@ -1460,7 +1605,7 @@ export function produceSection(ctx) {
     const f = finishOf(brand);
     box.append(
       note('허브가 컷·9:16·음량·자막 굽기·BGM·커버까지 만들었어요. 마지막은 사람이 눈과 귀로 확인해요. 확인한 항목을 눌러 표시해 두세요.'));
-    reviewSteps(brand).forEach((rs, i) => {
+    reviewSteps(brand, { voiceMode: state.voice_mode }).forEach((rs, i) => {
       box.appendChild(check((i + 1) + '. ' + rs.title, state.review[rs.id] === true, (v) => change((s) => { s.review[rs.id] = v; }), rs.rule));
     });
     if (state.make.bgm && state.make.bgm_credit) box.appendChild(creditBox(state.make.bgm_credit, state.make.bgm_cr === true));

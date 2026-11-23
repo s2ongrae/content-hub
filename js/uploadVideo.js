@@ -17,7 +17,7 @@
  *    — 드라이브는 비공개라 <img src> 에 넣으면 CSP(img-src 'self')와 인증 때문에 엑스박스가 된다.
  */
 
-import { UPLOAD_PART_BYTES, checkUploadFile } from './produceLogic.js?v=20261123c';
+import { UPLOAD_PART_BYTES, checkUploadFile, checkVoiceFile } from './produceLogic.js?v=20261123d';
 
 const CHUNK_TIMEOUT_MS = 120000;
 const CHUNK_TRIES = 4;
@@ -203,6 +203,43 @@ export async function uploadPhoto(opts) {
     if (opts.onProgress) opts.onProgress({ index: i + 1, parts, sent, total: size });
   }
   return { name: prepared.name, parts, bytes: size, width: prepared.width, height: prepared.height, scaled: prepared.scaled, resized: prepared.resized };
+}
+
+/* ────────────────────────── 내 육성 녹음(2026-11-23) ────────────────────────── */
+
+/**
+ * 녹음 파일 하나 올리기 — gas/Bgm.gs voice_put(2MB 조각). 이름은 **서버가 만든다**(<content_id>_voice.ext).
+ * opts: { api, contentId, file, onProgress?({index, parts, sent, total}), shouldCancel?() }
+ * 반환: { name, parts, bytes, ext }
+ */
+export async function uploadVoice(opts) {
+  const { api, contentId, file } = opts;
+  const chk = checkVoiceFile({ name: file && file.name, size: file && file.size }, contentId);
+  if (!chk.ok) { const e = new Error(chk.errors[0]); e.code = 'ERR_VALIDATION_FAILED'; throw e; }
+  const parts = chk.parts;
+  let sent = 0;
+  for (let i = 0; i < parts; i++) {
+    if (opts.shouldCancel && opts.shouldCancel()) { const e = new Error('올리기를 멈췄어요'); e.code = 'CANCELLED'; throw e; }
+    const blob = file.slice(i * UPLOAD_PART_BYTES, Math.min(file.size, (i + 1) * UPLOAD_PART_BYTES));
+    const data = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+    let lastErr = null;
+    for (let t = 0; t < CHUNK_TRIES; t++) {
+      try {
+        await api.post('voice_put', { content_id: contentId, ext: chk.ext, index: i, parts, total_size: file.size, data }, null, { timeoutMs: CHUNK_TIMEOUT_MS });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (!isRetryableUploadError(err) || t === CHUNK_TRIES - 1) break;
+        await sleep(RETRY_WAIT_MS[t]);
+        if (opts.shouldCancel && opts.shouldCancel()) { const e = new Error('올리기를 멈췄어요'); e.code = 'CANCELLED'; throw e; }
+      }
+    }
+    if (lastErr) throw lastErr;
+    sent += blob.size;
+    if (opts.onProgress) opts.onProgress({ index: i + 1, parts, sent, total: file.size });
+  }
+  return { name: chk.name, parts, bytes: file.size, ext: chk.ext };
 }
 
 /** 이 카드에 올라온 파일 목록 [{ name, kind:'photo'|'video'|'other', size, parts, parts_found, complete, mixed }] */

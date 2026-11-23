@@ -672,6 +672,53 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('GAS 미배포면 중립 안내(재배포 후 켜짐)', /isNotDeployedCode\(code\)/.test(pv) && /재배포하면 이 상태 표시가 켜져요/.test(pv));
     ok('produceLogic import 에 버전 쿼리(캐시 어긋남 방지)', /from '\.\/produceLogic\.js\?v=\d+[a-z]'/.test(pv));
     ok('app.js 의 produceView import 버전이 index 와 같다', (fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8').match(/produceView\.js\?v=(\d+[a-z])/) || [])[1] === (fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/js\/app\.js\?v=(\d+[a-z])/) || [])[1]);
+
+    /* 내 육성 녹음(2026-11-23) — 방식·파일·녹음 카드·길이 대조·payload·화면 */
+    const vst0 = L.defaultState();
+    ok('기본 내레이션 방식은 tts(기존 화면·오더 그대로)', vst0.voice_mode === 'tts' && vst0.voice_file === '' && vst0.voice_fallback_tts === false);
+    ok('저장값 화이트리스트: 모르는 방식은 tts · 파일 이름 규칙 밖은 버린다', (() => {
+      const s = L.normalizeState({ voice_mode: 'ai', voice_file: '../x.m4a', voice_offset_ms: 99999 });
+      const h = L.normalizeState({ voice_mode: 'human', voice_file: 'DY-1_voice.m4a', voice_offset_ms: -1200, voice_fallback_tts: true, voice_meta: { duration_s: 41.2, bytes: 1200000 } });
+      return s.voice_mode === 'tts' && s.voice_file === '' && s.voice_offset_ms === 0 && h.voice_mode === 'human' && h.voice_file === 'DY-1_voice.m4a' && h.voice_offset_ms === -1200 && h.voice_fallback_tts === true && h.voice_meta.duration_s === 41.2;
+    })());
+    ok('TTS 오더 payload 는 육성 키를 만들지 않는다(지금과 글자까지 같다)', (() => {
+      const p = L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], voiceMode: 'tts' });
+      return p.ok && !('voice_mode' in p.payload) && !('voice_file' in p.payload);
+    })());
+    const hv = L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], narration: [[1, 2.5, '숯불에 고기 굽는 냄새']], voiceMode: 'human', voiceFile: 'CH-1_voice.m4a', voiceOffsetMs: 800, voiceFallback: true });
+    ok('육성 오더: voice_mode·voice_file·offset·fallback 이 실린다', hv.ok && hv.payload.voice_mode === 'human' && hv.payload.voice_file === 'CH-1_voice.m4a' && hv.payload.voice_offset_ms === 800 && hv.payload.voice_fallback_tts === true, hv.payload);
+    ok('육성인데 파일이 없으면 오더를 보내지 않는다(사유가 보인다)', (() => { const r = L.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], narration: [[1, 2, 'x']], voiceMode: 'human' }); return !r.ok && /녹음 파일/.test(r.errors[0]); })());
+    ok('서버 이름은 <content_id>_voice.ext', L.voiceServerName('DY-20261123-001', '갤럭시 녹음 001.m4a') === 'DY-20261123-001_voice.m4a' && L.voiceServerName('DY-1', 'a.MP3') === 'DY-1_voice.mp3');
+    ok('녹음 파일 검사: mp3·m4a·wav 만 · 8KB~30MB · 조각 수', (() => {
+      const good = L.checkVoiceFile({ name: 'a.m4a', size: 1200000 }, 'DY-1');
+      const badExt = L.checkVoiceFile({ name: 'a.aac', size: 1200000 }, 'DY-1');
+      const tiny = L.checkVoiceFile({ name: 'a.m4a', size: 4000 }, 'DY-1');
+      const huge = L.checkVoiceFile({ name: 'a.m4a', size: 31 * 1024 * 1024 }, 'DY-1');
+      return good.ok && good.parts === 1 && good.name === 'DY-1_voice.m4a' && !badExt.ok && !tiny.ok && !huge.ok;
+    })());
+    const card = L.buildRecordingCard({ contentId: 'DY-1', brand: 'daejeon_youth', narration: Array.from({ length: 10 }, (_, i) => [i * 3, i * 3 + 2.5, '문장 ' + (i + 1) + '번입니다']).map((c, i) => i === 1 ? [c[0], c[1], '「고기 다 구워준다」고요?', 'hype'] : c) });
+    ok('녹음 카드: 8큐를 넘으면 파트로 나뉜다(10큐 → 2파트)', card.ok && card.parts.length === 2 && card.parts[0].to === 8 && card.parts[1].from === 9, card.parts && card.parts.map((p) => p.from + '~' + p.to));
+    ok('녹음 카드: 번호·예상 길이·글자수·톤과 1.2초 쉼이 들어간다', /\[#01\] 2\.5초 · 9자 · 차분/.test(card.parts[0].text) && /\(1\.2초\)/.test(card.parts[0].text) && /호들갑/.test(card.parts[0].text), card.parts[0].text.slice(0, 160));
+    ok('녹음 카드: 「」 강조는 그대로 두고 문장을 고치지 않는다', card.parts[0].text.indexOf('「고기 다 구워준다」고요?') >= 0);
+    ok('녹음 카드: 대본이 없으면 이유를 알려 준다', L.buildRecordingCard({ contentId: 'DY-1', narration: [] }).ok === false && /대본/.test(L.buildRecordingCard({ contentId: 'DY-1', narration: [] }).error));
+    ok('길이 대조: 20% 넘게 길면 long', (() => { const g = L.voiceLengthGap(30, 41.2); return g.diff_s === 11.2 && g.pct === 37 && g.long === true && L.voiceLengthGap(30, 31).long === false && L.voiceLengthGap(0, 40) === null; })());
+    ok('AI 표시 안내가 육성일 때 바뀐다(인스타 OFF · 클립 ON)', (() => {
+      const human = L.reviewSteps('daejeon_youth', { voiceMode: 'human' }).find((x) => x.id === 'r5').rule;
+      const tts = L.reviewSteps('daejeon_youth').find((x) => x.id === 'r5').rule;
+      return /인스타 AI 표기는 끄고/.test(human) && /음성은 내 목소리/.test(human) && !/인스타 AI 표기는 끄고/.test(tts);
+    })());
+    ok('report 의 voice_* 를 화면이 읽는다(불일치 큐 포함)', (() => {
+      const rep = L.parseReport(JSON.stringify({ out: 'x_final.mp4', width: 1080, height: 1920, fps: 30, duration: 15, lufs: -14, tp: -2, checks: [],
+        voice_mode: 'human', voice_used: true, voice_status: 'ok', voice_cues: 3, voice_score_avg: 0.93, voice_drift_ms_max: 180, voice_snr_db: 22, voice_mismatch_cues: [2], voice_notes: ['밀었습니다'] }));
+      return rep.ok && rep.report.voice.used === true && rep.report.voice.cues === 3 && rep.report.voice.score_avg === 0.93 && rep.report.voice.mismatch[0] === 2 && rep.report.voice.notes.length === 1;
+    })());
+    ok('voice 키가 없는 예전 report 도 그대로 읽힌다(voice 없음)', (() => {
+      const rep = L.parseReport(JSON.stringify({ out: 'x.mp4', checks: [] }));
+      return rep.ok && rep.report.voice === undefined;
+    })());
+    ok('화면: ④ 에 방식 라디오·녹음 카드·파일 고르기·미리듣기가 있다', /내 목소리\(녹음\)/.test(pv) && /buildRecordingCard/.test(pv) && /uploadVoice/.test(pv) && /createObjectURL/.test(pv) && /voice_fallback_tts/.test(pv));
+    ok('화면: 녹음 파일을 올리면 방식이 human 으로 바뀐다(다시 tts 로 돌릴 수 있다)', /s\.voice_mode = 'human'/.test(pv) && /s\.voice_mode = 'tts'/.test(pv));
+    ok('업로드: 2MB 조각 · 이름은 서버가 만든다(voice_put)', /api\.post\('voice_put'/.test(fs.readFileSync(path.join(ROOT, 'js', 'uploadVideo.js'), 'utf8')) && /UPLOAD_PART_BYTES/.test(fs.readFileSync(path.join(ROOT, 'js', 'uploadVideo.js'), 'utf8')));
   } catch (err) {
     ok('제작 스텝퍼 시험', false, (err && err.stack) || err);
   }
