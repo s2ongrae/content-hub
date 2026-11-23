@@ -249,30 +249,28 @@ function bgmLooksAudio_(bytes, ext) {
   return (b0 === 0x49 && b1 === 0x44 && b2 === 0x33) || (b0 === 0xFF && (b1 & 0xE0) === 0xE0);
 }
 
-function handleBgmPut_(ss, payload) {
-  const name = bgmPutName_(payload);
-  const ext = (BGM_EXT_RE.exec(name) || [])[0].slice(1).toLowerCase();
-  const parts = Math.floor(Number(payload && payload.parts));
-  if (!isFinite(parts) || parts < 1 || parts > BGM_PUT_MAX_PARTS) throw bgmBad_('parts 는 1~' + BGM_PUT_MAX_PARTS + ' 이어야 해요.');
-  const index = Math.floor(Number(payload && payload.index));
-  if (!isFinite(index) || index < 0 || index >= parts) throw bgmBad_('index 는 0~' + (parts - 1) + ' 사이여야 해요.');
-  const totalSize = Math.floor(Number(payload && payload.total_size));
-  if (!isFinite(totalSize) || totalSize < BGM_MIN_BYTES || totalSize > BGM_PUT_MAX_BYTES) {
-    throw bgmBad_('음원 크기는 100KB~' + Math.round(BGM_PUT_MAX_BYTES / 1048576) + 'MB 까지예요.');
-  }
-  if (ext === 'wav' && totalSize > BGM_PUT_MAX_BYTES) throw bgmBad_('wav 는 30MB 까지예요 — mp3·m4a 로 바꿔 올려 주세요.');
-  if (ext !== 'wav' && totalSize > BGM_MAX_BYTES) throw bgmBad_('mp3·m4a 는 25MB 까지예요.');
-  const b64 = String((payload && payload.data) || '');
+/* ------------------------------------------------------------------ *
+ * 음원 조각 올리기 **공통부** (2026-11-23 일반화)
+ *
+ *  bgm_put(보관함 _bgm 의 곡) 과 voice_put(_voice/<content_id> 의 육성 녹음) 이 같은 규칙을 쓴다 —
+ *  2MB 조각 · 번호별 파일 · 다 모이면 순서대로 붙이기 · 크기·머리글 확인 · 실패하면 조각 치우기.
+ *  폴더·이름 규칙·크기 한도만 부르는 쪽이 정한다(복붙 없이 한 곳만 고치면 된다).
+ *
+ *  o: { folder, name, ext, index, parts, total_size, data(base64), minBytes, maxBytes }
+ *  반환: { done:false, received } 또는 { done:true, buf, bytes }
+ * ------------------------------------------------------------------ */
+function audioChunkPut_(o) {
+  const folder = o.folder, name = o.name, ext = o.ext, parts = o.parts, index = o.index, totalSize = o.total_size;
+  const b64 = String(o.data || '');
   if (!b64 || !/^[A-Za-z0-9+\/=]+$/.test(b64)) throw bgmBad_('data 는 base64 문자열이어야 해요.');
   const bytes = Utilities.base64Decode(b64);
   if (!bytes || !bytes.length) throw bgmBad_('빈 조각은 올릴 수 없어요.');
   if (bytes.length > BGM_PART_BYTES) throw bgmBad_('조각이 너무 커요(최대 2MB).', { bytes: bytes.length });
 
-  const folder = bgmFolder_(true);
   const existing = bgmPutParts_(folder, name);
   if (index === 0) {
-    // 새로 올리기 시작 — 같은 이름의 **옛 조각**만 치운다. 이미 보관된 완성 곡은 다 올라올 때까지 그대로 둔다
-    // (중간에 실패해도 멀쩡한 옛 곡을 잃지 않게).
+    // 새로 올리기 시작 — 같은 이름의 **옛 조각**만 치운다. 이미 저장된 완성 파일은 다 올라올 때까지 그대로 둔다
+    // (중간에 실패해도 멀쩡한 옛 파일을 잃지 않게).
     bgmTrashParts_(existing);
   } else {
     // 같은 번호·다른 조각 수의 옛 조각만 치운다(나머지 조각은 그대로 둔다).
@@ -284,7 +282,7 @@ function handleBgmPut_(ss, payload) {
   const seen = {};
   now.forEach(function (p) { seen[p.index] = true; });
   const received = Object.keys(seen).length;
-  if (received < parts) return { name: name, index: index, parts: parts, received: received, done: false };
+  if (received < parts) return { done: false, received: received };
 
   // 다 모였다 — 순서대로 붙여 하나로 만든다.
   //  · push.apply 는 원소가 많으면 스택이 넘친다(실측: 3MB 에서 Maximum call stack) → 인덱스로 채운다.
@@ -295,7 +293,7 @@ function handleBgmPut_(ss, payload) {
     const chunk = p.file.getBlob().getBytes();
     chunks.push(chunk);
     sum += chunk.length;
-    if (sum > BGM_PUT_MAX_BYTES) throw bgmBad_('이어 붙인 크기가 한도을 넘어요.');
+    if (sum > (Number(o.maxBytes) || BGM_PUT_MAX_BYTES)) throw bgmBad_('이어 붙인 크기가 한도을 넘어요.');
   }
   let buf;
   if (chunks.length === 1) buf = chunks[0];
@@ -317,6 +315,28 @@ function handleBgmPut_(ss, payload) {
     bgmTrashParts_(bgmPutParts_(folder, name));
     throw bgmBad_('받은 파일이 ' + ext + ' 음원이 아니에요(머리글이 다름).');
   }
+  return { done: true, buf: buf, bytes: buf.length };
+}
+
+function handleBgmPut_(ss, payload) {
+  const name = bgmPutName_(payload);
+  const ext = (BGM_EXT_RE.exec(name) || [])[0].slice(1).toLowerCase();
+  const parts = Math.floor(Number(payload && payload.parts));
+  if (!isFinite(parts) || parts < 1 || parts > BGM_PUT_MAX_PARTS) throw bgmBad_('parts 는 1~' + BGM_PUT_MAX_PARTS + ' 이어야 해요.');
+  const index = Math.floor(Number(payload && payload.index));
+  if (!isFinite(index) || index < 0 || index >= parts) throw bgmBad_('index 는 0~' + (parts - 1) + ' 사이여야 해요.');
+  const totalSize = Math.floor(Number(payload && payload.total_size));
+  if (!isFinite(totalSize) || totalSize < BGM_MIN_BYTES || totalSize > BGM_PUT_MAX_BYTES) {
+    throw bgmBad_('음원 크기는 100KB~' + Math.round(BGM_PUT_MAX_BYTES / 1048576) + 'MB 까지예요.');
+  }
+  if (ext === 'wav' && totalSize > BGM_PUT_MAX_BYTES) throw bgmBad_('wav 는 30MB 까지예요 — mp3·m4a 로 바꿔 올려 주세요.');
+  if (ext !== 'wav' && totalSize > BGM_MAX_BYTES) throw bgmBad_('mp3·m4a 는 25MB 까지예요.');
+
+  const folder = bgmFolder_(true);
+  const got = audioChunkPut_({ folder: folder, name: name, ext: ext, index: index, parts: parts, total_size: totalSize, data: payload && payload.data, minBytes: BGM_MIN_BYTES, maxBytes: BGM_PUT_MAX_BYTES });
+  if (!got.done) return { name: name, index: index, parts: parts, received: got.received, done: false };
+
+  const buf = got.buf;
   [name, bgmMetaName_(name)].forEach(function (n) {
     const old = folder.getFilesByName(n);
     while (old.hasNext()) { try { old.next().setTrashed(true); } catch (err) { /* 이미 지워짐 */ } }
@@ -382,4 +402,110 @@ function handleBgmDelete_(ss, payload) {
     while (it.hasNext()) { try { it.next().setTrashed(true); removed++; } catch (err) { /* 이미 지워짐 */ } }
   });
   return { name: name, removed: removed };
+}
+
+/* ------------------------------------------------------------------ *
+ * 내 육성 녹음 (2026-11-23) — _voice/<content_id>/ 에 통녹음 1파일
+ *
+ *  · 사용자는 갤럭시 '음성 녹음'으로 한 파일(.m4a)을 만든다. 화면이 2MB 조각으로 올리고, 노트북이
+ *    voice_fetch 로 이어 붙여 받아 간다(오더 payload 에는 **이름만** 실린다 — 경로가 큐로 오지 않는다).
+ *  · 이름은 **서버가 만든다**: <content_id>_voice.<mp3|m4a|wav> — 사용자가 아무 이름으로 보내도 된다.
+ *  · 목록 API 는 두지 않는다(bgm_list 처럼 보관함 화면에 섞이지 않게). 삭제는 오더를 지울 때만 부른다.
+ *  · 한도: m4a·mp3·wav 30MB · 조각 16개(2MB) · 최소 8KB. 1분 통녹음(m4a 128k)이 1MB 안팎이다.
+ *
+ *  액션 3개 (Auth.gs 화이트리스트 · Code.gs M1_HANDLERS)
+ *   · voice_put    2MB 조각 올리기
+ *   · voice_fetch  조각 내려주기(노트북 전용 · 토큰 필요)
+ *   · voice_delete 휴지통으로(발행 뒤 정리)
+ * ------------------------------------------------------------------ */
+const VOICE_FOLDER_ID_ = '_voice';
+const VOICE_EXT_RE = /\.(mp3|m4a|wav)$/i;
+const VOICE_NAME_RE_SERVER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}_voice(\.(mp3|m4a|wav))$/;
+const VOICE_MIME = { mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav' };
+const VOICE_PART_BYTES = 2 * 1024 * 1024;
+const VOICE_MAX_BYTES = 30 * 1024 * 1024;
+const VOICE_MIN_BYTES = 8 * 1024;
+const VOICE_MAX_PARTS = 16;
+
+function voiceBad_(msg, details) { return createAppError_('ERR_VALIDATION_FAILED', msg, details); }
+
+function voiceContentId_(payload) {
+  const id = String((payload && payload.content_id) || '');
+  if (!UPLOAD_CONTENT_ID_RE.test(id)) throw voiceBad_('content_id 는 영문·숫자·_·- 40자 이내여야 합니다.');
+  return id;
+}
+
+function voiceNameOf_(contentId, ext) { return contentId + '_voice.' + ext; }
+
+/** _voice/<content_id>/ 폴더. 없으면 만든다(비공개). */
+function voiceFolder_(contentId, create) {
+  const root = uploadFolder_(VOICE_FOLDER_ID_, create);
+  if (!root) return null;
+  const it = root.getFoldersByName(contentId);
+  if (it.hasNext()) return it.next();
+  if (!create) return null;
+  const f = root.createFolder(contentId);
+  try { f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); } catch (err) { /* 이미 비공개 */ }
+  return f;
+}
+
+function voiceNameCheck_(payload, contentId) {
+  const name = String((payload && payload.name) || '');
+  if (!VOICE_NAME_RE_SERVER.test(name) || name.indexOf('..') !== -1 || name.indexOf(contentId + '_voice') !== 0) {
+    throw voiceBad_('녹음 파일 이름이 올바르지 않아요(서버가 만든 <content_id>_voice.ext 만 받습니다).', { name: name.slice(0, 60) });
+  }
+  return name;
+}
+
+function handleVoicePut_(ss, payload) {
+  const contentId = voiceContentId_(payload);
+  const ext = String((payload && payload.ext) || 'm4a').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (VOICE_EXT_RE.test('.' + ext) === false) throw voiceBad_('녹음은 mp3 · m4a · wav 만 올릴 수 있어요.');
+  const name = voiceNameOf_(contentId, ext);
+  const parts = Math.floor(Number(payload && payload.parts));
+  if (!isFinite(parts) || parts < 1 || parts > VOICE_MAX_PARTS) throw voiceBad_('parts 는 1~' + VOICE_MAX_PARTS + ' 이어야 해요.');
+  const index = Math.floor(Number(payload && payload.index));
+  if (!isFinite(index) || index < 0 || index >= parts) throw voiceBad_('index 는 0~' + (parts - 1) + ' 사이여야 해요.');
+  const totalSize = Math.floor(Number(payload && payload.total_size));
+  if (!isFinite(totalSize) || totalSize < VOICE_MIN_BYTES || totalSize > VOICE_MAX_BYTES) {
+    throw voiceBad_('녹음 크기는 ' + Math.round(VOICE_MIN_BYTES / 1024) + 'KB~' + Math.round(VOICE_MAX_BYTES / 1048576) + 'MB 까지예요.');
+  }
+  const folder = voiceFolder_(contentId, true);
+  const got = audioChunkPut_({ folder: folder, name: name, ext: ext, index: index, parts: parts, total_size: totalSize, data: payload && payload.data, minBytes: VOICE_MIN_BYTES, maxBytes: VOICE_MAX_BYTES });
+  if (!got.done) return { name: name, content_id: contentId, index: index, parts: parts, received: got.received, done: false };
+  // 다 모였다 — 옛 파일을 치우고 하나로 저장한다(같은 카드에 다시 올리면 덮어쓴다).
+  const old = folder.getFilesByName(name);
+  while (old.hasNext()) { try { old.next().setTrashed(true); } catch (err) { /* 이미 지워짐 */ } }
+  folder.createFile(Utilities.newBlob(got.buf, VOICE_MIME[ext] || 'audio/mp4', name));
+  bgmTrashParts_(bgmPutParts_(folder, name));
+  return { name: name, content_id: contentId, bytes: got.bytes, parts: parts, received: parts, done: true };
+}
+
+function handleVoiceFetch_(ss, payload) {
+  const contentId = voiceContentId_(payload);
+  const name = voiceNameCheck_(payload, contentId);
+  const folder = voiceFolder_(contentId, false);
+  const f = folder ? bgmFindFile_(folder, name) : null;
+  if (!f) throw createAppError_('ERR_NOT_FOUND', '허브에 그 녹음이 없습니다: ' + name, { name: name });
+  const all = f.getBlob().getBytes();
+  const parts = Math.max(1, Math.ceil(all.length / VOICE_PART_BYTES));
+  const index = Math.floor(Number(payload && payload.index));
+  if (!isFinite(index) || index < 0 || index >= parts) throw voiceBad_('index 는 0~' + (parts - 1) + ' 사이여야 합니다.');
+  const slice = all.slice(index * VOICE_PART_BYTES, Math.min(all.length, (index + 1) * VOICE_PART_BYTES));
+  return { name: name, content_id: contentId, index: index, parts: parts, size: all.length, bytes: slice.length, data: Utilities.base64Encode(slice) };
+}
+
+function handleVoiceDelete_(ss, payload) {
+  const contentId = voiceContentId_(payload);
+  const folder = voiceFolder_(contentId, false);
+  if (!folder) return { content_id: contentId, removed: 0 };
+  let removed = 0;
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (fileTrashed_(f)) continue;
+    try { f.setTrashed(true); removed++; } catch (err) { /* 이미 지워짐 */ }
+  }
+  if (payload && payload.name) voiceNameCheck_(payload, contentId);   // 이름을 줬으면 규칙은 그대로 본다
+  return { content_id: contentId, removed: removed };
 }

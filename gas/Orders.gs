@@ -204,6 +204,11 @@ const RENDER_SUB_STYLES = ['auto', 'shorts', 'long'];
 const RENDER_TEMPLATES = ['auto', 'none', 'daejeon_youth', 'ppiyak_kimmary'];
 const RENDER_TEMPLATE_TEXT = { title: 40, badge: 14, hook: 16, hook_sub: 6, outro: 24 };
 const RENDER_VOICE_RE = /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/;
+/* 내 육성 녹음(2026-11-23) — 노트북 lib/render.js validate · 포털 Code.gs qqRenderVoiceOf_ 와 같은 값.
+   ⚠ 위 RENDER_VOICE_RE 는 **edge-tts 보이스 이름**이다 — 육성 파일은 voice_file 로 이름을 분리한다(같은 칸을 쓰면 TTS 가 깨진다). */
+const RENDER_VOICE_MODES = ['tts', 'human'];
+const RENDER_VOICE_FILE_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|m4a|wav)$/i;
+const RENDER_VOICE_OFFSET_MS = 3000;
 
 /** 자막·내레이션 큐 검사 → 큐 payload 용 짧은 모양([start,end,text] · 내레이션은 [start,end,text,tone]). */
 function hubRenderCues_(raw, label, withTone) {
@@ -441,6 +446,32 @@ function hubRenderPayload_(payload) {
   if (payload.voice !== undefined && payload.voice !== null && payload.voice !== '') {
     if (!RENDER_VOICE_RE.test(String(payload.voice))) throw bad('voice 는 edge-tts 보이스 이름(예: ko-KR-SunHiNeural)이어야 합니다.');
     out.voice = String(payload.voice);
+  }
+  // ── 내 육성 녹음(2026-11-23) ──
+  //   이 함수가 payload 를 **고정 키로 다시 만드는** 구조라, 여기서 싣지 않으면 화면의 선택이 조용히 사라진다(컷·템플릿이 그랬다).
+  //   값이 없으면 아무 키도 넣지 않는다 — 구버전 카드·오더는 지금과 100% 동일(TTS 경로).
+  if (payload.voice_mode !== undefined && payload.voice_mode !== null && payload.voice_mode !== '') {
+    const vm = String(payload.voice_mode).trim().toLowerCase();
+    if (RENDER_VOICE_MODES.indexOf(vm) === -1) throw bad('voice_mode 는 tts · human 중 하나여야 합니다.');
+    out.voice_mode = vm;
+    if (vm === 'human') {
+      const vf = String(payload.voice_file === undefined || payload.voice_file === null ? '' : payload.voice_file).trim();
+      if (!RENDER_VOICE_FILE_RE.test(vf) || vf.indexOf('..') !== -1 || vf.indexOf('/') !== -1 || vf.indexOf('\\') !== -1) {
+        throw bad('voice_file 은 녹음 파일 이름(mp3·m4a·wav, 폴더·경로 금지)이어야 합니다.');
+      }
+      out.voice_file = vf;
+      if (payload.voice_offset_ms !== undefined && payload.voice_offset_ms !== null && payload.voice_offset_ms !== '') {
+        const vo = Number(payload.voice_offset_ms);
+        if (!isFinite(vo) || Math.round(vo) !== vo || Math.abs(vo) > RENDER_VOICE_OFFSET_MS) {
+          throw bad('voice_offset_ms 는 -' + RENDER_VOICE_OFFSET_MS + '~' + RENDER_VOICE_OFFSET_MS + ' 사이 정수(ms)여야 합니다.');
+        }
+        if (vo) out.voice_offset_ms = vo;
+      }
+      if (payload.voice_fallback_tts !== undefined && payload.voice_fallback_tts !== null && payload.voice_fallback_tts !== '') {
+        if (typeof payload.voice_fallback_tts !== 'boolean') throw bad('voice_fallback_tts 는 true·false 여야 합니다.');
+        if (payload.voice_fallback_tts === true) out.voice_fallback_tts = true;
+      }
+    }
   }
   // ── 채널 템플릿 — template 은 'auto' 도 통과시킨다(노트북이 브랜드 기본을 고른다) ──
   if (payload.template !== undefined && payload.template !== null && payload.template !== '') {

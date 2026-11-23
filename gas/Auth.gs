@@ -58,6 +58,10 @@ const ACTION_WHITELIST = {
   bgm_delete:          { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   // 내 음원 올리기(2026-11-21, 뮤직비디오 모드) — 2MB 조각이라 큰 본문을 받는다 → noAudit(오류는 그대로)
   bgm_put:             { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true, noAudit: true },
+  // 내 육성 녹음 (2026-11-23, gas/Bgm.gs) — _voice/<content_id>/ 통녹음 1파일. 올리기는 2MB 조각이라 noAudit
+  voice_put:           { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true, noAudit: true },
+  voice_fetch:         { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  voice_delete:        { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   // 만든 영상·커버를 허브에 올려 두고 받기 (2026-11-21, gas/Result.gs) — 조각마다 감사 행을 남기면 시트가 불어난다 → put 은 noAudit
   result_put:          { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true, noAudit: true },
   result_list:         { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
@@ -300,7 +304,7 @@ function assertRequestSizeWithinLimit_(rawBody) {
   // 영상 조각 업로드만 더 큰 본문을 받는다. 액션 이름은 본문 앞부분에서 가볍게 확인하고(api.js 가 action 을 맨 앞에 쓴다),
   // 진짜 액션은 인증 단계에서 다시 확인된다 — 여기서 속여도 얻는 것은 '큰 본문을 파싱해 보는 것'뿐이다.
   const head120 = String(rawBody || '').slice(0, 120);
-  const isUpload = head120.indexOf('"action":"upload_video_chunk"') !== -1 || head120.indexOf('"action":"result_put"') !== -1 || head120.indexOf('"action":"bgm_put"') !== -1;   // 2MB 조각을 보내는 액션만
+  const isUpload = head120.indexOf('"action":"upload_video_chunk"') !== -1 || head120.indexOf('"action":"result_put"') !== -1 || head120.indexOf('"action":"bgm_put"') !== -1 || head120.indexOf('"action":"voice_put"') !== -1;   // 2MB 조각을 보내는 액션만
   const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES_ : MAX_REQUEST_BYTES_;
   const bytes = Utilities.newBlob(rawBody || '').getBytes().length;
   if (bytes > limit) {

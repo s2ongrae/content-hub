@@ -407,6 +407,24 @@ console.log('\n[8h-lock] 무음 보조 글자·첫 프레임 잠금 (2026-11-21)
   ok('hook_sub·frame_lock 이 붙고도 큐 한도(4,000자) 안', JSON.stringify(pL).length < 4000, JSON.stringify(pL).length);
 }
 
+console.log('\n[8h-voice] 내 육성 녹음 4키 (2026-11-23)');
+{
+  const baseV = { content_id: 'CH-20261123-VOICE', brand: 'daejeon_youth', inputs: ['a.mp4'] };
+  const pv = A.ctx.hubRenderPayload_(Object.assign({}, baseV, { voice_mode: 'human', voice_file: 'CH-20261123-VOICE_voice.m4a', voice_offset_ms: 1200, voice_fallback_tts: true }));
+  ok('육성 4키가 payload 에 실린다', pv.voice_mode === 'human' && pv.voice_file === 'CH-20261123-VOICE_voice.m4a' && pv.voice_offset_ms === 1200 && pv.voice_fallback_tts === true, pv);
+  const pt = A.ctx.hubRenderPayload_(Object.assign({}, baseV, { voice_mode: 'TTS' }));
+  ok('tts 는 소문자로 싣고 파일 키는 만들지 않는다', pt.voice_mode === 'tts' && pt.voice_file === undefined, pt);
+  const pn = A.ctx.hubRenderPayload_(Object.assign({}, baseV));
+  ok('안보내면 voice_* 키를 만들지 않는다(구버전 카드 그대로)', pn.voice_mode === undefined && pn.voice_file === undefined && pn.voice_offset_ms === undefined && pn.voice_fallback_tts === undefined, pn);
+  const pVo = A.ctx.hubRenderPayload_(Object.assign({}, baseV, { voice: 'ko-KR-SunHiNeural', voice_mode: 'human', voice_file: 'a.m4a' }));
+  ok('TTS 보이스 이름(voice)과 육성 파일(voice_file)이 같이 살아 있다', pVo.voice === 'ko-KR-SunHiNeural' && pVo.voice_file === 'a.m4a', pVo);
+  const badV = (pl) => { try { A.ctx.hubRenderPayload_(Object.assign({}, baseV, pl)); return false; } catch (e) { return e.code === 'ERR_VALIDATION_FAILED'; } };
+  ok('거부: 모르는 방식 · human 인데 파일 없음 · 경로 · 확장자 · offset 범위 · fallback 문자열',
+    badV({ voice_mode: 'ai' }) && badV({ voice_mode: 'human' }) && badV({ voice_mode: 'human', voice_file: '../v.m4a' }) && badV({ voice_mode: 'human', voice_file: 'v.aac' }) && badV({ voice_mode: 'human', voice_file: 'v.m4a', voice_offset_ms: 3001 }) && badV({ voice_mode: 'human', voice_file: 'v.m4a', voice_offset_ms: 1.5 }) && badV({ voice_mode: 'human', voice_file: 'v.m4a', voice_fallback_tts: 'yes' }));
+  ok('voice_offset_ms 0 은 키를 만들지 않는다(기본값)', (() => { const r = A.ctx.hubRenderPayload_(Object.assign({}, baseV, { voice_mode: 'human', voice_file: 'v.m4a', voice_offset_ms: 0 })); return r.voice_offset_ms === undefined; })());
+  ok('육성 키가 붙고도 큐 한도(4,000자) 안', JSON.stringify(pv).length < 4000, JSON.stringify(pv).length);
+}
+
 console.log('\n[8h-motion] 자동 줌·모션 2키 (2026-11-21)');
 {
   const baseM = { content_id: 'CH-20261121-MOT', brand: 'daejeon_youth', inputs: ['a.mp4'] };
@@ -1681,6 +1699,60 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     ok('삭제: 곡과 메타를 함께 휴지통으로', dd.ok && dd.data.removed === 2 && !blist2().data.items.some(x => x.name === '내 노래.mp3'), dd);
     const dd2 = bdel2({ name: 'voice memo.m4a' });
     ok('삭제: 한글·공백 이름도 된다', dd2.ok && dd2.data.removed === 2 && blist2().data.items.length === 0, dd2);
+  }
+
+  /* ── [V3] 내 육성 녹음 (2026-11-23, gas/Bgm.gs voice_put·fetch·delete) ── */
+  console.log('\n[V3] 내 육성 녹음 (voice_put)');
+  {
+    const HMv = ev(U.ctx, 'M1_HANDLERS');
+    const VA = ['voice_put', 'voice_fetch', 'voice_delete'];
+    ok('육성 액션 3개가 화이트리스트·핸들러에 있다', VA.every(a => wl[a] && wl[a].m1 === true && typeof HMv[a] === 'function'));
+    ok('put 은 쓰기(감사 행 없음)·fetch 는 읽기 · 모두 라우터 락 없음', wl.voice_put.mode === 'WRITE' && wl.voice_put.noAudit === true && wl.voice_fetch.mode === 'READ' && VA.every(a => wl[a].longRunning === true));
+    VA.forEach((a) => eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED'));
+    const bigW = (action, n) => '{"action":"' + action + '","payload":{"data":"' + 'A'.repeat(n) + '"}}';
+    const sizeW = (raw) => callHandler(U.ctx, 'assertRequestSizeWithinLimit_', raw).code;
+    ok('voice_put 조각(2.8MB)은 업로드 한도를 받는다(3.6MB 는 거부)', sizeW(bigW('voice_put', 2800000)) === undefined && sizeW(bigW('voice_put', 3600000)) === 'ERR_PAYLOAD_TOO_LARGE');
+
+    const vput = (p) => callHandler(U.ctx, 'handleVoicePut_', null, p);
+    const vfetch = (p) => callHandler(U.ctx, 'handleVoiceFetch_', null, p);
+    const vdel = (p) => callHandler(U.ctx, 'handleVoiceDelete_', null, p);
+    const b64v = (buf) => Buffer.from(buf).toString('base64');
+    // m4a(ftyp) 머리글 + 4.2MB → 3조각
+    const rec = Buffer.concat([Buffer.from([0, 0, 0, 32]), Buffer.from('ftypM4A '), Buffer.from(Array.from({ length: 4200000 }, (_, i) => (i * 13) % 256))]);
+    const rParts = [rec.subarray(0, 2000000), rec.subarray(2000000, 4000000), rec.subarray(4000000)];
+    const v1 = vput({ content_id: 'DY-20261123-001', ext: 'm4a', index: 0, parts: 3, total_size: rec.length, data: b64v(rParts[0]) });
+    ok('1조각: 서버가 이름을 만들고 아직 다 안 왔다', v1.ok && v1.data.done === false && v1.data.name === 'DY-20261123-001_voice.m4a' && v1.data.received === 1, v1);
+    vput({ content_id: 'DY-20261123-001', ext: 'm4a', index: 1, parts: 3, total_size: rec.length, data: b64v(rParts[1]) });
+    const v3 = vput({ content_id: 'DY-20261123-001', ext: 'm4a', index: 2, parts: 3, total_size: rec.length, data: b64v(rParts[2]) });
+    ok('3조각: 다 모이면 하나로 붙여 저장(done · 크기 일치)', v3.ok && v3.data.done === true && v3.data.bytes === rec.length, v3);
+    const vfolder = ev(U.ctx, "voiceFolder_('DY-20261123-001', false)");
+    ok('_voice/<content_id>/ 에 파일 하나만 남고 조각은 지운다', vfolder && vfolder.live().map(f => f.name).join() === 'DY-20261123-001_voice.m4a', vfolder && vfolder.live().map(f => f.name));
+    ok('녹음 폴더는 비공개로 만든다', vfolder && vfolder.shared === 'PRIVATE/NONE', vfolder && vfolder.shared);
+    const gf = [0, 1, 2].map(i => vfetch({ content_id: 'DY-20261123-001', name: 'DY-20261123-001_voice.m4a', index: i }));
+    ok('받기: 노트북이 조각을 이어 붙이면 원본과 같다', gf.every(g => g.ok) && Buffer.compare(Buffer.concat(gf.map(g => Buffer.from(g.data.data, 'base64'))), rec) === 0);
+    ok('받기: 조각 수·전체 크기를 함께 알려 준다', gf[0].data.parts === 3 && gf[0].data.size === rec.length, gf[0].data && { p: gf[0].data.parts, s: gf[0].data.size });
+    ok('다른 카드의 녹음 이름으로는 받을 수 없다', vfetch({ content_id: 'DY-20261123-002', name: 'DY-20261123-001_voice.m4a', index: 0 }).code === 'ERR_VALIDATION_FAILED');
+    ok('없는 녹음은 NOT_FOUND', vfetch({ content_id: 'DY-20261123-001', name: 'DY-20261123-001_voice.mp3', index: 0 }).code === 'ERR_NOT_FOUND');
+
+    // 다시 올리면 덮어쓴다
+    const rec2 = Buffer.concat([Buffer.from([0, 0, 0, 32]), Buffer.from('ftypM4A '), Buffer.alloc(50000, 4)]);
+    const again = vput({ content_id: 'DY-20261123-001', ext: 'm4a', index: 0, parts: 1, total_size: rec2.length, data: b64v(rec2) });
+    ok('다시 올리면 덮어쓴다(파일 하나 · 새 크기)', again.ok && again.data.done === true && vfolder.live().length === 1 && vfetch({ content_id: 'DY-20261123-001', name: 'DY-20261123-001_voice.m4a', index: 0 }).data.size === rec2.length);
+
+    // 거부들
+    const before = vfolder.live().length;
+    eq('content_id 가 없으면 거절', vput({ ext: 'm4a', index: 0, parts: 1, total_size: 50000, data: b64v(rec2) }).code, 'ERR_VALIDATION_FAILED');
+    eq('m4a·mp3·wav 가 아니면 거절', vput({ content_id: 'C-V', ext: 'aac', index: 0, parts: 1, total_size: 50000, data: b64v(rec2) }).code, 'ERR_VALIDATION_FAILED');
+    eq('너무 작은 파일 거절(8KB 미만)', vput({ content_id: 'C-V', ext: 'm4a', index: 0, parts: 1, total_size: 4000, data: b64v(rec2) }).code, 'ERR_VALIDATION_FAILED');
+    eq('조각 번호 범위 밖 거절', vput({ content_id: 'C-V', ext: 'm4a', index: 3, parts: 1, total_size: 50000, data: b64v(rec2) }).code, 'ERR_VALIDATION_FAILED');
+    eq('빈 조각 거절', vput({ content_id: 'C-V', ext: 'm4a', index: 0, parts: 1, total_size: 50000, data: '' }).code, 'ERR_VALIDATION_FAILED');
+    eq('머리글이 m4a 가 아니면 거절', vput({ content_id: 'C-V', ext: 'm4a', index: 0, parts: 1, total_size: rec2.length, data: b64v(Buffer.concat([Buffer.from('ID3'), Buffer.alloc(50000)])) }).code, 'ERR_VALIDATION_FAILED');
+    eq('받기: 경로가 든 이름 거절', vfetch({ content_id: 'C-V', name: '../x_voice.m4a', index: 0 }).code, 'ERR_VALIDATION_FAILED');
+    ok('거부된 올리기는 남의 녹음을 건드리지 않는다', vfolder.live().length === before);
+
+    const del = vdel({ content_id: 'DY-20261123-001' });
+    ok('삭제: 카드의 녹음을 휴지통으로', del.ok && del.data.removed === 1 && vfolder.live().length === 0, del);
+    ok('없는 카드 삭제는 조용히 0건', vdel({ content_id: 'C-NONE' }).ok === true && vdel({ content_id: 'C-NONE' }).data.removed === 0);
   }
 
   /* ── [W] 결과 파일 보관·받기 (gas/Result.gs) ── */
