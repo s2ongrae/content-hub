@@ -698,7 +698,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     })());
     const card = L.buildRecordingCard({ contentId: 'DY-1', brand: 'daejeon_youth', narration: Array.from({ length: 10 }, (_, i) => [i * 3, i * 3 + 2.5, '문장 ' + (i + 1) + '번입니다']).map((c, i) => i === 1 ? [c[0], c[1], '「고기 다 구워준다」고요?', 'hype'] : c) });
     ok('녹음 카드: 8큐를 넘으면 파트로 나뉜다(10큐 → 2파트)', card.ok && card.parts.length === 2 && card.parts[0].to === 8 && card.parts[1].from === 9, card.parts && card.parts.map((p) => p.from + '~' + p.to));
-    ok('녹음 카드: 번호·예상 길이·글자수·톤과 1.2초 쉼이 들어간다', /\[#01\] 2\.5초 · 9자 · 차분/.test(card.parts[0].text) && /\(1\.2초\)/.test(card.parts[0].text) && /호들갑/.test(card.parts[0].text), card.parts[0].text.slice(0, 160));
+    ok('녹음 카드: 번호·예상 길이·글자수·톤과 1.2초 쉼이 들어간다', /\[#01\] 2\.5초 · 8자 · 차분/.test(card.parts[0].text) && /\(1\.2초\)/.test(card.parts[0].text) && /호들갑/.test(card.parts[0].text), card.parts[0].text.slice(0, 160));
     ok('녹음 카드: 「」 강조는 그대로 두고 문장을 고치지 않는다', card.parts[0].text.indexOf('「고기 다 구워준다」고요?') >= 0);
     ok('녹음 카드: 대본이 없으면 이유를 알려 준다', L.buildRecordingCard({ contentId: 'DY-1', narration: [] }).ok === false && /대본/.test(L.buildRecordingCard({ contentId: 'DY-1', narration: [] }).error));
     ok('길이 대조: 20% 넘게 길면 long', (() => { const g = L.voiceLengthGap(30, 41.2); return g.diff_s === 11.2 && g.pct === 37 && g.long === true && L.voiceLengthGap(30, 31).long === false && L.voiceLengthGap(0, 40) === null; })());

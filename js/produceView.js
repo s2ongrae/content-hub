@@ -1610,7 +1610,7 @@ export function produceSection(ctx) {
     });
     if (state.make.bgm && state.make.bgm_credit) box.appendChild(creditBox(state.make.bgm_credit, state.make.bgm_cr === true));
     box.appendChild(h('p', { class: 'pr-brand', text: '이 카드의 트랙 값 — 글꼴 ' + f.font + ' · 강조색 ' + f.color + ' · 줄당 ' + f.cpl + '자' }));
-    box.appendChild(note('발행(업로드·고정댓글·링크 삽입)은 사람이 해요. 이 화면은 어떤 것도 올리지 않아요. 효과음은 아직 허브가 하지 않아요. TTS 내레이션은 ④ 완제품 옵션에서만 넣어요(⑥ 은 클린 마스터에서 시작해서 ④ 의 내레이션이 들어가지 않아요).'));
+    box.appendChild(note('발행(업로드·고정댓글·링크 삽입)은 사람이 해요. 이 화면은 어떤 것도 올리지 않아요. 효과음은 아직 허브가 하지 않아요. 내레이션(TTS·내 목소리 녹음)은 ④ 완제품 옵션에서만 넣어요(⑥ 은 클린 마스터에서 시작해서 ④ 의 내레이션이 들어가지 않아요).'));
   }
 
   const BODIES = { material: bodyMaterial, plan: bodyPlan, cuts: bodyCuts, render: bodyRender, srt: bodySrt, make: bodyMake, finish: bodyFinish };
