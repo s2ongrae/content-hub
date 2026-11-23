@@ -19,8 +19,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123j';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123j';
+import { buildEDL } from './yt/edl.js?v=20261123k';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123k';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -29,10 +29,10 @@ import {
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S,
   PACE_IDS, PACE_LABELS, PACE_NOTES
-} from './produceLogic.js?v=20261123j';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123j';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123j';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123j';
+} from './produceLogic.js?v=20261123k';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261123k';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261123k';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123k';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;

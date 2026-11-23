@@ -12,7 +12,7 @@
  * 둘째 줄 첫머리에 홀로 서면 WARN(orphan_start). 규칙 본체는 js/wrapKo.js 한 곳이다.
  */
 
-import { lintLines } from './wrapKo.js?v=20261123j';
+import { lintLines } from './wrapKo.js?v=20261123k';
 
 export const CPL = { daejeon_youth: 12, ppiyak_kimmary: 11 };
 export const MIN_DUR = 1.0;

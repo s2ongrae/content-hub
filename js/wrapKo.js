@@ -82,7 +82,18 @@ export function wrapGroups(groups, cpl, maxLines) {
   const lines = [];
   let rest = list;
   while (rest.length > 1 && lines.length < max - 1) {
-    const cut = chooseBreak(rest, limit);
+    let cut = chooseBreak(rest, limit);
+    if (cut <= 0) {
+      // 2줄에 다 못 들어가도(문장이 긴 경우) 한 줄에 몰리지 않게 가운데에서 나눈다 —
+      // 넘침은 검사기(over_cpl)가 알린다.
+      const half = lengthOf(rest) / 2;
+      let best = 1, bestDist = Infinity;
+      for (let i = 1; i < rest.length; i++) {
+        const d = Math.abs(lengthOf(rest.slice(0, i)) - half);
+        if (d < bestDist) { best = i; bestDist = d; }
+      }
+      cut = best;
+    }
     if (cut <= 0 || cut >= rest.length) break;
     lines.push(rest.slice(0, cut));
     rest = rest.slice(cut);
