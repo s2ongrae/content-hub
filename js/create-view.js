@@ -8,9 +8,9 @@
  * 원칙: textContent/createElement만(h() 사용). 폰 360px 가로 스크롤 0.
  */
 
-import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261123a';
-import { composeBlog } from './assembler.js?v=20261123a';
-import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261123a';
+import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261123b';
+import { composeBlog } from './assembler.js?v=20261123b';
+import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261123b';
 
 const SAVE_KEY = 'contenthub.create.v1';
 
@@ -53,7 +53,7 @@ export function renderCreateView(main, ctx) {
   const resultHost = h('div');
   const warnHost = h('div');
 
-  main.appendChild(pageHead('🎬 만들기', '재료를 넣으면 채널별 완성본이 바로 나옵니다 — 원문은 한 글자도 바꾸지 않습니다'));
+  main.appendChild(pageHead('🎬 채널 조립기 (예전 화면)', '재료를 넣으면 채널별 완성본이 바로 나옵니다 — 원문은 한 글자도 바꾸지 않습니다'));
 
   /* ───────── 1단계: 재료 ───────── */
   const F = {};

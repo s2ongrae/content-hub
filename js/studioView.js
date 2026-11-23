@@ -65,8 +65,8 @@ export function renderStudio(host, ctx) {
 
   host.replaceChildren();
   host.appendChild(h('div', { class: 'panel' },
-    h('h3', null, '🎬 숏폼 공방'),
-    h('p', { class: 'hint', text: '유료 툴 없이, 무료 공개 스킬(MIT)의 채점·린터 로직을 이 화면에서 바로 돌립니다. 여기서 나온 대본·컷 리스트·제목·댓글 답장은 복사해서 그대로 쓰고, 발행은 직접 합니다.' }),
+    h('h3', null, '🎬 숏폼 작업실'),
+    h('p', { class: 'hint', text: '유료 툴 없이, 무료 공개 스킬(MIT)의 채점·점검 로직을 이 화면에서 바로 돌립니다. 여기서 나온 대본·컷 리스트·제목·댓글 답장은 복사해서 그대로 쓰고, 발행은 직접 합니다.' }),
     h('p', { class: 'hint', text: brandNote })));
 
   const presetSlot = h('div', { class: 'studio-slot' });
@@ -265,7 +265,7 @@ function paintScript(slot, presetRaw, ctx) {
           const res = await api.createContent({
             brand: state.brand,
             place_name: place,
-            cluster_id: '숏폼 공방',
+            cluster_id: '숏폼 작업실',
             category: preset.silent ? '숏폼' : '쇼츠',
             target_keywords: (f.point.value.trim() || place).slice(0, 60),
             hook_variant: result.beats[0].speech.slice(0, 120),
@@ -338,7 +338,7 @@ function paintScript(slot, presetRaw, ctx) {
 
 function paintPackage(slot, ctx) {
   const { h } = ctx;
-  const p = panel(h, '③ 제목 + 썸네일 한 쌍 린터',
+  const p = panel(h, '③ 제목 + 썸네일 한 쌍 점검',
     '제목과 썸네일은 한 덩어리입니다. 썸네일이 제목을 반복하면 클릭 면적의 절반이 같은 말을 두 번 합니다. 길이는 글자 수가 아니라 폭으로 잽니다(한글 1자 = 폭 2).');
   const title = h('input', { class: 'input', placeholder: '예: [대전 봉명동] 미미삼겹 냉삼 솔직후기 : 웨이팅 16팀 뚫은 이유' });
   const thumb = h('input', { class: 'input', placeholder: '썸네일 3단어 — 제목에 없는 말로 (예: 1인 14,000원)' });

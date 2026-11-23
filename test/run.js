@@ -789,7 +789,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       ok('AI 티: 첫 400자가 비면 D.I.A.+는 고칠 것', AI.diaGate({ body: bland }, aiSeed).state === 'warn');
 
       /* ⑧ 번역투 — 기계적으로 세기만 한다(고치지 않음) */
-      const transBody = '이번 글에서는 봉명동 삼겹살집에 대해 알아보겠습니다. 가격에 대한 정보를 통해 선택에 도움을 드리고자 합니다. 웨이팅은 상황에 따라 달라질 수 있습니다. 주차는 건물 뒤를 통해 들어갈 수 있습니다. 결론적으로 평일 방문이 좋다고 할 수 있습니다. 이 글을 통해 맛집 고르는 방법을 알 수 있습니다.' + ' 본문을 조금 더 늘려 판정 조건을 채웁니다.';
+      const transBody = '이번 글에서는 봉명동 삼겹살집에 대해 알아보겠습니다. 가격에 대한 정보를 통해 선택에 도움을 드리고자 합니다. 웨이팅은 상황에 따라 달라질 수 있습니다. 주차는 건물 뒤를 통해 들어갈 수 있습니다. 결론적으로 평일 방문이 좋다고 할 수 있습니다. 이 글을 통해 맛집 고르는 방법을 알 수 있습니다.' + ' 고기 두께와 불판 상태, 반찬 구성까지 하나씩 적어 보았습니다. 이 문단은 번역투 판정의 글자 수 기준(300자)을 넘기기 위해 실제로 읽히는 글처럼 덧붙인 문장입니다. 다음에는 평일 저녁에 다시 가서 같은 메뉴를 시켜 볼 생각이고, 사진도 몇 장 더 찍어 두려고 합니다.';
       const tr = AI.lintAiTone({ body: transBody }, aiSeed);
       const trItem = tr.patterns.find((p) => p.id === 'translationese');
       ok('AI 티: 번역투를 WARN으로 잡는다', trItem && trItem.state === 'warn', trItem && trItem.value);
@@ -1510,6 +1510,41 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('블로그 린터 가중치 합 100 (줄바꿈 항목 포함)', wsum === 100 && seedLint.rules.some((r) => r.id === 'line_layout'), wsum);
   } catch (err) {
     ok('줄바꿈 규칙 시험', false, (err && err.stack) || err);
+  }
+
+  /* [12] 화면 용어 표준 (2026-11-23) — 사이드바 이름과 화면 문구가 다시 어긋나지 않게
+     사용자가 승인 탭의 '글감 탭' 안내를 지적해 전체 탭 이름·상태 문구를 맞췄다.
+     아래 목록은 그때 없앤 말과 새로 고정한 말이다. */
+  console.log('\n[12] 화면 용어 표준');
+  try {
+    const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const files = {};
+    (function walk(dir) {
+      for (const f of fs.readdirSync(dir)) {
+        const p = path.join(dir, f);
+        if (fs.statSync(p).isDirectory()) walk(p);
+        else if (/\.js$/.test(f)) files[f] = fs.readFileSync(p, 'utf8');
+      }
+    })(path.join(ROOT, 'js'));
+    /* 주석은 화면이 아니다 — 블록·줄 주석을 지우고 본다 */
+    const screen = Object.keys(files).map((f) => files[f].replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n')).join('\n');
+    const gone = ['글감', '발행 전 린터', '올릴 준비', '발행 끝', '80점 이상 → READY', '제작 스텝퍼', '수집함에 넣기', '원문·메타'];
+    gone.forEach((t) => ok('옛 용어 없음: ' + t, screen.indexOf(t) < 0 && idx.indexOf(t) < 0));
+    const need = [
+      ['index.html >발행 점검<', idx.indexOf('>발행 점검<') >= 0],
+      ['index.html >노하우<', idx.indexOf('>노하우<') >= 0],
+      ['보드 열 "검수·수정"', files['app.js'].indexOf("title: '검수·수정'") >= 0],
+      ['보드 열 "발행 완료"', files['app.js'].indexOf("title: '발행 완료'") >= 0],
+      ['새 콘텐츠 버튼(#/create)', files['app.js'].indexOf("text: '＋ 새 콘텐츠'") >= 0 && /#\/create/.test(files['app.js'])],
+      ['승인 빈 상태가 제작 탭을 가리킨다', files['quickApprove.js'].indexOf('제작 탭에서 새로 만들면') >= 0],
+      ['승인·검수 버튼 "다시 쓰기"', files['quickApprove.js'].indexOf("'다시 쓰기'") >= 0 && files['app.js'].indexOf("text: '다시 쓰기'") >= 0],
+      ['발행 전 글 점검 화면', files['lintView.js'].indexOf('발행 전 글 점검') >= 0],
+      ['상태 표준: 검수 대기·발행 준비', files['app.js'].indexOf("REVIEW: '검수 대기', READY: '발행 준비'") >= 0],
+      ['NEEDS_HUMAN = 직접 확인', files['app.js'].indexOf("NEEDS_HUMAN: '직접 확인'") >= 0]
+    ];
+    need.forEach(([name, cond]) => ok(name, cond));
+  } catch (err) {
+    ok('화면 용어 표준 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

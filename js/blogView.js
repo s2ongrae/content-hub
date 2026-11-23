@@ -13,9 +13,9 @@
  * 글별 조회수·유입 검색어는 네이버가 로그인한 본인에게만 보여 주므로 가져오지 않는다(성과 탭 수동 입력).
  * 렌더링은 h()(createElement + textContent)만 쓴다.
  */
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261123a';
-import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261123a';
-import { axisShort, trendChip, trendTone, rankChip, docChip, splitRows, makeSeoSeed, putSeoSeed, titleLen } from './blogSeo.js?v=20261123a';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261123b';
+import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261123b';
+import { axisShort, trendChip, trendTone, rankChip, docChip, splitRows, makeSeoSeed, putSeoSeed, titleLen } from './blogSeo.js?v=20261123b';
 
 const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것' };
 
@@ -416,7 +416,7 @@ function postList(h, ctx, blog) {
     h('h3', null, '글', h('span', { class: 'tag', text: String(posts.length) })),
     seg, list,
     h('p', { class: 'hint', style: 'margin-top:10px',
-      text: '[점검]은 발행된 본문을 읽어 상위노출 9항목으로 채점합니다. 글별 조회수는 네이버가 공개하지 않아 성과 탭에서 직접 넣어 주세요.' }));
+      text: '[글 점검]은 발행된 본문을 읽어 상위노출 9항목으로 채점합니다. 글별 조회수는 네이버가 공개하지 않아 성과 탭에서 직접 넣어 주세요.' }));
 }
 
 function postRow(h, ctx, p) {
@@ -427,7 +427,7 @@ function postRow(h, ctx, p) {
   if (cached) fillLint(h, result, cached);
 
   const checkBtn = h('button', {
-    class: 'btn xs', type: 'button', text: cached ? '다시 점검' : '점검',
+    class: 'btn xs', type: 'button', text: cached ? '다시 점검' : '글 점검',
     onclick: async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true; btn.textContent = '읽는 중…';
@@ -441,7 +441,7 @@ function postRow(h, ctx, p) {
         btn.textContent = '다시 점검';
       } catch (err) {
         toast(blogErrorText(err.code, err.message) || friendlyError(err), 'err');
-        btn.textContent = '점검';
+        btn.textContent = '글 점검';
       }
       btn.disabled = false;
     }

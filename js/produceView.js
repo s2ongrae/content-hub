@@ -19,8 +19,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123a';
-import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261123a';
+import { buildEDL } from './yt/edl.js?v=20261123b';
+import { uploadVideo, listUploads, deleteUpload } from './uploadVideo.js?v=20261123b';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -28,10 +28,10 @@ import {
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS
-} from './produceLogic.js?v=20261123a';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123a';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123a';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123a';
+} from './produceLogic.js?v=20261123b';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261123b';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261123b';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123b';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -598,8 +598,8 @@ export function produceSection(ctx) {
   /* ── ② 기획 ── */
   function bodyPlan(box) {
     box.append(
-      note('첫 문장(훅)을 채점하고 대본 뼈대를 만드는 건 숏폼 공방에서 해요. 커버 문구와 첫 2초 자막의 숫자를 먼저 맞춰 둡니다.'),
-      h('div', { class: 'pr-row' }, goSeries('studio', '숏폼 공방 열기 (훅 채점 · 대본)')),
+      note('첫 문장(훅)을 채점하고 대본 뼈대를 만드는 건 숏폼 작업실에서 해요. 커버 문구와 첫 2초 자막의 숫자를 먼저 맞춰 둡니다.'),
+      h('div', { class: 'pr-row' }, goSeries('studio', '숏폼 작업실 열기 (첫 문장 점검 · 대본)')),
       check('훅과 대본을 정했어요', state.plan, (v) => change((s) => { s.plan = v; }),
         '가격·시간처럼 확인 못 한 숫자는 [채우기]로 남겨 두고 촬영 날 채워요'));
   }

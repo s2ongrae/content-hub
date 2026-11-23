@@ -11,8 +11,8 @@
  */
 
 import { api } from './api.js';
-import { applyBlogRhythm } from './blogTone.js?v=20261123a';
-import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261123a';
+import { applyBlogRhythm } from './blogTone.js?v=20261123b';
+import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261123b';
 
 
 /** 채널별 복사 문안 — 줄바꿈 규칙을 적용한다(사실·문장은 그대로, 배치만). */
@@ -45,8 +45,8 @@ const CHANNELS = [
 const DRAFTISH = ['DRAFT', 'DRAFTING', 'GENERATING', 'REVIEW', 'EDITING'];
 
 const STAGE_LABEL = {
-  DRAFT: '초안', DRAFTING: '작성 중', GENERATING: '작성 중', REVIEW: '내용 확인',
-  EDITING: '수정 중', READY: '올릴 준비', NEEDS_HUMAN: '확인 필요', PARTIAL_FAIL: '일부 실패'
+  DRAFT: '초안', DRAFTING: '작성 중', GENERATING: '작성 중', REVIEW: '검수 대기',
+  EDITING: '수정 중', READY: '발행 준비', NEEDS_HUMAN: '직접 확인', PARTIAL_FAIL: '일부 실패'
 };
 
 /** 화면에 쓸 본문 후보 — 채널마다 부르는 이름이 다르다(body·script·caption·text) */
@@ -339,7 +339,7 @@ export function draftSection(ctx) {
     if (status === 'DRAFT' || status === 'DRAFTING' || status === 'GENERATING' || status === 'EDITING') {
       if (body || title) {
         flow.appendChild(h('button', {
-          class: 'btn sm', type: 'button', text: '내용 확인으로 보내기',
+          class: 'btn sm', type: 'button', text: '검수 대기로 보내기',
           onclick: () => moveTo('REVIEW')
         }));
       }

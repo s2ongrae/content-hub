@@ -6,7 +6,7 @@
  * 초안은 이 브라우저에만 저장한다(새로고침해도 남게).
  */
 
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261123a';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261123b';
 
 const DRAFT_KEY = 'contenthub.lint_draft.v1';
 
@@ -80,8 +80,8 @@ export async function renderLintView(main, ctx) {
   const t = rules.targets;
   const draft = readDraft();
 
-  main.appendChild(pageHead('🔍 발행 전 린터',
-    '상위 24건 실측 9항목(줄바꿈 배치 포함) + AI 티 8패턴·D.I.A.+ — 통과하면 그대로 올리면 됩니다'));
+  main.appendChild(pageHead('🔍 발행 전 글 점검',
+    '상위 24건 실측 9항목(줄바꿈 배치 포함) + AI 티 8패턴·첫 400자 의도 검사 — 통과하면 그대로 올리면 됩니다'));
 
   const titleEl = h('input', { type: 'text', value: draft.title || '', placeholder: '예: [봉명동 삼겹살] 미미삼겹 유성점 솔직후기 : …', autocomplete: 'off' });
   const bodyEl = h('textarea', { rows: '14', placeholder: '본문을 붙여넣으세요(정보 카드 → 외관 → 메뉴 → 먹방 → 총평)' });

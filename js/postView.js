@@ -12,8 +12,8 @@
  * 렌더링은 createElement/textContent 만 쓴다(CSP — HTML 문자열을 끼워 넣지 않는다).
  */
 
-import { postHref } from './channelView.js?v=20261123a';
-import { CHANNEL_LABEL, DONE_STATES, NO_METRIC_CHANNELS, trackChannelsOf } from './trackChannels.js?v=20261123a';
+import { postHref } from './channelView.js?v=20261123b';
+import { CHANNEL_LABEL, DONE_STATES, NO_METRIC_CHANNELS, trackChannelsOf } from './trackChannels.js?v=20261123b';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const SOURCES = ['youtube', 'instagram', 'blog'];

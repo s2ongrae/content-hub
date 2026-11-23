@@ -14,8 +14,8 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261123a';
-import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261123a';
+import { produceSection } from './produceView.js?v=20261123b';
+import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261123b';
 import {
   FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
   normalizeMaterials, emptyMaterials, materialSummary, hasMaterial, factsOf, autoOrderPhotos, photoRole,
@@ -23,12 +23,12 @@ import {
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
   errorText, orderLine, titleOptions, firstPrice, FEED_CARDS,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
-} from './studioLogic.js?v=20261123a';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261123a';
-import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261123a';
-import { lintAiTone } from './blogAiTone.js?v=20261123a';
-import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261123a';
-import { paintAiClip } from './aiClip.js?v=20261123a';
+} from './studioLogic.js?v=20261123b';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261123b';
+import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261123b';
+import { lintAiTone } from './blogAiTone.js?v=20261123b';
+import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261123b';
+import { paintAiClip } from './aiClip.js?v=20261123b';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';
@@ -142,7 +142,8 @@ function renderChooser(main, ctx) {
   const m = mem.materials;
 
   main.appendChild(ctx.pageHead('＋ 제작 스튜디오',
-    '무엇을 만들지 먼저 고르면 재료 넣는 칸이 그 포맷에 맞게 바뀝니다 · 재료는 한 번만 넣으면 됩니다'));
+    '무엇을 만들지 먼저 고르면 재료 넣는 칸이 그 포맷에 맞게 바뀝니다 · 재료는 한 번만 넣으면 됩니다',
+    h('button', { class: 'btn sm', type: 'button', title: '가게·아이디어만 적어 초안 카드를 바로 만듭니다', onclick: () => { location.hash = '#/capture'; }, text: '⚡ 빠른 카드' })));
 
   const wrap = h('div', { class: 'st-formats' });
   FORMATS.filter((f) => allowed.indexOf(f.id) >= 0).forEach((f, i) => {
@@ -182,7 +183,7 @@ function renderChooser(main, ctx) {
     h('p', { class: 'st-hint', text: '사진 · 장소 · 내용 · 컨셉 네 칸에 넣은 값은 포맷을 바꿔도 그대로 남습니다(이 기기 · 이 브랜드).' }),
     h('p', { class: 'st-hint', text: '지금 재료: ' + (hasMaterial(m) ? materialSummary(m) : '아직 없음') })),
   h('div', { class: 'row', style: 'margin-top:10px' },
-    h('button', { class: 'btn sm', type: 'button', text: '예전 채널 조립기 열기', onclick: () => { location.hash = '#/create/legacy'; } })));
+    h('button', { class: 'btn sm', type: 'button', text: '채널 조립기 (예전 화면) 열기', onclick: () => { location.hash = '#/create/legacy'; } })));
   return null;
 }
 
@@ -887,13 +888,13 @@ function paintNormalVideo(host, out, ctx, ui) {
 
   const scriptBtn = h('button', { class: 'btn', type: 'button', text: '🤖 대본·자막·내레이션 만들기' });
   const renderBtn = h('button', { class: 'btn primary', type: 'button', text: '🎬 사진으로 완제품 렌더 (노트북)' });
-  const stepsBtn = h('button', { class: 'btn sm', type: 'button', text: '영상 편집 단계(제작 스텝퍼) 열기' });
+  const stepsBtn = h('button', { class: 'btn sm', type: 'button', text: '영상 편집 단계 열기' });
 
   host.appendChild(h('div', { class: 'row' }, scriptBtn, renderBtn));
   host.appendChild(h('div', { class: 'st-hint' },
     h('span', { text: '이 길이에 사진 ' + plan.target + '장 · 지금 ' + plan.count + '장 — ' + (plan.enough ? (plan.meets_target ? '충분합니다' : plan.missing + '장 더 있으면 더 좋습니다') : ('최소 ' + plan.min + '장이 필요합니다(' + (plan.min - plan.count) + '장 더)')) }),
     h('span', { text: ' · 렌더는 1080×1920 30fps, 켄번즈(장당 3.0초 이상·자막 길이에 맞춰 늘어남), 자막 번인+내레이션 포함입니다.' })));
-  host.appendChild(h('p', { class: 'st-hint', text: '영상이 이미 있으면 아래 [영상 편집 단계]에서 올리고 컷·자막·마무리를 하세요. 그 화면(제작 스텝퍼)은 그대로 살아 있습니다.' }));
+  host.appendChild(h('p', { class: 'st-hint', text: '영상이 이미 있으면 아래 [영상 편집 단계]에서 올리고 컷·자막·마무리를 하세요. 그 화면은 그대로 살아 있습니다.' }));
 
   const stepsHost = h('div', { class: 'st-steps-host' });
   stepsHost.hidden = true;

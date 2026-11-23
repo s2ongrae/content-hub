@@ -10,7 +10,7 @@
 
 import { api } from './api.js';
 
-const BRAND_EMOJI = { daejeon_youth: '🍺 대전청년', ppiyak_kimmary: '🐱 메리' };
+const BRAND_EMOJI = { daejeon_youth: '🍺 대전 청년', ppiyak_kimmary: '🐱 김메리' };
 
 export class QuickApproveView {
   constructor(rootEl, opts = {}) {
@@ -41,8 +41,8 @@ export class QuickApproveView {
     this.root.appendChild(this.cardHost);
 
     this.actionBar = el('div', 'qa-actions');
-    const rejectBtn = el('button', 'qa-btn qa-reject', '다시 고치기');
-    const skipBtn = el('button', 'qa-btn qa-skip', '다음에 보기');
+    const rejectBtn = el('button', 'qa-btn qa-reject', '다시 쓰기');
+    const skipBtn = el('button', 'qa-btn qa-skip', '보류');
     const approveBtn = el('button', 'qa-btn qa-approve', '✅ 승인');
     [rejectBtn, skipBtn, approveBtn].forEach((b) => { b.type = 'button'; });
     rejectBtn.addEventListener('click', () => this.reject());
@@ -55,7 +55,7 @@ export class QuickApproveView {
     this.actionBar.appendChild(approveBtn);
     this.root.appendChild(this.actionBar);
 
-    const kbd = el('p', 'qa-kbd', '키보드: ← 승인 · → 미루기 · ↓ 다시 고치기');
+    const kbd = el('p', 'qa-kbd', '키보드: ← 승인 · → 보류 · ↓ 다시 쓰기');
     this.root.appendChild(kbd);
 
     this._keyHandler = (ev) => {
@@ -101,10 +101,25 @@ export class QuickApproveView {
     this.cardHost.replaceChildren();
     const item = this.current();
     const left = this.items.length - this.index;
-    this.countEl.textContent = item ? `승인할 카드 ${left}장` : '승인할 카드가 없어요';
+    this.countEl.textContent = item ? `승인할 원고 ${left}건` : '승인할 원고가 없어요';
 
     if (!item) {
-      this.cardHost.appendChild(el('p', 'qa-empty', '지금 승인할 카드가 없어요.\n글감 탭에서 새로 적으면 여기로 옵니다.'));
+      const box = el('div', 'qa-emptybox');
+      box.style.cssText = 'margin:auto;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center';
+      const text = el('p', 'qa-empty', '지금 승인할 원고가 없어요.\n제작 탭에서 새로 만들면 현황 보드에 쌓이고, 원고가 다 나오면 여기로 옵니다.');
+      text.style.margin = '0';
+      box.appendChild(text);
+      const row = el('div', 'row');
+      row.style.justifyContent = 'center';
+      const go = el('button', 'btn sm primary', '제작으로 가기');
+      const board = el('button', 'btn sm', '현황 보기');
+      [go, board].forEach((b) => { b.type = 'button'; });
+      go.addEventListener('click', () => { location.hash = '#/create'; });
+      board.addEventListener('click', () => { location.hash = '#/board'; });
+      row.appendChild(go);
+      row.appendChild(board);
+      box.appendChild(row);
+      this.cardHost.appendChild(box);
       this.rejectBtn.disabled = true;
       this.approveBtn.disabled = true;
       return;
@@ -163,11 +178,11 @@ export class QuickApproveView {
       this.items.splice(this.index, 1);
       if (this.index >= this.items.length) this.index = Math.max(0, this.items.length - 1);
       this.render();
-      this.toast(`${item.place_name || item.content_id} → READY`, 'ok');
+      this.toast(`${item.place_name || item.content_id} → 발행 준비`, 'ok');
       this.onChanged();
     } catch (err) {
       if (err.code === 'ERR_TOS_REVIEW_REQUIRED') {
-        this.toast('점검 기록이 필요해요. 점검 화면에서 체크리스트를 먼저 끝내 주세요.', 'err');
+        this.toast('검수 기록이 필요해요. 검수 화면에서 체크리스트를 먼저 끝내 주세요.', 'err');
       } else if (err.code === 'ERR_VERSION_CONFLICT') {
         this.toast('다른 곳에서 먼저 수정됐습니다. 새로고침 후 다시 시도하세요.', 'err');
       } else {
@@ -182,7 +197,7 @@ export class QuickApproveView {
   async reject() {
     if (this.busy || !this.current()) return;
     const item = this.current();
-    const reason = prompt('어떤 점을 고칠까요? (한 줄) — 예: 말투, 사실관계, 첫 문장이 약함') || '대표님 반려';
+    const reason = prompt('어떤 점을 고칠까요? (한 줄) — 예: 말투, 사실관계, 첫 문장이 약함') || '대표님 다시 쓰기';
     this.busy = true;
     this.actionBar.classList.add('busy');
     try {
@@ -190,7 +205,7 @@ export class QuickApproveView {
       this.items.splice(this.index, 1);
       if (this.index >= this.items.length) this.index = Math.max(0, this.items.length - 1);
       this.render();
-      this.toast(`다시 고치기: ${reason}`, 'ok');
+      this.toast(`다시 쓰기: ${reason}`, 'ok');
       this.onChanged();
     } catch (err) {
       this.toast(`되돌리지 못했어요: ${err.code || ''} ${err.message || ''}`, 'err');
@@ -210,7 +225,7 @@ export class QuickApproveView {
 function channelLine(item) {
   const map = [
     ['블로그', item.blog_status],
-    ['숏폼', item.shorts_status],
+    ['쇼츠', item.shorts_status],
     ['릴스', item.reels_status],
     ['클립', item.clip_status],
     ['당근', item.daangn_status]

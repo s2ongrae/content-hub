@@ -97,13 +97,13 @@ export function renderSeriesView(main, ctx) {
   main.replaceChildren();
   main.appendChild(h('div', { class: 'page-head' },
     h('div', null,
-      h('h1', { text: '🎬 연재 기획' }),
-      h('p', { class: 'sub', text: '연재 대본 · 네이버 자동완성 실측 · 첫 2초 문장 비교' })),
+      h('h1', { text: '🎬 연재' }),
+      h('p', { class: 'sub', text: '연재 대본 · 네이버 자동완성 실측 · 첫 문장 비교' })),
     h('div', { class: 'head-actions' },
       h('span', { class: 'tag', text: brand === 'ppiyak_kimmary' ? '삐약 김메리' : '대전 청년' }))));
 
   const seg = h('div', { class: 'seg', role: 'tablist', 'aria-label': '시리즈 화면 전환' });
-  [['series', '연재 대본'], ['studio', '🎬 숏폼 공방'], ['keywords', '검색어 모음'], ['hooks', '첫 문장 비교']].forEach(([key, label]) => {
+  [['series', '연재 대본'], ['studio', '숏폼 작업실'], ['keywords', '검색어'], ['hooks', '첫 문장']].forEach(([key, label]) => {
     seg.appendChild(h('button', {
       type: 'button', class: 'seg-btn', role: 'tab', 'data-sub': key,
       'aria-selected': subTab === key ? 'true' : 'false',
@@ -240,7 +240,7 @@ function episodeDetail(series, ep, ctx) {
   box.appendChild(cross);
 
   const createBtn = h('button', {
-    class: 'btn sm primary', type: 'button', title: '이 편을 현황 보드의 글감·초안 칸에 카드로 만듭니다', text: '＋ 현황 보드에 초안 카드로 넣기',
+    class: 'btn sm primary', type: 'button', title: '이 편을 현황 보드의 초안 칸에 카드로 만듭니다', text: '＋ 현황 보드에 초안 카드로 넣기',
     onclick: async () => {
       createBtn.disabled = true;
       try {
@@ -252,7 +252,7 @@ function episodeDetail(series, ep, ctx) {
           target_keywords: ep.keywords.join(', '),
           allow_partial_shortform: false
         });
-        toast('현황 보드에 초안 카드로 넣었어요 — 글감 탭에서 이어서 채우세요', 'ok');
+        toast('현황 보드의 초안 칸에 넣었어요 — 거기서 이어서 채우세요', 'ok');
       } catch (err) {
         toast(friendlyError(err) || String(err), 'err');
       } finally {

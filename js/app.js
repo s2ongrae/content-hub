@@ -9,18 +9,18 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123a';
-import { renderPostView } from './postView.js?v=20261123a';
-import { trackChannelsOf } from './trackChannels.js?v=20261123a';
-import { renderLintView } from './lintView.js?v=20261123a';
-import { loadDaangnSeed } from './daangnView.js?v=20261123a';
-import { getAnalytics } from './analyticsView.js?v=20261123a';
-import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123a';
-import { renderCreateView } from './create-view.js?v=20261123a';
-import { renderCreateStudio } from './createStudio.js?v=20261123a';
-import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123a';
-import { draftSection, draftPreview } from './draftView.js?v=20261123a';
-import { produceSection } from './produceView.js?v=20261123a';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123b';
+import { renderPostView } from './postView.js?v=20261123b';
+import { trackChannelsOf } from './trackChannels.js?v=20261123b';
+import { renderLintView } from './lintView.js?v=20261123b';
+import { loadDaangnSeed } from './daangnView.js?v=20261123b';
+import { getAnalytics } from './analyticsView.js?v=20261123b';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123b';
+import { renderCreateView } from './create-view.js?v=20261123b';
+import { renderCreateStudio } from './createStudio.js?v=20261123b';
+import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123b';
+import { draftSection, draftPreview } from './draftView.js?v=20261123b';
+import { produceSection } from './produceView.js?v=20261123b';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -32,20 +32,20 @@ const BRANDS = {
 /* 화면에 보이는 말은 쉬운 한국어로. 시트·GAS 코드값(DRAFT·PUBLISHED·LINKED …)은 그대로 둔다. */
 const STATUS_LABEL = {
   DRAFT: '초안', DRAFTING: '작성 중', GENERATING: '작성 중', EDITING: '수정 중',
-  REVIEW: '확인 중', READY: '올릴 준비',
-  PUBLISHING: '올리는 중', PUBLISHED: '일부 올라감', LINKED: '발행 끝',
-  NEEDS_HUMAN: '확인 필요', PARTIAL_FAIL: '일부 실패',
+  REVIEW: '검수 대기', READY: '발행 준비',
+  PUBLISHING: '발행 중', PUBLISHED: '일부 발행', LINKED: '발행 완료',
+  NEEDS_HUMAN: '직접 확인', PARTIAL_FAIL: '일부 실패',
   PENDING: '대기', UPLOADED: '올림', DONE: '완료', SKIPPED: '건너뜀', FAILED: '실패'
 };
 const statusLabel = (s) => STATUS_LABEL[s] || s || '-';
 
 const COLUMNS = [
-  { key: 'draft', title: '글감 · 초안', statuses: ['DRAFT', 'DRAFTING', 'GENERATING'], hint: '글감만 있거나 본문을 쓰는 중' },
-  { key: 'review', title: '내용 확인', statuses: ['REVIEW', 'EDITING'], hint: '글·대본 읽고 고치는 단계' },
-  { key: 'ready', title: '올릴 준비', statuses: ['READY'], hint: '확인 끝, 곧 올라갈 차례' },
-  { key: 'publishing', title: '일부만 올라감', statuses: ['PUBLISHING', 'PUBLISHED'], hint: '블로그↔숏폼 서로 연결 대기' },
-  { key: 'linked', title: '발행 끝', statuses: ['LINKED'], hint: '업로드·연결 모두 완료' },
-  { key: 'human', title: '내가 봐야 함', statuses: ['NEEDS_HUMAN', 'PARTIAL_FAIL'], hint: '로그인·인증·오류를 직접 풀어요', alert: true }
+  { key: 'draft', title: '초안', statuses: ['DRAFT', 'DRAFTING', 'GENERATING'], hint: '아이디어만 적었거나 본문을 쓰는 중' },
+  { key: 'review', title: '검수·수정', statuses: ['REVIEW', 'EDITING'], hint: '글·대본을 읽고 고치는 단계' },
+  { key: 'ready', title: '발행 준비', statuses: ['READY'], hint: '검수 끝, 곧 올라갈 차례' },
+  { key: 'publishing', title: '일부 발행', statuses: ['PUBLISHING', 'PUBLISHED'], hint: '블로그·쇼츠 서로 연결 대기' },
+  { key: 'linked', title: '발행 완료', statuses: ['LINKED'], hint: '업로드·연결 모두 완료' },
+  { key: 'human', title: '직접 확인', statuses: ['NEEDS_HUMAN', 'PARTIAL_FAIL'], hint: '로그인·인증·오류를 직접 풀어요', alert: true }
 ];
 
 const CHECKLIST = [
@@ -139,7 +139,7 @@ function relTime(iso) {
 
 function badge(status) {
   const code = status || 'DRAFT';
-  return h('span', { class: 'badge ' + code, title: code, text: statusLabel(code) });
+  return h('span', { class: 'badge ' + code, title: statusLabel(code), text: statusLabel(code) });
 }
 
 /* ────────────────────────── 채널 정의·아이콘 ──────────────────────────
@@ -358,7 +358,7 @@ function applyBrand(brand, opts = {}) {
   if (!opts.silent && brand === 'ppiyak_kimmary') {
     const sub = String(state.route || '').split('/');
     if (sub[0] === 'create' && sub[1] && ['blog', 'feed'].indexOf(sub[1]) >= 0) {
-      toast('반려동물 채널은 영상만 지원해 영상 스튜디오로 이동했어요', '');
+      toast('반려동물 채널은 영상만 지원해 영상 만들기로 이동했어요', '');
       location.hash = '#/create/video';
     }
   }
@@ -472,7 +472,7 @@ function renderBanners() {
   const needsHuman = state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length
     + (state.sysHealth && state.sysHealth.needs_human ? state.sysHealth.needs_human.count : 0);
   if (state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length) {
-    host.appendChild(banner('danger', '🙋', `사람 대기 ${state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length}건`,
+    host.appendChild(banner('danger', '🙋', `직접 확인 ${state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length}건`,
       '캡차·2FA·로그인 만료는 자동으로 처리하지 않습니다. 직접 처리한 뒤 보드에서 상태를 바꾸세요.'));
   }
 
@@ -482,7 +482,7 @@ function renderBanners() {
       b.last_failure_at
         ? `최근 백업 실패: ${b.last_failure_msg || '(사유 미기록)'} · ${relTime(b.last_failure_at)}`
         : `마지막 성공 백업이 ${b.backup_stale_days == null ? '없습니다' : b.backup_stale_days + '일 전'}`,
-      h('button', { class: 'ghost-btn sm', type: 'button', onclick: () => { location.hash = '#/ops'; }, text: '운영' })));
+      h('button', { class: 'ghost-btn sm', type: 'button', onclick: () => { location.hash = '#/ops'; }, text: '관리' })));
   }
 
   if (state.health && state.health.quota_degraded) {
@@ -566,7 +566,7 @@ function renderBoard(main) {
   main.appendChild(pageHead(
     `${brand.emoji} ${brand.name}`,
     brand.channels + ' · ' + state.contents.length + '건',
-    h('button', { class: 'btn sm primary', type: 'button', title: '가게·아이디어를 적어 새 카드를 만듭니다', onclick: () => { location.hash = '#/capture'; }, text: '＋ 글감 추가' })
+    h('button', { class: 'btn sm primary', type: 'button', title: '제작 스튜디오에서 사진·이야기로 새 콘텐츠를 만듭니다', onclick: () => { location.hash = '#/create'; }, text: '＋ 새 콘텐츠' })
   ));
 
   const search = h('input', {
@@ -590,7 +590,7 @@ function renderBoard(main) {
       h('p', { class: 'hint', text: '관리 → 초기 세팅을 한 번 돌리면 첫 문장 형식·키워드가 채워지고 2주치 초안 10건이 생깁니다.' }),
       h('div', { class: 'row', style: 'margin-top:10px' },
         h('button', { class: 'btn sm', type: 'button', text: '관리 열기', onclick: () => { location.hash = '#/ops'; } }),
-        h('button', { class: 'btn sm primary', type: 'button', text: '＋ 글감 추가', onclick: () => { location.hash = '#/capture'; } }))));
+        h('button', { class: 'btn sm primary', type: 'button', text: '＋ 새 콘텐츠', onclick: () => { location.hash = '#/create'; } }))));
     return;
   }
 
@@ -623,7 +623,7 @@ function renderBoard(main) {
             h('span', { class: 'n', text: String(items.length) })),
           h('p', { class: 'hint', style: 'font-size:11px;color:var(--tx-3);margin:-2px 2px 4px',
           text: col.key === 'publishing' && state.brand === 'ppiyak_kimmary'
-            ? '쇼츠·릴스·클립은 올라감 — 발행 끝으로 넘기면 정리돼요'
+            ? '쇼츠·릴스·클립은 올라감 — 발행 완료로 넘기면 정리돼요'
             : col.hint }));
         boardHost.appendChild(colEl);
       } else {
@@ -734,7 +734,7 @@ function perfBadge(item) {
 
 function renderApprove(main) {
   const brand = BRANDS[state.brand];
-  main.appendChild(pageHead('빠른 승인', `${brand.name} · 검수할 원고를 폰에서 읽고 한 번에 승인`));
+  main.appendChild(pageHead('빠른 승인', `${brand.name} · 검수 대기 원고를 폰에서 읽고 한 번에 승인`));
   const host = h('div', { id: 'quick-approve' });
   main.appendChild(host);
   if (state.quick) state.quick.unmount();
@@ -752,7 +752,8 @@ function renderApprove(main) {
 
 function renderCapture(main) {
   const brand = BRANDS[state.brand];
-  main.appendChild(pageHead('글감 적기', `${brand.name} · 다녀온 곳·아이디어만 적으면 30초에 카드가 생깁니다`));
+  main.appendChild(pageHead('빠른 카드 만들기', `${brand.name} · 가게·아이디어만 적으면 30초에 초안 카드가 생깁니다`,
+    h('button', { class: 'btn sm', type: 'button', title: '사진·이야기까지 넣어 완성본을 만듭니다', onclick: () => { location.hash = '#/create'; }, text: '제작 스튜디오로' })));
 
   const form = h('form', { class: 'panel' });
   const fields = {};
@@ -785,9 +786,9 @@ function renderCapture(main) {
   const partial = h('input', { type: 'checkbox' });
   form.appendChild(h('div', { class: 'row', style: 'margin:4px 0 12px;gap:16px' },
     h('label', { class: 'switch' }, receipt, h('span', { text: '영수증·방문 사진 있음' })),
-    h('label', { class: 'switch' }, partial, h('span', { text: '숏폼만 먼저 올려도 됨' }))));
+    h('label', { class: 'switch' }, partial, h('span', { text: '쇼츠·릴스만 먼저 올려도 됨' }))));
 
-  const submit = h('button', { class: 'btn primary block', type: 'submit', title: '저장하면 현황 보드의 아이디어·초안 칸에 카드가 생깁니다', text: '초안 카드 만들기' });
+  const submit = h('button', { class: 'btn primary block', type: 'submit', title: '저장하면 현황 보드의 초안 칸에 카드가 생깁니다', text: '초안 카드 만들기' });
   form.appendChild(submit);
 
   const result = h('div', { hidden: true });
@@ -819,7 +820,7 @@ function renderCapture(main) {
         h('strong', { text: '✓ 카드가 생겼어요 · ' + d.content_id }),
         h('p', { class: 'hint', text: d.pipeline_mode === 'ONE_STAGE_SHORTFORM'
           ? '이 브랜드는 쇼츠·릴스만 올리면 끝입니다(블로그·클립은 건너뜀).'
-          : '올리는 순서: 쇼츠·릴스·클립 → 블로그(영상 넣기) → 숏폼 고정댓글에 블로그 링크 달기' }),
+          : '올리는 순서: 쇼츠·릴스·클립 → 블로그(영상 넣기) → 쇼츠·릴스 고정댓글에 블로그 링크 달기' }),
         h('p', { class: 'hint', text: '사진과 원고는 다음 단계에서 이 카드에 붙습니다.' })));
       form.reset();
       await refresh();
@@ -840,7 +841,7 @@ function renderCapture(main) {
     h('h3', null, '이 브랜드는 이렇게 올려요'),
     h('p', { class: 'hint', text: state.brand === 'ppiyak_kimmary'
       ? '삐약 김메리: 쇼츠·릴스·클립을 올리면 끝이에요. 블로그는 자동으로 건너뜁니다.'
-      : '대전 청년: ① 쇼츠 · 릴스 · 클립을 먼저 올리고 ② 블로그에 그 영상을 넣고 ③ 숏폼 맨 위 고정댓글에 블로그 주소를 답니다.' })));
+      : '대전 청년: ① 쇼츠 · 릴스 · 클립을 먼저 올리고 ② 블로그에 그 영상을 넣고 ③ 쇼츠·릴스 맨 위 고정댓글에 블로그 주소를 답니다.' })));
 }
 
 /* ────────────────────────── 검수 ────────────────────────── */
@@ -852,7 +853,7 @@ function renderReview(main) {
     h('button', { class: 'btn sm', type: 'button', title: '폰에서 카드 한 장씩 읽고 승인합니다', onclick: () => { location.hash = '#/approve'; }, text: '빠른 승인' })));
 
   if (!reviewing.length) {
-    main.appendChild(h('div', { class: 'empty', text: '지금 검수할 원고가 없어요.' }));
+    main.appendChild(h('div', { class: 'empty', text: '지금 검수할 원고가 없어요. 제작 탭에서 새로 만들면 현황 보드에 쌓이고, 원고가 다 나오면 여기로 옵니다.' }));
     return;
   }
 
@@ -867,7 +868,7 @@ function renderReview(main) {
       h('div', { class: 'l-sub', text: [item.content_id, item.region_dong, '수정 ' + relTime(item.updated_at)].filter(Boolean).join(' · ') })),
     h('div', { class: 'l-side' },
       item.quality_score ? h('span', { class: 'score', text: item.quality_score + '점' }) : null,
-      h('span', { class: 'badge REVIEW', text: item.status }))));
+      h('span', { class: 'badge REVIEW', text: statusLabel(item.status) }))));
   });
   main.appendChild(list);
 
@@ -886,13 +887,13 @@ function reviewPanel(item) {
     h('dt', { text: '제목' }), h('dd', { text: item.blog_title || '(미정)' }),
     h('dt', { text: '키워드' }), h('dd', { text: item.target_keywords || '-' }),
     h('dt', { text: '주제 묶음' }), h('dd', { text: item.cluster_id || '-' }),
-    h('dt', { text: '채널' }), h('dd', { text: `블로그 ${item.blog_status} · 숏폼 ${item.shorts_status} · 릴스 ${item.reels_status} · 클립 ${item.clip_status}` })));
+    h('dt', { text: '채널' }), h('dd', { text: `블로그 ${channelLabel(item.blog_status)} · 쇼츠 ${channelLabel(item.shorts_status)} · 릴스 ${channelLabel(item.reels_status)} · 클립 ${channelLabel(item.clip_status)}` })));
 
   const scoreEl = h('strong', { text: '0' });
   const bar = h('i');
   const wrap = h('div', { style: 'margin-bottom:10px' },
     h('div', { class: 'row', style: 'margin-bottom:6px' },
-      h('span', { class: 'field-label', style: 'margin:0', text: 'F2 발행 전 체크리스트' }),
+      h('span', { class: 'field-label', style: 'margin:0', text: '발행 전 체크리스트' }),
       h('span', { class: 'spacer' }),
       scoreEl, h('span', { class: 'field-label', style: 'margin:0', text: '/ 100' })),
     h('div', { class: 'scorebar' }, bar));
@@ -924,8 +925,8 @@ function reviewPanel(item) {
     bar.style.width = Math.min(100, s) + '%';
   }
 
-  const approveBtn = h('button', { class: 'btn primary', type: 'button', text: '80점 이상 → READY' });
-  const rejectBtn = h('button', { class: 'ghost-btn danger', type: 'button', text: '반려' });
+  const approveBtn = h('button', { class: 'btn primary', type: 'button', text: '80점 통과 → 발행 준비' });
+  const rejectBtn = h('button', { class: 'ghost-btn danger', type: 'button', text: '다시 쓰기' });
 
   approveBtn.addEventListener('click', async () => {
     const score = calc();
@@ -956,16 +957,16 @@ function reviewPanel(item) {
       toast(friendlyError(err), 'err');
     } finally {
       approveBtn.disabled = false;
-      approveBtn.textContent = '80점 이상 → READY';
+      approveBtn.textContent = '80점 통과 → 발행 준비';
     }
   });
 
   rejectBtn.addEventListener('click', async () => {
-    const reason = prompt('반려 사유') || '대표님 반려';
+    const reason = prompt('어떤 점을 고칠까요?') || '대표님 다시 쓰기';
     rejectBtn.disabled = true;
     try {
       await api.quickReject(item.content_id, reason);
-      toast('반려 기록 완료', 'ok');
+      toast('다시 쓰기로 돌렸어요', 'ok');
       state.reviewId = null;
       await refresh();
       renderRoute();
@@ -996,7 +997,7 @@ function writeKnowhow(list) {
 }
 
 function renderKnowHow(main) {
-  main.appendChild(pageHead('잘 된 글 노하우', '잘 된 글·영상의 비결을 적어 두면 다음 원고에 씁니다'));
+  main.appendChild(pageHead('노하우', '잘 된 글·영상의 비결을 적어 두면 다음 원고에 씁니다'));
 
   const form = h('form', { class: 'panel' });
   const title = h('input', { type: 'text', placeholder: '예: 첫 3초에 결론부터', autocomplete: 'off' });
@@ -1011,7 +1012,7 @@ function renderKnowHow(main) {
   g.appendChild(h('label', { class: 'field' }, h('span', { class: 'field-label', text: '태그' }), tags));
   form.appendChild(g);
   form.appendChild(h('label', { class: 'field' }, h('span', { class: 'field-label', text: '메모' }), memo));
-  form.appendChild(h('button', { class: 'btn primary', type: 'submit', text: '수집함에 넣기' }));
+  form.appendChild(h('button', { class: 'btn primary', type: 'submit', text: '노하우에 추가' }));
 
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -1030,14 +1031,14 @@ function renderKnowHow(main) {
     writeKnowhow(list);
     form.reset();
     renderRoute();
-    toast('수집함에 넣었습니다', 'ok');
+    toast('노하우에 추가했어요', 'ok');
   });
   main.appendChild(form);
 
   const list = readKnowhow();
   const panel = h('div', { class: 'panel' },
-    h('h3', null, '수집한 규칙', h('span', { class: 'tag', text: String(list.length) })),
-    h('p', { class: 'hint', text: 'M1에서는 이 브라우저에만 저장됩니다. 아래 "내보내기"로 JSON을 받아 두면 M3에서 Benchmarks · Prompt_Rules로 옮길 수 있습니다.' }));
+    h('h3', null, '적어 둔 노하우', h('span', { class: 'tag', text: String(list.length) })),
+    h('p', { class: 'hint', text: '지금은 이 브라우저에만 저장됩니다. 아래 "내보내기"로 파일을 받아 두면 기획 자료로 따로 보관할 수 있어요.' }));
 
   if (!list.length) {
     panel.appendChild(h('div', { class: 'empty', text: '아직 없습니다. 잘 된 글 하나를 골라 "왜 먹혔는지"부터 적어 보세요.' }));
@@ -1065,11 +1066,11 @@ function renderKnowHow(main) {
 
 function exportKnowhow() {
   const list = readKnowhow();
-  if (!list.length) { toast('내보낼 규칙이 없습니다', 'err'); return; }
+  if (!list.length) { toast('내보낼 노하우가 없습니다', 'err'); return; }
   const payload = {
     exported_at: new Date().toISOString(),
     brand: state.brand,
-    note: 'M3 ingest_benchmark 입력 형식에 맞춘 초안. source_type=MANUAL_NOTE',
+    note: '이 브랜드에서 적어 둔 노하우 목록입니다.',
     items: list.filter((k) => k.brand === state.brand).map((k) => ({
       brand: k.brand,
       source_type: 'MANUAL_NOTE',
@@ -1092,7 +1093,7 @@ function exportKnowhow() {
 
 function renderOps(main) {
   const mode = api.mode;
-  main.appendChild(pageHead('관리 · 점검', '연결 상태 · 백업 · 시트 점검 · 되돌리기'));
+  main.appendChild(pageHead('관리', '연결 상태 · 백업 · 시트 점검 · 되돌리기'));
 
   /* 연결 상태 */
   const cfg = loadConfig();
@@ -1129,8 +1130,8 @@ function renderOps(main) {
       { k: '브랜드', v: hd ? (hd.brands || []).length : '—', sub: '대전청년 · 메리' },
       { k: '마지막 백업', v: b && b.last_backup_at ? relTime(b.last_backup_at) : '없음', cls: b && b.backup_stale ? 'bad' : b ? 'good' : '', sub: b && b.last_backup_tier ? ({ MANUAL: '수동', DAILY: '자동(매일)', WEEKLY: '자동(주간)', MONTHLY: '자동(월간)' }[b.last_backup_tier] || '') : '' },
       { k: '오늘 서버 호출', v: hd ? hd.daily_calls : '—', sub: '구글 한도 대비' },
-      { k: '내가 봐야 함', v: sh ? sh.needs_human.count : state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length, cls: (sh && sh.needs_human.count) ? 'bad' : '', sub: '로그인·인증' },
-      { k: '점검에서 걸린 것', v: sh ? sh.open_integrity_issues.count : '—', cls: sh && sh.open_integrity_issues.count ? 'bad' : 'good', sub: '아직 안 고침' },
+      { k: '직접 확인', v: sh ? sh.needs_human.count : state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length, cls: (sh && sh.needs_human.count) ? 'bad' : '', sub: '로그인·인증' },
+      { k: '시트 점검에서 걸린 것', v: sh ? sh.open_integrity_issues.count : '—', cls: sh && sh.open_integrity_issues.count ? 'bad' : 'good', sub: '아직 안 고침' },
       { k: '사용량 보호', v: hd && hd.quota_degraded ? '잠깐 멈춤' : '정상', cls: hd && hd.quota_degraded ? 'bad' : 'good' },
       { k: '남은 작업', v: sh ? sh.pending_ops : '—', sub: '다시 시도 대기' }
     ];
@@ -1163,7 +1164,7 @@ function renderOps(main) {
       await loadHealth();
       return `백업 ${d.partial ? '중간에 멈춤(이어서 함)' : '완료'} · 파일 ${d.copied || 0}개`;
     }) }),
-    h('button', { class: 'btn sm', type: 'button', title: '시트·파일이 어긋난 곳이 없는지 봅니다', text: '시트 상태 점검', onclick: (e) => runAction(e.target, async () => {
+    h('button', { class: 'btn sm', type: 'button', title: '시트·파일이 어긋난 곳이 없는지 봅니다', text: '시트·파일 점검', onclick: (e) => runAction(e.target, async () => {
       const res = await api.integrityCheck();
       const d = res.data || {};
       return `걸린 것 ${d.total_issues != null ? d.total_issues : '?'}건 (심각 ${d.critical || 0} · 주의 ${d.warn || 0})`;
@@ -1364,9 +1365,9 @@ function analysisOf(m, payload) {
     add('아직 안 올린 채널: ' + pending.map((c) => c.label).join('·'), { tab: 'src', cta: '보기' });
   }
   if (score == null) {
-    add('품질 점수가 비어 있어요 — 80점 이상이어야 "올릴 준비"로 갑니다', { tab: 'src', cta: '점수 넣기' });
+    add('품질 점수가 비어 있어요 — 80점 이상이어야 "발행 준비"로 갑니다', { tab: 'src', cta: '점수 넣기' });
   } else if (score < 80) {
-    add('품질 점수 ' + score + '점 — 80점 이상이어야 "올릴 준비"로 갑니다', { tab: 'src', cta: '고치기' });
+    add('품질 점수 ' + score + '점 — 80점 이상이어야 "발행 준비"로 갑니다', { tab: 'src', cta: '고치기' });
   }
   if (!String(m.target_keywords || '').trim()) {
     add('검색 키워드가 비었어요', { tab: 'src', cta: '키워드 넣기' });
@@ -1375,7 +1376,7 @@ function analysisOf(m, payload) {
     add(days + '일째 그대로예요 — 오늘 10분만 손보면 끝나요');
   }
   if (!pending.length && !failed.length && m.status !== 'LINKED') {
-    add('채널은 다 됐어요 — "발행 끝"으로 넘기면 보드가 정리됩니다', { cta: '정리하기', action: 'link' });
+    add('채널은 다 됐어요 — "발행 완료"로 넘기면 보드가 정리됩니다', { cta: '정리하기', action: 'link' });
   }
   if (!acts.length) add('지금 손댈 것은 없어요');
 
@@ -1434,7 +1435,7 @@ function analysisSection(contentId, d, m, payload, dlg) {
           try {
             await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED' },
               api.createAction('link'));
-            toast('발행 끝으로 옮겼어요', 'ok');
+            toast('발행 완료로 옮겼어요', 'ok');
             dlg.close();
             await refresh();
             renderRoute();
@@ -1483,7 +1484,7 @@ function analysisSection(contentId, d, m, payload, dlg) {
     h('span', { text: r.k }),
     h('span', { class: 'gv ' + r.v, text: r.t }))));
   wrap.appendChild(h('details', { class: 'ana-gate' },
-    h('summary', { text: '품질 점검' }),
+    h('summary', { text: '품질 정보' }),
     gateWrap,
     g.note ? h('p', { class: 'ana-note', style: 'margin-top:7px', text: g.note }) : null));
 
@@ -1766,7 +1767,7 @@ function sourceSection(contentId, d, m, payload, dlg) {
         target_keywords: String(kwInput.value).trim(),
         quality_score: score
       }, action);
-      toast('메타 저장 완료', 'ok');
+      toast('정보를 저장했어요', 'ok');
       await refresh();
       renderRoute();
       openDetail(contentId, 'src');
@@ -1810,7 +1811,7 @@ function detailActionButtons(contentId, d, m, dlg) {
     actions.appendChild(h('button', {
       class: 'btn sm primary', type: 'button',
       title: '모든 채널 업로드·연결이 끝났으면 마지막 칸으로 옮깁니다',
-      text: '발행 끝으로 넘기기',
+      text: '발행 완료로 넘기기',
       onclick: async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
@@ -1819,7 +1820,7 @@ function detailActionButtons(contentId, d, m, dlg) {
         try {
           await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED' },
             api.createAction('link'));
-          toast('발행 끝으로 옮겼어요', 'ok');
+          toast('발행 완료로 옮겼어요', 'ok');
           dlg.close();
           await refresh();
           renderRoute();
@@ -1832,7 +1833,7 @@ function detailActionButtons(contentId, d, m, dlg) {
     }));
   }
   if (d.status === 'REVIEW') {
-    actions.appendChild(h('button', { class: 'btn sm', type: 'button', text: '점검하러 가기', onclick: () => {
+    actions.appendChild(h('button', { class: 'btn sm', type: 'button', text: '글 점검하러 가기', onclick: () => {
       state.reviewId = contentId; dlg.close(); location.hash = '#/review';
     } }));
     actions.appendChild(h('button', {
@@ -1882,7 +1883,7 @@ async function openDetail(contentId, opts = {}) {
     const paintTabs = () => {
       if (!tabBar) return;
       clear(tabBar);
-      [['draft', '작성본'], ['produce', '제작'], ['ana', '분석'], ['src', '원문·메타']].forEach((pair) => {
+      [['draft', '작성본'], ['produce', '영상 제작'], ['ana', '성과'], ['src', '원본 자료']].forEach((pair) => {
         tabBar.appendChild(h('button', {
           class: 'sheet-tab', type: 'button', role: 'tab', 'data-tab': pair[0],
           'aria-selected': pair[0] === tab ? 'true' : 'false',
