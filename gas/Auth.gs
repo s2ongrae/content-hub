@@ -78,6 +78,10 @@ const ACTION_WHITELIST = {
   insight_trend:        { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   insight_shopping:     { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   insight_budget:       { mode: 'READ',  allowDegraded: true,  m1: true },
+  // AI_Brief 야간 요약 (2026-11-23, gas/AiBrief.gs) — 외부 Gemini 호출 → 라우터 락 없음. 가계부·보험은 다루지 않는다.
+  ai_brief_run:         { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  ai_brief_latest:      { mode: 'READ',  allowDegraded: true,  m1: true },
+  ai_brief_budget:      { mode: 'READ',  allowDegraded: true,  m1: true },
   // 오늘의 블로그 제목 10 (2026-11-21, gas/BlogSeo.gs) — 데이터랩·블로그 검색을 부르므로 라우터 락 없음.
   //   오늘 줄이 이미 있으면 계산 없이 저장된 줄을 돌려준다(브리핑·화면이 같은 줄을 본다).
   blog_seo_titles:      { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },

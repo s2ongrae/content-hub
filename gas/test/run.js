@@ -78,6 +78,7 @@ function makeEnv() {
       computeDigest: (alg, s) => Array.from(require('crypto').createHash('sha256').update(String(s === undefined ? '' : s), 'utf8').digest()),
       base64EncodeWebSafe: b => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
       newBlob: s => ({ getBytes: () => Array.from(Buffer.from(String(s), 'utf8')) }),
+      sleep: function () { /* 재시도 백오프는 시험에서 기다리지 않는다 */ },
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF_8' }
     },
@@ -127,7 +128,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Result.gs', 'Blog.gs', 'BlogSeo.gs', 'Insight.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Result.gs', 'Blog.gs', 'BlogSeo.gs', 'Insight.gs', 'AiBrief.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -2414,6 +2415,341 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
   const meli = callHandler(P.ctx, 'handleBlogSeoTitles_', ss, { brand: 'ppiyak_kimmary' }, { brand: 'ppiyak_kimmary' });
   ok('메리 트랙은 블로그를 쓰지 않는다고 알린다', meli.ok && meli.data.count === 0 && /블로그를 쓰지/.test(meli.data.fallback), meli.data && meli.data.fallback);
 }
+
+/* ===== AI_Brief (2026-11-23) ===== */
+// ============================================================================
+// AI_Brief 야간 요약 모듈 테스트 (gas/AiBrief.gs)
+// ============================================================================
+(function testAiBrief() {
+  // 우리 하네스 callHandler 는 예외를 잡아 {ok, data|code} 로 돌려준다.
+  // 시험 본문이 쓰는 모양(데이터 평면 + 오류코드)으로 펼쳐 주는 얇은 어댑터.
+  function run(ctx, name, ss, payload) {
+    const r = callHandler(ctx, name, ss, payload);
+    if (r && r.ok) return Object.assign({ __ok: true }, r.data || {});
+    return { __ok: false, __code: r && r.code };
+  }
+  // 우리 하네스는 eq(name, actual, expected) 순서다 — 시험 본문 순서(actual, expected, name)로 받아 넘긴다.
+  function eq3(actual, expected, name) { eq(name, actual, expected); }
+  function ok2(cond, name) { ok(name, cond); }
+
+  function makeFakeSheet(name, initialRows) {
+    const rows = (initialRows || []).map((r) => r.slice());
+    return {
+      _rows: rows,
+      getName() { return name; },
+      getLastRow() { return rows.length; },
+      getLastColumn() { return rows.length > 0 ? rows[0].length : 0; },
+      getRange(r, c, numRows, numCols) {
+        return {
+          getValues() {
+            const out = [];
+            for (let i = 0; i < numRows; i += 1) {
+              const src = rows[r - 1 + i] || [];
+              const line = [];
+              for (let j = 0; j < numCols; j += 1) {
+                line.push(src[c - 1 + j] !== undefined ? src[c - 1 + j] : '');
+              }
+              out.push(line);
+            }
+            return out;
+          },
+          setValues(vals) {
+            for (let i = 0; i < vals.length; i += 1) {
+              if (!rows[r - 1 + i]) rows[r - 1 + i] = [];
+              for (let j = 0; j < vals[i].length; j += 1) {
+                rows[r - 1 + i][c - 1 + j] = vals[i][j];
+              }
+            }
+          }
+        };
+      },
+      appendRow(arr) {
+        rows.push(arr.slice());
+      }
+    };
+  }
+
+  function makeFakeSs(sheetsMap, allowInsert) {
+    const sheets = Object.assign({}, sheetsMap || {});
+    const ss = {
+      _sheets: sheets,
+      getSheetByName(name) { return sheets[name] || null; },
+      getSheets() { return Object.keys(sheets).map((k) => sheets[k]); }
+    };
+    if (allowInsert) {
+      ss.insertSheet = function (name) {
+        const sh = makeFakeSheet(name, []);
+        sheets[name] = sh;
+        return sh;
+      };
+    }
+    return ss;
+  }
+
+  function sampleReply(headline, tokens) {
+    return {
+      code: 200,
+      body: JSON.stringify({
+        candidates: [{
+          content: {
+            parts: [{
+              text: JSON.stringify({
+                headline: headline || '요약',
+                topics: ['블로그', '쇼츠'],
+                highlights: ['조회수 상승'],
+                action_needed: ['검수 대기 2건 확인']
+              })
+            }]
+          }
+        }],
+        usageMetadata: { totalTokenCount: tokens || 123 }
+      })
+    };
+  }
+
+  // 1. ACTION_WHITELIST 3개 등록 확인
+  {
+    const A = loadGas();
+    const wl = ev(A.ctx, 'ACTION_WHITELIST');
+    ok2(Boolean(wl.ai_brief_run), 'ACTION_WHITELIST에 ai_brief_run 등록');
+    eq3(wl.ai_brief_run.mode, 'WRITE', 'ai_brief_run은 WRITE');
+    eq3(wl.ai_brief_run.longRunning, true, 'ai_brief_run은 longRunning:true');
+    eq3(wl.ai_brief_latest.mode, 'READ', 'ai_brief_latest는 READ');
+    eq3(wl.ai_brief_budget.mode, 'READ', 'ai_brief_budget는 READ');
+  }
+
+  // 2. M1_HANDLERS 3개 등록 확인
+  {
+    const A = loadGas();
+    const handlers = ev(A.ctx, 'M1_HANDLERS');
+    eq3(typeof handlers.ai_brief_run, 'function', 'M1_HANDLERS ai_brief_run 함수');
+    eq3(typeof handlers.ai_brief_latest, 'function', 'M1_HANDLERS ai_brief_latest 함수');
+    eq3(typeof handlers.ai_brief_budget, 'function', 'M1_HANDLERS ai_brief_budget 함수');
+  }
+
+  // 3. 허용되지 않은 모델 거부 (ERR_MODEL_NOT_ALLOWED, fetch 0회)
+  {
+    const A = loadGas();let errCode = '';
+    { const __r = run(A.ctx, 'handleAiBriefRun_', null, { scope: 'content-hub', model: 'gpt-4o' }); errCode = __r.__ok ? '' : (__r.__code || ''); }
+    eq3(errCode, 'ERR_MODEL_NOT_ALLOWED', '미허용 모델 차단');
+    eq3(A.env.fetched.length, 0, '모델 거부 시 fetch 0회');
+  }
+
+  // 4. 허용되지 않은 scope 거부 (ERR_SCOPE_NOT_ALLOWED, household)
+  {
+    const A = loadGas();let errCode = '';
+    { const __r = run(A.ctx, 'handleAiBriefRun_', null, { scope: 'household' }); errCode = __r.__ok ? '' : (__r.__code || ''); }
+    eq3(errCode, 'ERR_SCOPE_NOT_ALLOWED', 'household scope 차단');
+    eq3(A.env.fetched.length, 0, 'scope 거부 시 fetch 0회');
+  }
+
+  // 5. API 키 없음 -> SKIPPED_NO_API_KEY (fetch 0회)
+  {
+    const A = loadGas();
+    const ss = makeFakeSs({}, true);
+    const res = run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub' });
+    eq3(res.status, 'SKIPPED_NO_API_KEY', '키 없으면 SKIPPED_NO_API_KEY');
+    eq3(A.env.fetched.length, 0, '키 없으면 fetch 0회');
+  }
+
+  // 6. 과금 인지(GEMINI_BILLING_ACK_YYYYMM) 없음 -> SKIPPED_NO_BILLING_ACK (fetch 0회)
+  {
+    const A = loadGas();
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    const ss = makeFakeSs({}, true);
+    const res = run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub' });
+    eq3(res.status, 'SKIPPED_NO_BILLING_ACK', '과금 ack 없으면 SKIPPED_NO_BILLING_ACK');
+    eq3(A.env.fetched.length, 0, '과금 ack 없으면 fetch 0회');
+  }
+
+  // 7. 429 응답 -> SKIPPED_429 후 당일 재호출 시 fetch 0회
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.setFetchReply({ code: 429, body: '{"error":{"status":"RESOURCE_EXHAUSTED"}}' });
+
+    const ss = makeFakeSs({}, true);
+    const first = run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub' });
+    eq3(first.status, 'SKIPPED_429', '429 응답 시 SKIPPED_429');
+    eq3(A.env.fetched.length, 1, '429 시 재시도 없이 1회만 호출');
+
+    const second = run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub', force: true });
+    eq3(second.status, 'SKIPPED_429', '당일 잠금 후 재호출도 SKIPPED_429');
+    eq3(A.env.fetched.length, 1, '당일 잠금 후 추가 fetch 0회');
+  }
+
+  // 8. 일 80콜 상한 초과 -> ERR_GEMINI_BUDGET (fetch 0회)
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ymd = today.replace(/-/g, '');
+    const ym = ymd.slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.props.set('AI_BRIEF_CNT_' + ymd, '80');let errCode = '';
+    { const __r = run(A.ctx, 'handleAiBriefRun_', null, { scope: 'content-hub' }); errCode = __r.__ok ? '' : (__r.__code || ''); }
+    eq3(errCode, 'ERR_GEMINI_BUDGET', '일 80콜 도달 시 ERR_GEMINI_BUDGET');
+    eq3(A.env.fetched.length, 0, '예산 초과 시 fetch 0회');
+  }
+
+  // 9. 캐시 히트 시 fetch 0회
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.setFetchReply(sampleReply('캐시 요약', 111));
+
+    // insertSheet가 없는 ss를 사용해 시트 OK 단축 대신 CacheService 경로를 검증
+    const ssNoInsert = makeFakeSs({}, false);
+    const r1 = run(A.ctx, 'handleAiBriefRun_', ssNoInsert, { scope: 'content-hub' });
+    eq3(r1.status, 'OK', '첫 호출 OK');
+    eq3(A.env.fetched.length, 1, '첫 호출 fetch 1회');
+
+    const r2 = run(A.ctx, 'handleAiBriefRun_', ssNoInsert, { scope: 'content-hub' });
+    eq3(r2.cached, true, '두 번째 호출 캐시 히트');
+    eq3(r2.summary_1line, '캐시 요약', '캐시된 headline 반환');
+    eq3(A.env.fetched.length, 1, '캐시 히트 시 추가 fetch 0회');
+  }
+
+  // 10. JSON 파싱 성공 및 headline·tokens_est 적재
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.setFetchReply(sampleReply('요약', 123));
+
+    const contentsSh = makeFakeSheet('Contents', [
+      ['content_id', 'brand', 'status', 'blog_status', 'shorts_status', 'reels_status', 'clip_status', 'daangn_status', 'blog_title', 'updated_at'],
+      ['DY-001', 'daejeon', 'READY', 'DONE', 'PENDING', '', '', '', '괴정동 오겹살 후기', today + 'T10:00:00+09:00']
+    ]);
+    const ss = makeFakeSs({ Contents: contentsSh }, true);
+    const res = run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub' });
+    eq3(res.status, 'OK', '정상 응답 시 status OK');
+    eq3(res.summary.headline, '요약', 'headline 파싱 일치');
+    eq3(res.tokens_est, 123, 'usageMetadata.totalTokenCount 반영');
+    eq3(res.items_in, 1, 'Contents 1행 수집');
+    eq3(res.items_out, 4, 'topics(2)+highlights(1)+action_needed(1)=4');
+  }
+
+  // 11. JSON 파싱 실패 시 PARTIAL 처리
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.setFetchReply({
+      code: 200,
+      body: JSON.stringify({
+        candidates: [{ content: { parts: [{ text: '{broken-json-response' }] } }]
+      })
+    });
+
+    const ss = makeFakeSs({}, true);
+    const res = run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub' });
+    eq3(res.status, 'PARTIAL', '깨진 JSON 응답은 PARTIAL');
+    ok2(Boolean(res.summary.raw_excerpt), 'raw_excerpt 보존');
+  }
+
+  // 12. PII 치환 및 잔존 시 BLOCKED_PII 차단
+  {
+    const A = loadGas();
+    const scrubbed = A.ctx.aiBriefScrubPii_('연락처 010-1234-5678 메일 test@example.com');
+    eq3(scrubbed.blocked, false, '일반 PII 치환 완료');
+    ok2(scrubbed.text.indexOf('010-1234-5678') === -1, '휴대폰 번호 치환 확인');
+    ok2(scrubbed.text.indexOf('test@example.com') === -1, '이메일 치환 확인');
+
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.ctx.aiBriefScrubPii_ = function () {
+      return { text: '***', blocked: true, remainingPatterns: ['rrn'] };
+    };
+
+    const ss = makeFakeSs({}, true);
+    const blockedRes = run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub' });
+    eq3(blockedRes.status, 'BLOCKED_PII', '잔존 PII 감지 시 BLOCKED_PII');
+    eq3(A.env.fetched.length, 0, 'PII 차단 시 외부 전송 0회');
+  }
+
+  // 13. 시트가 전혀 없어도(null / 빈 ss) 예외 없이 동작
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.setFetchReply(sampleReply('시트 없음 요약', 80));
+
+    const resNull = run(A.ctx, 'handleAiBriefRun_', null, { scope: 'content-hub' });
+    eq3(resNull.status, 'OK', 'ss=null 이어도 예외 없이 OK');
+    eq3(resNull.items_in, 0, '시트 없으면 items_in=0');
+  }
+
+  // 14. 시트 10칸 헤더 생성 및 헤더 불일치 시 ERR_BRIEF_SCHEMA_MISMATCH 검증
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.setFetchReply(sampleReply('헤더 정상 요약', 95));
+
+    const ssGood = makeFakeSs({}, true);
+    run(A.ctx, 'handleAiBriefRun_', ssGood, { scope: 'content-hub' });
+    const createdSh = ssGood.getSheetByName('AI_Brief');
+    ok2(Boolean(createdSh), 'AI_Brief 시트 자동 생성');
+    eq3(createdSh.getLastColumn(), 10, 'AI_Brief 헤더 10칸 확인');
+    eq3(createdSh.getLastRow(), 2, '헤더 1행 + 데이터 1행 적재');
+
+    const badSheet = makeFakeSheet('AI_Brief', [['day', 'scope', 'kind', 'model', 'status']]);
+    const ssBad = makeFakeSs({ AI_Brief: badSheet }, true);
+    let schemaErr = '';
+    { const __bad = run(A.ctx, 'handleAiBriefRun_', ssBad, { scope: 'content-hub' }); schemaErr = __bad.__ok ? '' : (__bad.__code || ''); }
+    eq3(schemaErr, 'ERR_BRIEF_SCHEMA_MISMATCH', '10칸이 아닌 기존 헤더는 ERR_BRIEF_SCHEMA_MISMATCH');
+  }
+
+  // 15. ai_brief_latest 응답에 summary_1line · action_needed 포함 확인
+  {
+    const A = loadGas();
+    const today = A.ctx.kstDay_(new Date());
+    const ym = today.replace(/-/g, '').slice(0, 6);
+    A.env.props.set('GEMINI_API_KEY', 'test-key-123');
+    A.env.props.set('GEMINI_BILLING_ACK_' + ym, '1');
+    A.env.setFetchReply(sampleReply('아침 브리핑 한 줄', 100));
+
+    const ss = makeFakeSs({}, true);
+    run(A.ctx, 'handleAiBriefRun_', ss, { scope: 'content-hub' });
+
+    const latest = run(A.ctx, 'handleAiBriefLatest_', ss, { scope: 'content-hub' });
+    eq3(latest.found, true, 'ai_brief_latest 조회 성공');
+    eq3(latest.summary_1line, '아침 브리핑 한 줄', 'summary_1line 포함');
+    ok2(Array.isArray(latest.action_needed), 'action_needed 배열 포함');
+    eq3(latest.action_needed[0], '검수 대기 2건 확인', 'action_needed 내용 일치');
+  }
+
+  // 16. ai_brief_budget 상태 조회 및 aiBriefSelfTest 키 미노출 검증
+  {
+    const A = loadGas();
+    A.env.props.set('GEMINI_API_KEY', 'SECRET_SHOULD_NOT_LEAK');
+    const budget = run(A.ctx, 'handleAiBriefBudget_', null, { scope: 'content-hub' });
+    eq3(budget.cap, 80, 'budget cap 80 확인');
+    eq3(budget.has_api_key, true, 'has_api_key true');
+    eq3(budget.billing_ack, false, 'billing_ack false');
+
+    const selfCheck = A.ctx.aiBriefSelfTest();
+    eq3(selfCheck.ok, true, 'aiBriefSelfTest 정상 반환');
+    eq3(JSON.stringify(selfCheck).indexOf('SECRET_SHOULD_NOT_LEAK'), -1, 'selfTest 응답에 키 값 미노출');
+  }
+})();
 
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));
 process.exit(failed ? 1 : 0);

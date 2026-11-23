@@ -268,6 +268,10 @@ const M1_HANDLERS = {
   insight_trend: handleInsightTrend_,
   insight_shopping: handleInsightShopping_,
   insight_budget: handleInsightBudget_,
+  // AI_Brief 야간 1줄 요약 (2026-11-23) — gas/AiBrief.gs
+  ai_brief_run: handleAiBriefRun_,
+  ai_brief_latest: handleAiBriefLatest_,
+  ai_brief_budget: handleAiBriefBudget_,
   // 오늘의 블로그 제목 10 (2026-11-21) — gas/BlogSeo.gs
   blog_seo_titles: handleBlogSeoTitles_
 };
