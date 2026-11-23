@@ -19,8 +19,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123f';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123f';
+import { buildEDL } from './yt/edl.js?v=20261123g';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123g';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -28,10 +28,10 @@ import {
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S
-} from './produceLogic.js?v=20261123f';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123f';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123f';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123f';
+} from './produceLogic.js?v=20261123g';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261123g';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261123g';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123g';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -699,7 +699,7 @@ export function produceSection(ctx) {
    *  TTS 를 고른 지금 화면은 글자 하나 바뀌지 않는다(라디오만 추가). */
   const voiceUp = { busy: false, msg: '', kind: '', pct: 0, previewUrl: '', duration: null };
 
-  function voicePanel() {
+  function voicePanel(narN, capN) {
     const card = buildRecordingCard({ contentId, brand, narration: cardNarration });
     const cardHost = h('div', { class: 'pr-cardbox', style: 'display:none' });
     const cardBtn = h('button', {
@@ -889,7 +889,7 @@ export function produceSection(ctx) {
       h('span', { class: 'pr-label', text: '완제품 옵션 (자막·내레이션)' }),
       check('자막을 구워서 완제품으로', state.burn, (v) => change((s) => { s.burn = v; }),
         capN ? '카드 자막 ' + capN + '큐 · 1080×1920 기준 · 하단 안전선 안 · 2줄까지' : '카드에 자막이 없어요 — 구울 것이 없습니다'),
-      voicePanel(),
+      voicePanel(narN, capN),
       h('div', { class: 'pr-two' },
         h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '자막 크기 기준' }),
           h('select', { class: 'pr-sel', 'aria-label': '자막 크기 기준', onchange: (e) => change((s) => { s.sub_style = e.target.value; }) },
