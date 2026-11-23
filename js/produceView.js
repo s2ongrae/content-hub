@@ -19,8 +19,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123g';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123g';
+import { buildEDL } from './yt/edl.js?v=20261123h';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123h';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -28,10 +28,10 @@ import {
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S
-} from './produceLogic.js?v=20261123g';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123g';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123g';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123g';
+} from './produceLogic.js?v=20261123h';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261123h';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261123h';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123h';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -800,10 +800,13 @@ export function produceSection(ctx) {
 
     // 3갈래 — 없음 / AI TTS / 내 목소리. 예전의 '내레이션(TTS) 넣기' 체크박스를 이 하나로 합쳤다(같은 state.narrate).
     const mode = state.voice_mode === 'human' ? 'human' : (state.narrate ? 'tts' : 'none');
-    const pick = (v) => change((s) => {
-      s.voice_mode = v === 'human' ? 'human' : 'tts';
-      s.narrate = v !== 'none';
-    });
+    const pick = (v) => {
+      change((s) => {
+        s.voice_mode = v === 'human' ? 'human' : 'tts';
+        s.narrate = v !== 'none';
+      });
+      paintList();   // 방식을 바꾸면 아래 내용(녹음 패널·안내)이 바로 바뀌어야 한다 — 입력 칸이 아니라서 잃을 커서가 없다
+    };
     return h('div', { class: 'pr-field' },
       h('span', { class: 'pr-label', text: '내레이션' }),
       h('div', { class: 'pr-row', role: 'radiogroup', 'aria-label': '내레이션' },

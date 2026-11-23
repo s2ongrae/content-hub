@@ -717,6 +717,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       return rep.ok && rep.report.voice === undefined;
     })());
     ok('화면: ④ 에 방식 라디오·녹음 카드·파일 고르기·미리듣기가 있다', /내 목소리\(녹음\)/.test(pv) && /buildRecordingCard/.test(pv) && /uploadVoice/.test(pv) && /createObjectURL/.test(pv) && /voice_fallback_tts/.test(pv));
+    ok('화면: 방식을 바꾸면 ④ 를 다시 그린다(패널이 바로 보인다)', /paintList\(\);\s+\/\/ 방식을 바꾸면/.test(pv));
     ok('화면: 녹음 파일을 올리면 방식이 human 으로 바뀐다(없음·TTS 로 되돌릴 수 있다)', /s\.voice_mode = 'human'/.test(pv) && /s\.narrate = v !== 'none'/.test(pv) && /value: 'none'/.test(pv));
     // 2026-11-23 라이브에서 잡은 사고: voicePanel 이 bodyRender 의 지역값(narN·capN)을 그냥 참조해 ④ 가 통째로 안 그려졌다.
     ok('육성 패널은 bodyRender 의 지역값(narN·capN)을 인자로 받는다(스코프 사고 방지)', /function voicePanel\(narN, capN\)/.test(pv) && /voicePanel\(narN, capN\)/.test(pv));
