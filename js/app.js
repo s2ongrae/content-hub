@@ -9,18 +9,18 @@
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { QuickApproveView } from './quickApprove.js';
 import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123h';
-import { renderPostView } from './postView.js?v=20261123h';
-import { trackChannelsOf } from './trackChannels.js?v=20261123h';
-import { renderLintView } from './lintView.js?v=20261123h';
-import { loadDaangnSeed } from './daangnView.js?v=20261123h';
-import { getAnalytics } from './analyticsView.js?v=20261123h';
-import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123h';
-import { renderCreateView } from './create-view.js?v=20261123h';
-import { renderCreateStudio } from './createStudio.js?v=20261123h';
-import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123h';
-import { draftSection, draftPreview } from './draftView.js?v=20261123h';
-import { produceSection } from './produceView.js?v=20261123h';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123i';
+import { renderPostView } from './postView.js?v=20261123i';
+import { trackChannelsOf } from './trackChannels.js?v=20261123i';
+import { renderLintView } from './lintView.js?v=20261123i';
+import { loadDaangnSeed } from './daangnView.js?v=20261123i';
+import { getAnalytics } from './analyticsView.js?v=20261123i';
+import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123i';
+import { renderCreateView } from './create-view.js?v=20261123i';
+import { renderCreateStudio } from './createStudio.js?v=20261123i';
+import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123i';
+import { draftSection, draftPreview } from './draftView.js?v=20261123i';
+import { produceSection } from './produceView.js?v=20261123i';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
