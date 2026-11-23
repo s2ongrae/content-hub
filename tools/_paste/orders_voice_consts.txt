@@ -1,5 +1,0 @@
-/* 내 육성 녹음(2026-11-23) — 노트북 lib/render.js validate · 포털 Code.gs qqRenderVoiceOf_ 와 같은 값.
-   ⚠ 위 RENDER_VOICE_RE 는 **edge-tts 보이스 이름**이다 — 육성 파일은 voice_file 로 이름을 분리한다(같은 칸을 쓰면 TTS 가 깨진다). */
-const RENDER_VOICE_MODES = ['tts', 'human'];
-const RENDER_VOICE_FILE_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|m4a|wav)$/i;
-const RENDER_VOICE_OFFSET_MS = 3000;
