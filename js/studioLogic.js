@@ -13,6 +13,7 @@
 
 import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261123c';
 import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261123c';
+import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 
@@ -462,16 +463,45 @@ export function buildBlogKit(input) {
   const links = (Array.isArray(i.links) ? i.links : []).filter((l) => l && String(l.url || '').trim())
     .map((l) => ({ url: String(l.url).trim(), title: String(l.title || '').trim() }));
 
+  /* 공개 표시·네이버 기능 자동화(2026-11-24) — 사람이 체크하지 않아도 키트에 들어가게 한다.
+     · 대가성: 메모에 체험·협찬 표현이 있거나 사용자가 [대가 받음]을 켰으면 본문 맨 앞에 표시 문구.
+     · 충돌: 내돈내산 + 제휴 링크가 같이 있으면 제휴 링크 URL만 본문에서 걷어 링크 카드 자리로 옮긴다. */
+  const baseText = blocks.map((b) => b.text).join('\n\n');
+  const paidFlag = (i.compliance && i.compliance.paid === true) || analyzeCompliance(baseText).paid;
+  const ownFlag = (i.compliance && i.compliance.ownMoney === true) || /내돈내산/.test(baseText);
+  const disclosure = paidFlag ? withDisclosureNote(baseText) : { body: baseText, added: false };
+  let compliance = analyzeCompliance(disclosure.body);
+  let pulledLinks = [];
+  let safeBlocks = blocks.map((b) => String(b.text || ''));
+  if (compliance.conflict || (ownFlag && compliance.profitLinks.length)) {
+    const strip = stripProfitLinks(safeBlocks.join('\n\n'));
+    pulledLinks = strip.removed.slice();
+    safeBlocks = safeBlocks.map((t) => stripProfitLinks(t).body);
+    compliance = analyzeCompliance(safeBlocks.join('\n\n'));
+  }
+  const native = nativeSteps({
+    place: materials.place.name, category: materials.content.category,
+    memo: baseText, paid: paidFlag, blogseTopic: (i.blogseTopic || '')
+  });
+  if (ownFlag && !paidFlag) {
+    /* 내돈내산을 골랐으면 '내돈내산 인증' 단계를 맨 앞으로 고정한다. */
+    const idx = native.findIndex((n) => n.id === 'own_money');
+    if (idx > 0) native.unshift(native.splice(idx, 1)[0]);
+  }
+  pulledLinks.forEach((u) => { if (!links.some((l) => l.url === u)) links.push({ url: u, title: '(내돈내산 글에서 뺀 제휴 링크)' }); });
+
   const lines = [];
   lines.push('■ 제목 후보 3');
   titles.forEach((t, n) => lines.push((n + 1) + ') ' + t));
   lines.push('');
   lines.push('■ 본문 — 내가 쓴 문단은 그대로, 사이 빈 줄에 사진을 넣습니다');
+  if (paidFlag) lines.push(DISCLOSURE_TEXT, '');
+  if (pulledLinks.length) lines.push('   ⛔ 내돈내산 글이라 제휴 링크 ' + pulledLinks.length + '개를 본문에서 뺐습니다 → [링크 카드 자리] 참고', '');
   const first = plan.filter((x) => x.slot === 0);
   first.forEach((x) => lines.push('   [표지 사진] ' + x.photo + ' — ' + (captions.find((c) => c.name === x.photo) || {}).text));
   blocks.forEach((b, n) => {
     lines.push('');
-    lines.push(b.text);
+    lines.push(safeBlocks[n] != null ? safeBlocks[n] : b.text);
     plan.filter((x) => x.after_block === (b.id || 'U' + String(n + 1).padStart(2, '0'))).forEach((x) => {
       lines.push('   [사진] ' + x.photo + ' — ' + (captions.find((c) => c.name === x.photo) || {}).text);
     });
@@ -495,7 +525,7 @@ export function buildBlogKit(input) {
   ];
 
   // 2줄 호흡 점검 — 원문은 그대로 두고 '지금 어떤 상태인지'만 계산한다(고치기는 사용자가 누를 때).
-  const bodyText = blocks.map((b) => b.text).join('\n\n');
+  const bodyText = safeBlocks.join('\n\n');
   const rhythm = {
     stats: rhythmStats(bodyText),
     issues: lintRhythm(bodyText),
@@ -510,7 +540,10 @@ export function buildBlogKit(input) {
     captions: captions,
     outro: i.outro || '',
     links: links,
-    paste_steps: paste_steps,
+    paste_steps: mergePasteSteps(paste_steps, native),
+    native: native,
+    compliance: { state: compliance.state, paid: paidFlag, own_money_flag: ownFlag, added: disclosure.added, conflict: compliance.conflict, own_money: compliance.ownMoney, profit_links: compliance.profitLinks, pulled_links: pulledLinks, notice: paidFlag ? DISCLOSURE_TEXT : '' },
+    disclosure_body: paidFlag ? disclosure.body : '',
     text: lines.join('\n'),
     rhythm: rhythm,
     user_body_sha256: ''
@@ -633,7 +666,12 @@ export async function buildDraftRequest(input) {
     concept: { kind: materials.concept.kind, tone: materials.concept.tone, hint: materials.concept.hint.trim() },
     ask: Object.assign({ titles: 3, bridge: true, captions: true, outro: true }, i.ask || {}),
     memo_sha256: await sha256Hex(memo),
-    media: photos
+    media: photos,
+    /* 공개 표시(2026-11-24) — 초안 AI 가 협찬 사실을 뒤집거나 '내돈내산'을 쓰지 않게 규칙을 함께 보낸다. */
+    compliance: (function () {
+      const a = analyzeCompliance(memo);
+      return { paid: a.paid, own_money: a.ownMoney > 0, conflict: a.conflict, notice: a.paid ? DISCLOSURE_TEXT : '' };
+    })()
   };
   if (i.format === 'video') base.length_sec = materials.video.length_sec;
   const inline = Object.assign({}, base, { facts: factsOf(materials), blocks: withHash });
@@ -674,6 +712,7 @@ export function composeBlogWithDraft(kit, draft) {
   shownTitles.forEach((t, n) => lines.push((n + 1) + ') ' + t));
   lines.push('');
   lines.push('■ 본문');
+  if (k.compliance && k.compliance.paid) lines.push(DISCLOSURE_TEXT, '');
   blocks.forEach((b, n) => {
     lines.push('');
     lines.push(b.text);

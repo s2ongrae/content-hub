@@ -6,7 +6,8 @@
  * 초안은 이 브라우저에만 저장한다(새로고침해도 남게).
  */
 
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261123c';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261124';
+import { analyzeCompliance, complianceLine, withDisclosureNote, stripProfitLinks, stripOwnMoney } from './blogCompliance.js?v=20261124';
 
 const DRAFT_KEY = 'contenthub.lint_draft.v1';
 /* 카드에서 불러온 값은 수동 초안과 섞지 않는다(수동 메모가 지워지지 않게 별도 키). */
@@ -225,6 +226,44 @@ export async function renderLintView(main, ctx) {
         h('span', { text: '주의 ' + near.length + ' · 고칠 것 ' + warn.length + ' · AI 티 ' + (ai.count || 0) + ' · D.I.A.+ ' + (ai.dia ? ai.dia.hits : 0) + '/' + (ai.dia ? ai.dia.total : 5) + ' · 기준 ' + rules.version })));
 
     const panel = h('div', { class: 'panel lint-result' }, head);
+
+    /* 공개 표시 자동 처리(2026-11-24) — 진단만 하고 끝내지 않고, 누르면 본문을 바로 고친다. */
+    const comp = analyzeCompliance(bodyEl.value);
+    const compBox = h('div', { class: 'panel' },
+      h('h3', null, '공개 표시 · 네이버 기능'),
+      h('p', { class: 'st-hint' + (comp.state === 'conflict' || comp.state === 'needs_notice' ? ' err' : ''), text: complianceLine(comp) }));
+    if (comp.state === 'needs_notice' || comp.state === 'notice_late') {
+      const b = h('button', { class: 'btn primary', type: 'button', text: '본문 맨 위에 대가 문구 넣기 (자동)' });
+      b.addEventListener('click', () => {
+        const r = withDisclosureNote(bodyEl.value);
+        bodyEl.value = r.body;
+        saveDraft(); paintCounters(); paintResult();
+        toast(r.added ? '대가 문구를 맨 위에 넣었습니다' : '이미 표기되어 있습니다', 'ok');
+      });
+      compBox.appendChild(b);
+    }
+    if (comp.conflict) {
+      const row = h('div', { class: 'row' });
+      const b1 = h('button', { class: 'btn', type: 'button', text: '제휴 링크 걷어내기 (내돈내산 유지)' });
+      b1.addEventListener('click', () => {
+        const r = stripProfitLinks(bodyEl.value);
+        bodyEl.value = r.body;
+        saveDraft(); paintCounters(); paintResult();
+        toast('제휴 링크 ' + r.removed.length + '개를 본문에서 뺐습니다', 'ok');
+      });
+      const b2 = h('button', { class: 'btn', type: 'button', text: '내돈내산 표기 지우기 (링크 유지)' });
+      b2.addEventListener('click', () => {
+        const r = stripOwnMoney(bodyEl.value);
+        bodyEl.value = r.body;
+        saveDraft(); paintCounters(); paintResult();
+        toast('내돈내산 표기 ' + r.removed + '곳을 지웠습니다', 'ok');
+      });
+      row.appendChild(b1); row.appendChild(b2);
+      compBox.appendChild(row);
+    }
+    compBox.appendChild(h('p', { class: 'hint', text: '기준: docs/BLOG_NATIVE_FEATURES_v1.md — 내돈내산(구매확정 6개월·예약 방문 1년) · 글감 카드 · 블로그씨 · 미션위젯' }));
+    resultHost.appendChild(compBox);
+
     const list = h('div', { class: 'lint-list' });
     r.items.forEach((it) => {
       list.appendChild(h('div', { class: 'lr-row', 'data-state': it.state },

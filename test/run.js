@@ -925,7 +925,8 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       /* 린터 통합 — 8항목 점수에 섞이지 않는다 */
       const lb = BL.lintBlog({ title: '[봉명동 삼겹살] 미미삼겹 유성점 솔직후기', body: goodBody, keywords: '봉명동맛집,삼겹살', photoCount: 18 });
       ok('린터: aiTone·hold 를 함께 돌려준다', !!lb.aiTone && typeof lb.hold === 'boolean' && !!lb.aiTone.dia && !!lb.aiTone.keywords);
-      ok('린터: 항목 수(9 + 링크 3) — AI 티는 점수 밖', lb.items.length === 12 && lb.items.filter((i) => i.weight > 0).length === 9, lb.items.length);
+      /* 2026-11-24: 공개 표시 3항목이 붙어 9 + 링크 3 + 공개 3 = 15. 점수 가중치는 종전대로 9개. */
+      ok('린터: 항목 수(9 + 링크 3 + 공개 3) — AI 티·공개 표시는 점수 밖', lb.items.length === 15 && lb.items.filter((i) => i.weight > 0).length === 9, lb.items.length);
       ok('린터: 8항목 점수는 AI 티와 무관', lb.score === Math.round(lb.items.reduce((s, it) => s + (it.state === 'pass' ? it.weight : it.state === 'near' ? it.weight / 2 : 0), 0)));
       ok('린터: AI 티가 치명적이면 hold 로 알린다',
         BL.lintBlog({ title: '삼겹살 맛집 고르는 방법', body: cliche }).hold === true);
@@ -1596,7 +1597,9 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     })(path.join(ROOT, 'js'));
     /* 주석은 화면이 아니다 — 블록·줄 주석을 지우고 본다 */
     const screen = Object.keys(files).map((f) => files[f].replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n')).join('\n');
-    const gone = ['글감', '발행 전 린터', '올릴 준비', '발행 끝', '80점 이상 → READY', '제작 스텝퍼', '수집함에 넣기', '원문·메타'];
+    /* 2026-11-24: '글감'은 우리 기능 이름으로는 계속 금지지만, 네이버 블로그의 실제 기능 이름(글감 카드)을
+       안내 문구에 써야 해서 목록에서 뺐다 — docs/BLOG_NATIVE_FEATURES_v1.md §2. */
+    const gone = ['발행 전 린터', '올릴 준비', '발행 끝', '80점 이상 → READY', '제작 스텝퍼', '수집함에 넣기', '원문·메타'];
     gone.forEach((t) => ok('옛 용어 없음: ' + t, screen.indexOf(t) < 0 && idx.indexOf(t) < 0));
     const need = [
       ['index.html >발행 점검<', idx.indexOf('>발행 점검<') >= 0],
@@ -1617,6 +1620,60 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     need.forEach(([name, cond]) => ok(name, cond));
   } catch (err) {
     ok('화면 용어 표준 시험', false, (err && err.stack) || err);
+  }
+
+  /* 공개 표시 · 네이버 기능 자동화 (2026-11-24, docs/BLOG_NATIVE_FEATURES_v1.md) */
+  console.log('[N] 공개 표시 · 네이버 네이티브 기능');
+  try {
+    const C = await import('file://' + path.join(ROOT, 'js', 'blogCompliance.js'));
+    const BL = await import('file://' + path.join(ROOT, 'js', 'blogLint.js'));
+
+    const paidBody = '체험단으로 다녀온 후기입니다.\n\n고기가 두툼했습니다.';
+    const a1 = C.analyzeCompliance(paidBody);
+    ok('대가 표현을 찾는다', a1.paid === true && a1.state === 'needs_notice', a1);
+    const noted = C.withDisclosureNote(paidBody);
+    ok('대가 문구를 맨 앞에 넣는다', noted.added === true && noted.body.indexOf(C.DISCLOSURE_TEXT) === 0);
+    ok('두 번 넣지 않는다(멱등)', C.withDisclosureNote(noted.body).added === false && C.withDisclosureNote(noted.body).body === noted.body);
+    ok('넣은 뒤에는 noticeTop 이 참', C.analyzeCompliance(noted.body).noticeTop === true);
+
+    const conflictBody = '내돈내산 후기입니다.\n\n여기서 사면 됩니다 https://link.coupang.com/a/abc123 그리고 끝.';
+    const a2 = C.analyzeCompliance(conflictBody);
+    ok('내돈내산 + 제휴 링크 충돌을 잡는다', a2.conflict === true && a2.profitLinks.length === 1, a2);
+    ok('수익 링크를 걷어내고 무엇을 뺐는지 남긴다', C.stripProfitLinks(conflictBody).removed.length === 1 && C.stripProfitLinks(conflictBody).body.indexOf('link.coupang.com') < 0);
+    ok('걷어낸 뒤에는 충돌이 사라진다', C.analyzeCompliance(C.stripProfitLinks(conflictBody).body).conflict === false);
+    ok('내돈내산 표기를 지울 수 있다', C.stripOwnMoney(conflictBody).removed === 1 && C.stripOwnMoney(conflictBody).body.indexOf('내돈내산') < 0);
+    ok('일반 글은 깨끗함', C.analyzeCompliance('오늘 봉명동에서 고기를 먹었다.').state === 'clean');
+    ok('진단 한 줄', typeof C.complianceLine(a2) === 'string' && C.complianceLine(a2).indexOf('내돈내산') >= 0);
+
+    const nat = C.nativeSteps({ place: '미미삼겹', category: '삼겹살', memo: '직접 결제했다' });
+    ok('네이버 기능 단계 4종(내돈내산·글감·블로그씨·미션위젯)', nat.length === 4 && nat.map((n) => n.id).join(',') === 'own_money,gul_gam,blogse,widget', nat.map((n) => n.id));
+    ok('대가를 받은 글이면 내돈내산 대신 대가 표시', C.nativeSteps({ memo: '협찬받은 글', paid: true })[0].id === 'disclosure');
+    ok('글 성격에 맞는 위젯을 고른다', C.nativeSteps({ memo: '이번 달 지출 정리' }).filter((n) => n.id === 'widget')[0].step.indexOf('절약 100일') >= 0);
+    const steps = C.mergePasteSteps(['a', 'b', '임시저장 → 내가 직접 읽고 발행'], nat);
+    ok('붙이는 순서에 기능 단계가 끼고 마지막은 발행', steps[steps.length - 1].indexOf('임시저장') === 0 && steps.length === 3 + nat.length, steps);
+
+    const rules = { targets: {}, rules: [{ id: 'title_len', label: '제목 길이', weight: 10 }], coreTags: [], titleLexicon: [], version: 'test' };
+    const lintPaid = BL.lintBlog({ title: 'x', body: paidBody, photoCount: 1 }, rules);
+    const item = (id) => lintPaid.items.filter((i) => i.id === id)[0] || {};
+    ok('린터: 대가 표시 누락을 warn', item('disclosure_paid').state === 'warn', item('disclosure_paid'));
+    const lintConflict = BL.lintBlog({ title: 'x', body: conflictBody, photoCount: 1 }, rules);
+    ok('린터: 내돈내산+제휴 충돌을 warn', (lintConflict.items.filter((i) => i.id === 'own_money_conflict')[0] || {}).state === 'warn');
+    ok('린터: 위반이 있으면 pass 가 아니다', lintConflict.pass === false);
+    const lintOk = BL.lintBlog({ title: 'x', body: '오늘 봉명동에서 고기를 먹었다. 사진도 찍었다.', photoCount: 1 }, rules);
+    ok('린터: 공개 표시 항목은 문제 없는 글에서 경고하지 않는다', lintOk.items.filter((i) => i.policy && i.state === 'warn').length === 0, lintOk.items.filter((i) => i.policy));
+
+    const SL2 = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js'));
+    const matPaid = SL2.normalizeMaterials({ content: { memo: '체험단으로 방문했다.\n\n고기가 좋았다.' } });
+    const kitPaid = SL2.buildBlogKit({ materials: matPaid, compliance: { paid: true } });
+    ok('키트: 대가성 문구가 본문 맨 앞에 자동으로 들어간다', kitPaid.text.indexOf(C.DISCLOSURE_TEXT) > 0 && kitPaid.compliance.paid === true);
+    ok('키트: 대가 글에는 내돈내산 대신 대가 표시 단계', kitPaid.paste_steps.join(' ').indexOf('내돈내산 인증') < 0 && kitPaid.paste_steps.join(' ').indexOf('대가 표시') >= 0);
+    const matOwn = SL2.normalizeMaterials({ content: { memo: '내돈내산 후기다. https://link.coupang.com/a/zzz 여기서 샀다.' } });
+    const kitOwn = SL2.buildBlogKit({ materials: matOwn, compliance: { ownMoney: true } });
+    ok('키트: 내돈내산 글의 제휴 링크를 자동으로 뺀다', kitOwn.compliance.pulled_links.length === 1 && kitOwn.text.split('■ 링크 카드 자리')[0].indexOf('link.coupang.com') < 0, kitOwn.compliance);
+    ok('키트: 원문 문단은 그대로 보존한다', kitOwn.blocks.map((b) => b.text).join('\n\n').indexOf('link.coupang.com') > 0);
+    ok('키트: 뺀 링크는 링크 카드 자리로 옮긴다', kitOwn.links.some((l) => l.url.indexOf('link.coupang.com') > 0), kitOwn.links);
+  } catch (err) {
+    ok('공개 표시 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

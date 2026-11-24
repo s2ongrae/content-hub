@@ -19,6 +19,9 @@ import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261123c';
 
 const RULES_URL = 'seeds/blog_lint_rules_2026w48.json';
 
+/* 공개 표시 3항목(2026-11-24)의 판정·문구·자동 수정은 이 모듈 한 곳에 있다. */
+import { analyzeCompliance, NATIVE_FEATURE_RE } from './blogCompliance.js?v=20261124';
+
 /* 시드 파일을 못 읽어도 검사는 계속 돌아야 한다 — 아래 값은 시드와 같은 기본값이다. */
 const DEFAULT_TARGETS = {
   title_window: 14,
@@ -262,6 +265,40 @@ const LINK_RULES = [
   { id: 'link_embed_hint', label: '붙이는 순서', weight: 0, fix: 'URL을 붙여넣고 Enter → 카드가 뜨면 남은 URL 글자를 지우세요.' }
 ];
 
+/* ── 공개 표시 3항목 (2026-11-24, docs/BLOG_NATIVE_FEATURES_v1.md) ──
+   근거: 네이버 블로그 운영정책(내돈내산·표시광고) + 보도자료 2023-09-21.
+   사람이 판단할 영역이라 자동 수정은 하지 않는다. own_money_conflict·disclosure_paid 는
+   실제 제재(노출 제한·시정 요청)로 이어지는 조합이라 warn, native_features 는 안내(near).
+   판정·문구·자동 수정은 js/blogCompliance.js 한 곳에 있다(화면·키트도 같은 것을 쓴다). */
+function judgeDisclosurePaid(m) {
+  const a = analyzeCompliance(String((m && m.body) || ''));
+  if (!a.paid) return st('near', '대가 표현 없음', '체험·협찬 글에만 표시가 필요합니다');
+  if (a.noticeTop) return st('pass', '상단 표기 있음', '앞 400자에 경제적 대가 표기');
+  if (a.noticeAnywhere) return st('near', '본문 뒤쪽 표기', '표시는 본문 맨 위(앞 400자)에 두세요 — [대가 문구 넣기]를 누르면 자동 배치됩니다');
+  return st('warn', '표기 없음', '대가를 받은 글은 본문 맨 위에 “경제적 대가를 제공받아 작성” 문구(텍스트)를 넣으세요 — [대가 문구 넣기]로 자동 배치');
+}
+
+function judgeOwnMoneyConflict(m) {
+  const a = analyzeCompliance(String((m && m.body) || ''));
+  if (a.conflict) return st('warn', '내돈내산 ' + a.ownMoney + '회 + 수익 링크 ' + a.profitLinks.length + '개', '한 글에 함께 쓰면 운영정책·표시광고법 위반입니다 — 내돈내산 인증을 빼거나 수익 링크를 제거하세요([수익 링크 걷어내기])');
+  if (a.profitLinks.length) return st('near', '수익 링크 ' + a.profitLinks.length + '개', '제휴 링크 글은 내돈내산 인증을 붙이지 마세요');
+  if (a.ownMoney) return st('pass', '내돈내산만', '수익 링크가 없어 함께 쓰기 위험 없음');
+  return st('near', '해당 없음', '내돈내산 인증을 붙일 글인지 한 번 확인하세요(네이버페이 구매확정 6개월·예약 방문 1년 이내)');
+}
+
+function judgeNativeFeatures(m) {
+  const body = String((m && m.body) || '');
+  if (NATIVE_FEATURE_RE.test(body)) return st('pass', '흔적 있음', '네이티브 기능(내돈내산·글감·블로그씨·위젯) 중 하나를 씁니다');
+  return st('near', '없음', '발행 전 확인: 내돈내산 인증 · 글감 카드 · 블로그씨 주제 · 미션위젯 — 조건은 docs/BLOG_NATIVE_FEATURES_v1.md');
+}
+
+const DISCLOSURE_RULES = [
+  { id: 'disclosure_paid', label: '대가 표시', weight: 0, fix: '대가를 받은 글은 본문 맨 위에 “경제적 대가를 제공받아 작성했습니다”를 텍스트로 넣으세요(이미지 표기 금지).' },
+  { id: 'own_money_conflict', label: '내돈내산·제휴', weight: 0, fix: '내돈내산 인증과 수익형 링크(커넥트·쿠팡파트너스 등)는 한 글에 같이 쓰지 마세요.' },
+  { id: 'native_features', label: '네이버 기능', weight: 0, fix: '내돈내산·글감·블로그씨·미션위젯 중 하나를 발행 전에 확인하세요.' }
+];
+
+
 
 /**
  * 줄바꿈 배치 (2026-11-22) — 성래 님 실측: 한 줄 22~44자 · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만.
@@ -304,6 +341,9 @@ const JUDGES = {
 
 /** 규칙별로 참조하는 자료가 다르다(제목은 지역·메뉴 사전, 해시태그는 핵심 태그). */
 function runJudge(id, m, t, lexicon, core) {
+  if (id === 'disclosure_paid') return judgeDisclosurePaid(m);
+  if (id === 'own_money_conflict') return judgeOwnMoneyConflict(m);
+  if (id === 'native_features') return judgeNativeFeatures(m);
   if (id === 'link_card') return judgeLinkCard(m);
   if (id === 'link_anchor') return judgeLinkAnchor(m);
   if (id === 'link_embed_hint') return judgeEmbedHint(m);
@@ -344,6 +384,13 @@ export function lintBlog(input, ruleSet) {
     items.push({ id: r.id, label: r.label, weight: 0, state: res.state, value: res.value, note: res.note, fix: r.fix });
   });
 
+  /* 공개 표시 3항목(2026-11-24) — 점수에는 넣지 않는다. 다만 제재로 이어지는 조합
+     (대가 표기 누락 · 내돈내산+수익링크)은 pass 를 막는다. */
+  DISCLOSURE_RULES.forEach((r) => {
+    const res = runJudge(r.id, m, t, lexicon, core);
+    items.push({ id: r.id, label: r.label, weight: 0, policy: true, state: res.state, value: res.value, note: res.note, fix: r.fix });
+  });
+
   const score = Math.round(items.reduce((s, it) => s
     + (it.state === 'pass' ? it.weight : it.state === 'near' ? it.weight / 2 : 0), 0));
 
@@ -364,7 +411,7 @@ export function lintBlog(input, ruleSet) {
 
   return {
     score,
-    pass: items.every((it) => it.state !== 'warn'),
+    pass: items.every((it) => !(it.state === 'warn' && (it.weight > 0 || it.policy))),
     items,
     stats,
     aiTone,

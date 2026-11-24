@@ -31,7 +31,7 @@ import {
   PACE_IDS, PACE_LABELS, PACE_NOTES
 } from './produceLogic.js?v=20261123k';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261123k';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261123k';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261124';
 import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123k';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
