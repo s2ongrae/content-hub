@@ -12,7 +12,7 @@ import { renderSeriesView } from './seriesView.js';
 import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123k';
 import { renderPostView } from './postView.js?v=20261123k';
 import { trackChannelsOf } from './trackChannels.js?v=20261123k';
-import { renderLintView } from './lintView.js?v=20261124';
+import { renderLintView } from './lintView.js?v=20261124b';
 import { loadDaangnSeed } from './daangnView.js?v=20261123k';
 import { getAnalytics } from './analyticsView.js?v=20261123k';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123k';
