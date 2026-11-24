@@ -1762,6 +1762,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
 
     const pvSrc = fs.readFileSync(path.join(ROOT, 'js', 'productView.js'), 'utf8');
     ok('화면: [이미지까지 자동 수집]·[바로 숏츠 만들기] 버튼', /이미지까지 자동 수집/.test(pvSrc) && /바로 숏츠 만들기/.test(pvSrc));
+    ok('화면: 서버가 막으면(ERR_PRODUCT_BLOCKED) 노트북으로 자동 인계', /ERR_PRODUCT_BLOCKED/.test(pvSrc) && /handOff/.test(pvSrc) && /if \(handOff\) sendProductOrder/.test(pvSrc));
     ok('화면: hub_order 로 product_extract 를 보낸다', /api\.post\('hub_order'/.test(pvSrc) && /productExtractRequest\(/.test(pvSrc));
     ok('화면: 결과를 카드에서 다시 읽는다(get_content_detail)', /api\.getContentDetail\(cardId\)/.test(pvSrc));
     ok('화면: 카드 번호를 남겨 다시 눌러도 같은 카드', /LS_CARD/.test(pvSrc) && /createContent\(/.test(pvSrc));

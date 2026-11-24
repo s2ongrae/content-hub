@@ -135,6 +135,8 @@ export function renderProductView(main, ctx) {
     if (norm.error) { status.textContent = '⚠️ ' + norm.error; return; }
     setBusy(true);
     status.textContent = '상품 페이지를 읽는 중…';
+    /* 서버 IP 가 403/429 로 막힌 몰은 **자동으로 노트북에 넘긴다**(제미니 확정안의 3단 추출). */
+    let handOff = false;
     try {
       const res = await api.post('product_fetch', { url: norm.url }, null, { timeoutMs: 20000 });
       const d = (res && res.data) || {};
@@ -145,10 +147,14 @@ export function renderProductView(main, ctx) {
       toast('상품 사실을 채웠습니다', 'ok');
     } catch (err) {
       const code = (err && err.code) || '';
-      status.textContent = code === 'ERR_PRODUCT_BLOCKED'
-        ? '⚠️ 쇼핑몰이 서버 수집을 막았어요 — [이미지까지 자동 수집]을 누르면 집 노트북(실사용 브라우저)이 대신 읽습니다.'
-        : '⚠️ 자동 수집 실패 — ' + ((err && err.message) || code || '알 수 없는 오류') + ' · 아래 3칸에 직접 적어도 됩니다.';
+      if (code === 'ERR_PRODUCT_BLOCKED') {
+        handOff = true;
+        status.textContent = '쇼핑몰이 서버 수집을 막았어요 — 집 노트북으로 넘겨 사진까지 받아 옵니다…';
+      } else {
+        status.textContent = '⚠️ 자동 수집 실패 — ' + ((err && err.message) || code || '알 수 없는 오류') + ' · 아래 3칸에 직접 적어도 됩니다.';
+      }
     } finally { setBusy(false); }
+    if (handOff) sendProductOrder(false);
   });
 
   /* ── ② 카드 확보 → product_extract 오더 → 상태 폴링 ── */
