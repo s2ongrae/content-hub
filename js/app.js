@@ -21,7 +21,7 @@ import { renderCreateStudio } from './createStudio.js?v=20261124v3';
 import { renderProductView } from './productView.js?v=20261124v4';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123k';
 import { draftSection, draftPreview } from './draftView.js?v=20261123k';
-import { produceSection } from './produceView.js?v=20261124v3';
+import { produceSection } from './produceView.js?v=20261124v4';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
