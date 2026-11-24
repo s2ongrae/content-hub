@@ -17,7 +17,7 @@
  */
 
 const PRODUCT_ALLOWED_HOSTS_ = [
-  'smartstore.naver.com', 'm.smartstore.naver.com', 'brand.naver.com',
+  'smartstore.naver.com', 'm.smartstore.naver.com', 'brand.naver.com', 'm.brand.naver.com',
   'musinsa.com', 'oliveyoung.co.kr', 'ohou.se', 'coupang.com', 'naver.me'
 ];
 const PRODUCT_MAX_BYTES_ = 900 * 1024;     // 900KB까지만 읽는다(파싱용, 이미지 아님)

@@ -1727,6 +1727,44 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
 
     const appSrc = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
     ok('화면: #/create/product 라우트가 있다', /renderProductView\(main, ctx\)/.test(appSrc) && /productView\.js\?v=/.test(appSrc));
+
+    /* v2(2026-11-24) — 링크만 넣으면 노트북이 이미지까지 받아 오는 오더 */
+    const req = P.productExtractRequest(facts, { content_id: 'CH-P1', brand: 'daejeon_youth', url: 'https://smartstore.naver.com/x/products/1', auto_render: true });
+    ok('오더: product_extract 타입', req.type === 'product_extract' && req.content_id === 'CH-P1');
+    ok('오더: 사실은 힌트로 싣는다(숫자 유지)', req.facts.price === 227100 && req.facts.original_price === 298100);
+    ok('오더: 이미지 주소는 6장까지', Array.isArray(req.images) && req.images.length <= P.PRODUCT_IMAGE_MAX);
+    ok('오더: 렌더 예약 플래그', req.auto_render === true && req.max_images === 6);
+    ok('오더: 큐 한도(3,500자) 이내', JSON.stringify(req).length <= P.PRODUCT_PAYLOAD_LIMIT, JSON.stringify(req).length);
+
+    const heavy = P.normalizeFacts({ name: '가'.repeat(120), price: 1000, images: Array.from({ length: 6 }, (_, i) => 'https://shop-phinf.pstatic.net/' + 'a'.repeat(560) + i + '.jpg') });
+    const lightReq = P.productExtractRequest(heavy, { content_id: 'CH-P2', brand: 'daejeon_youth', url: 'https://smartstore.naver.com/x/products/2' });
+    ok('오더: 길면 이미지 주소를 먼저 뺀다(링크만 남겨도 노트북이 읽는다)', JSON.stringify(lightReq).length <= P.PRODUCT_PAYLOAD_LIMIT && !lightReq.images, JSON.stringify(lightReq).length);
+
+    ok('카드 사진 이름 꺼내기', P.imageFilesOf({ image_files: ['1.jpg', '2.jpg'] }).join(',') === '1.jpg,2.jpg');
+    const gate5 = P.canRenderWith(['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg']);
+    ok('렌더 문턱은 5장', gate5.ok === true && P.canRenderWith(['1.jpg']).missable === undefined && P.canRenderWith(['1.jpg']).missing === 4);
+    ok('사진이 모자라면 이유를 말한다', /5장부터/.test(P.canRenderWith(['1.jpg']).message), P.canRenderWith(['1.jpg']).message);
+
+    /* 노트북이 쓰는 카드 모양(studio.media·product·formats.video.draft)을 스튜디오가 그대로 읽는가 */
+    const SL = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=test-product-v2');
+    const cardStudio = {
+      place: { name: '14k 여자목걸이' },
+      product: { name: '14k 여자목걸이', price: 227100, image_files: ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'] },
+      media: [1, 2, 3, 4, 5].map((n) => ({ name: n + '.jpg', kind: 'photo', role: n === 1 ? '대표' : '상세', order: n, caption: '' })),
+      content: { category: '주얼리', price_menu: '227,100원', memo: '하트 목걸이' },
+      concept: { kind: 'review', tone: 'plain', hint: '상품 링크 숏폼 — 확인된 사실만' },
+      formats: { video: { length_sec: 30, draft: { captions: [[0, 3, '훅', 'hook']], narration: [[0, 3, '훅', 'hype']] } } }
+    };
+    const mats = SL.materialsFromStudio(cardStudio);
+    ok('스튜디오: 노트북이 쓴 사진 5장을 재료로 읽는다', mats.photos.length === 5 && mats.photos[0].name === '1.jpg', mats.photos.map((x) => x.kind + ':' + x.name));
+    ok('스튜디오: 상품명·가격·카테고리가 재료 칸으로', mats.place.name === '14k 여자목걸이' && mats.content.price_menu === '227,100원' && mats.content.category === '주얼리');
+    ok('스튜디오: 영상 길이 30초 유지', mats.video.length_sec === 30);
+
+    const pvSrc = fs.readFileSync(path.join(ROOT, 'js', 'productView.js'), 'utf8');
+    ok('화면: [이미지까지 자동 수집]·[바로 숏츠 만들기] 버튼', /이미지까지 자동 수집/.test(pvSrc) && /바로 숏츠 만들기/.test(pvSrc));
+    ok('화면: hub_order 로 product_extract 를 보낸다', /api\.post\('hub_order'/.test(pvSrc) && /productExtractRequest\(/.test(pvSrc));
+    ok('화면: 결과를 카드에서 다시 읽는다(get_content_detail)', /api\.getContentDetail\(cardId\)/.test(pvSrc));
+    ok('화면: 카드 번호를 남겨 다시 눌러도 같은 카드', /LS_CARD/.test(pvSrc) && /createContent\(/.test(pvSrc));
   } catch (err) {
     ok('상품 링크 시험', false, (err && err.stack) || err);
   }

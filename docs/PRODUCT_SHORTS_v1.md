@@ -37,11 +37,14 @@
 - 위치: 설명란 5블록의 **행동 유도 다음, 해시태그 앞**.
 - **제휴 표기와 내돈내산 문구는 동시에 쓰지 않는다**(블로그 운영정책·표시광고법 — `docs/BLOG_NATIVE_FEATURES_v1.md` §1).
 
-## 4. 아직 (다음 오더)
+## 4. 다음 오더 → **v2 에서 완료 (2026-11-24)**
 
-1. **노트북 추출기**(2차 경로): `product_extract.js` + `content_draft format:'product'` — Playwright 없으면 `BLOCKED: NEED playwright` 로 끝나고 화면은 3칸 유지.
-2. **이미지 자동 적재**: 지금은 자동 추출한 이미지 *주소*만 보여 준다. 렌더에 쓰려면 `inbox/<content_id>/1.jpg…` 로 저장돼야 한다(노트북 추출기가 그 일을 한다).
-3. **카드 연결**: `#/create/product` → 스튜디오로 재료를 넘긴 뒤, 대본 AI(`content_draft`)에 `format:'product'` 로 상품 사실을 함께 보내는 분기.
+1. **노트북 추출기**: `hub-agent/lib/product_extract.js` — HTTP(주거 IP) → 설치된 Chrome 까지 3단. Playwright 없으면 그 사실을 남긴다.
+2. **이미지 자동 적재**: `inbox/<content_id>/1.jpg~6.jpg`(장변 1,080·JPEG q85) + 허브 드라이브 업로드까지 완료.
+3. **카드 연결**: `product_extract` 오더가 카드(`studio.product`·`media`·`formats.video.draft`·`production`)에 직접 쓰고,
+   사진 5장 이상이면 렌더 오더까지 예약한다.
+
+→ `docs/PRODUCT_SHORTS_v2.md`
 
 ## 5. 시험
 

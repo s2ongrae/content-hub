@@ -226,7 +226,7 @@ console.log('\n[7] 오더 프록시 — 허용 타입 · 큐 전달');
 A.env.props.set('QUEUE_TOKEN', 'portal-key-for-test-0123456789abcdef');
 o = callHandler(A.ctx, 'handleHubOrder_', null, { type: 'no_such_type' }, { brand: 'daejeon_youth' });
 eq('허용 밖 타입 거부', o.code, 'ERR_INVALID_ACTION');
-eq('허용 타입 5종(2026-11-21 content_draft 추가)', ev(A.ctx,'HUB_ORDER_TYPES').join(','), 'content_render,content_upload,content_stats,blog_neighbor,content_draft');
+eq('허용 타입 6종(2026-11-24 product_extract 추가)', ev(A.ctx,'HUB_ORDER_TYPES').join(','), 'content_render,content_upload,content_stats,blog_neighbor,content_draft,product_extract');
 ok('큐를 부르지 않았다', A.env.fetched.length === 0);
 
 o = callHandler(A.ctx, 'handleHubOrder_', null, {
@@ -523,6 +523,46 @@ A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code
 o = callHandler(A.ctx, 'handleHubOrder_', null, goodDraft, { brand: 'daejeon_youth' });
 eq('큐가 content_draft 를 모르면 같은 안내(ERR_QUEUE_TYPE_UNKNOWN)', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
 ok('무엇을 배포해야 하는지 말한다(초안 생성)', /content_draft/.test(o.message || '') && /배포/.test(o.message || ''), o.message);
+A.env.setFetchReply(okReply);
+
+
+console.log('\n[8k] product_extract — 상품 링크 → 사실·이미지(노트북)');
+const goodProduct = {
+  type: 'product_extract', content_id: 'CH-20261124-P1', brand: 'daejeon_youth',
+  url: 'https://smartstore.naver.com/dailyromantic/products/8087042745',
+  facts: { name: '14k 여자목걸이', price: '227,100', original_price: 298100, rating: '4.86', reviews: 2554, shipping: '무료배송', evil: 'x' },
+  images: ['https://shop-phinf.pstatic.net/a/1.jpg?type=f588_588', 'https://shop-phinf.pstatic.net/a/1.jpg?type=f588_588', 'https://shop-phinf.pstatic.net/a/2.jpg'],
+  max_images: 6, seconds: 20, auto_render: true
+};
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodProduct, { brand: 'daejeon_youth' });
+ok('상품 오더 접수', o.ok, o);
+const rp = A.env.fetched[A.env.fetched.length - 1].body;
+eq('큐 타입은 product_extract', rp.type, 'product_extract');
+eq('응답 queue_type', o.ok && o.data.queue_type, 'product_extract');
+eq('사실표 숫자는 숫자로', rp.payload.facts.price, 227100);
+ok('허용 외 사실 키는 버린다', !('evil' in rp.payload.facts), rp.payload.facts);
+eq('이미지 주소 중복 제거', rp.payload.images.length, 2);
+ok('장수·길이·렌더 예약이 그대로', rp.payload.max_images === 6 && rp.payload.seconds === 20 && rp.payload.auto_render === true, rp.payload);
+ok('payload 는 큐 한도(3,500자) 이내', JSON.stringify(rp.payload).length <= 3500, JSON.stringify(rp.payload).length);
+
+const nProd = A.env.fetched.length;
+[
+  ['허용 외 필드', { evil: 1 }],
+  ['content_id 틀림', { content_id: '../x' }],
+  ['brand 틀림', { brand: 'x' }],
+  ['url http', { url: 'http://smartstore.naver.com/a/products/1' }],
+  ['모르는 몰', { url: 'https://example.com/item/1' }],
+  ['max_images 7', { max_images: 7 }],
+  ['seconds 5', { seconds: 5 }],
+  ['auto_render 문자열', { auto_render: 'yes' }],
+  ['이미지 http', { images: ['http://shop-phinf.pstatic.net/a.jpg'] }],
+  ['이미지 13개', { images: Array.from({ length: 13 }, (_, i) => 'https://shop-phinf.pstatic.net/' + i + '.jpg') }]
+].forEach(([name, patch]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, patch), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
+ok('거부된 상품 오더는 큐를 부르지 않았다', A.env.fetched.length === nProd);
+A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code: 'ERR_UNKNOWN_TYPE', message: '허용되지 않은 작업 타입입니다: product_extract' } }) });
+o = callHandler(A.ctx, 'handleHubOrder_', null, goodProduct, { brand: 'daejeon_youth' });
+eq('큐가 product_extract 를 모르면 같은 안내', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
+ok('무엇을 배포해야 하는지 말한다(상품 수집)', /product_extract/.test(o.message || '') && /배포/.test(o.message || ''), o.message);
 A.env.setFetchReply(okReply);
 
 console.log('\n[8j] 초안 결과 저장 — update_content patch_mode:deep (하위 키만 합친다)');

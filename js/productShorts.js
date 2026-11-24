@@ -11,7 +11,7 @@
  */
 
 export const PRODUCT_HOSTS = [
-  'smartstore.naver.com', 'm.smartstore.naver.com', 'brand.naver.com',
+  'smartstore.naver.com', 'm.smartstore.naver.com', 'brand.naver.com', 'm.brand.naver.com',
   'musinsa.com', 'oliveyoung.co.kr', 'ohou.se', 'coupang.com', 'naver.me'
 ];
 
@@ -19,6 +19,60 @@ export const PRODUCT_BEATS = ['hook', 'info', 'build', 'climax', 'payoff'];
 
 export const AFFILIATE_NOTICE = '본 영상에는 제휴 링크가 포함될 수 있으며, 구매 시 일정 수수료를 받을 수 있습니다.';
 export const OWN_PURCHASE_NOTICE = '직접 구매해 써 본 기준으로 작성했습니다.';
+
+/* v2(2026-11-24) — 링크만 넣으면 노트북이 이미지까지 받아 오는 경로.
+ *   오더 한 건이 큐 payload 4,000자 안에 들어가야 해서, 넘치면 이미지 → 사실 순으로 빼고 링크만 보낸다
+ *   (노트북이 주거 IP·실사용 Chrome 으로 다시 읽는다 — 조용히 다른 상품을 만들지 않는다). */
+export const PRODUCT_IMAGE_MAX = 6;
+export const PRODUCT_RENDER_MIN_IMAGES = 5;     // hub-agent lib/kenburns.js MIN_IMAGES 와 같은 값
+export const PRODUCT_PAYLOAD_LIMIT = 3500;      // gas/Orders.gs RENDER_MAX_PAYLOAD_CHARS
+
+/** 카드에 저장된 상품 정보(studio.product)에서 이미 받아 둔 사진 이름을 꺼낸다. */
+export function imageFilesOf(product) {
+  const p = product && typeof product === 'object' ? product : {};
+  return (Array.isArray(p.image_files) ? p.image_files : []).map(String).filter(Boolean).slice(0, 25);
+}
+
+/** 사진이 렌더 최소(5장)를 넘었나 — 화면이 [렌더] 버튼을 열지 말지 정한다. */
+export function canRenderWith(names) {
+  const list = (Array.isArray(names) ? names : []).filter(Boolean);
+  return {
+    ok: list.length >= PRODUCT_RENDER_MIN_IMAGES,
+    count: list.length,
+    missing: Math.max(0, PRODUCT_RENDER_MIN_IMAGES - list.length),
+    message: list.length >= PRODUCT_RENDER_MIN_IMAGES ? '' : '사진 ' + list.length + '장 — 렌더는 ' + PRODUCT_RENDER_MIN_IMAGES + '장부터입니다(' + Math.max(0, PRODUCT_RENDER_MIN_IMAGES - list.length) + '장 더 필요)'
+  };
+}
+
+/**
+ * [이미지까지 자동 수집]·[바로 숏츠 만들기] 가 보낼 product_extract 오더.
+ *  · 오더에 실린 사실·이미지는 노트북이 브라우저를 열지 않고 쓰는 힌트다(GAS 1차 성공분).
+ *  · 막힌 몰은 사실·이미지가 비어도 된다 — 노트북이 링크로 다시 읽는다.
+ */
+export function productExtractRequest(facts, opts) {
+  const f = normalizeFacts(facts);
+  const o = opts || {};
+  const body = {
+    type: 'product_extract',
+    content_id: String(o.content_id || ''),
+    brand: String(o.brand || 'daejeon_youth'),
+    url: String(o.url || ''),
+    max_images: PRODUCT_IMAGE_MAX,
+    seconds: Number(o.seconds) || 20,
+    auto_render: o.auto_render === true
+  };
+  const factHint = {};
+  ['name', 'brand', 'category', 'price', 'original_price', 'rating', 'reviews', 'shipping'].forEach((k) => {
+    if (f[k] !== null && f[k] !== undefined && f[k] !== '') factHint[k] = f[k];
+  });
+  if (f.key_points && f.key_points.length) factHint.key_points = f.key_points.slice(0, 5);
+  if (Object.keys(factHint).length) body.facts = factHint;
+  if (f.images && f.images.length) body.images = f.images.slice(0, PRODUCT_IMAGE_MAX);
+  let text = JSON.stringify(body);
+  if (text.length > PRODUCT_PAYLOAD_LIMIT && body.images) { delete body.images; text = JSON.stringify(body); }
+  if (text.length > PRODUCT_PAYLOAD_LIMIT && body.facts) { delete body.facts; }
+  return body;
+}
 
 /** URL 하나를 검사해 허용 도메인이면 정규화 URL, 아니면 { error } 를 돌려준다. */
 export function normalizeProductUrl(raw) {
@@ -197,5 +251,5 @@ export function factsToMaterials(facts, materials) {
 }
 
 if (typeof window !== 'undefined') {
-  window.ProductShorts = { normalizeProductUrl, normalizeFacts, productScript, descriptionBlocks, factsToMaterials, canRender };
+  window.ProductShorts = { normalizeProductUrl, normalizeFacts, productScript, descriptionBlocks, factsToMaterials, canRender, productExtractRequest, imageFilesOf, canRenderWith };
 }

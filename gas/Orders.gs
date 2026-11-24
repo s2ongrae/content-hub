@@ -21,7 +21,7 @@
  */
 
 /** 허용 타입 — 늘리려면 여기와 docs/ONESTOP_CREATOR_SPEC.md §8.1 을 같이 고친다. */
-const HUB_ORDER_TYPES = ['content_render', 'content_upload', 'content_stats', 'blog_neighbor', 'content_draft'];
+const HUB_ORDER_TYPES = ['content_render', 'content_upload', 'content_stats', 'blog_neighbor', 'content_draft', 'product_extract'];
 
 const MEDIA_MAX_FILES = 100;
 const MEDIA_DEADLINE_MS = 15000;
@@ -755,6 +755,101 @@ function hubDraftPayload_(payload) {
   return out;
 }
 
+
+/* ------------------------------------------------------------------ *
+ * product_extract — 상품 링크 → 사실표 + 이미지 1~6장 (2026-11-24, v2)
+ *
+ *   왜 허브 GAS 가 이미 아는 것을 또 보내나: 노트북이 브라우저를 열지 않고 바로 이미지만 받게 하려고.
+ *   GAS 1차(product_fetch)가 성공하면 그 사실·이미지 주소를 이 오더에 실어 보낸다 — 막힌 몰은 비워 보내고
+ *   노트북이 주거 IP HTTP → 설치된 Chrome(channel:'chrome') 순으로 스스로 읽는다(3단 추출).
+ *
+ *   요청: { type:'product_extract', content_id, brand, url, facts:{…}, images:[url…],
+ *           max_images:1~6, seconds:12~45, auto_render:true|false }
+ *   규칙: 몰 허용 목록은 gas/Product.gs PRODUCT_ALLOWED_HOSTS_ 한 곳. 이미지 주소는 https 만.
+ *         큐 payload 3,500자 한도를 넘으면 사실·이미지를 빼고 링크만 보낸다(노트북이 다시 읽는다).
+ * ------------------------------------------------------------------ */
+const PRODUCT_ORDER_MAX_IMAGES = 6;
+const PRODUCT_ORDER_MAX_IMAGE_URLS = 12;
+const PRODUCT_ORDER_MAX_KEY_POINTS = 5;
+const PRODUCT_ORDER_IMAGE_URL_MAX = 500;
+const PRODUCT_ORDER_FACT_KEYS = ['name', 'brand', 'category', 'price', 'original_price', 'rating', 'reviews', 'shipping', 'key_points', 'images'];
+const PRODUCT_ORDER_ALLOWED_KEYS = ['type', 'content_id', 'brand', 'url', 'facts', 'images', 'max_images', 'seconds', 'auto_render'];
+
+/** 상품 오더 payload 검사 → 큐에 보낼 모양. 어긋나면 ERR_VALIDATION_FAILED. */
+function hubProductExtractPayload_(payload) {
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  Object.keys(payload || {}).forEach(function (k) {
+    if (PRODUCT_ORDER_ALLOWED_KEYS.indexOf(k) === -1) throw bad('허용되지 않은 필드입니다: ' + k);
+  });
+  const contentId = String(payload.content_id || '');
+  if (!RENDER_CONTENT_ID_RE.test(contentId)) throw bad('content_id 는 영문·숫자·_·- 40자 이내여야 합니다.');
+  const brand = String(payload.brand || '');
+  if (RENDER_BRANDS.indexOf(brand) === -1) throw bad('brand 가 올바르지 않습니다.');
+  const url = String(payload.url || '').trim();
+  if (!/^https:\/\//i.test(url)) throw bad('상품 링크는 https 여야 합니다.');
+  const host = (url.match(/^https:\/\/([^\/]+)/i) || [])[1].toLowerCase().replace(/^www\./, '');
+  if (PRODUCT_ALLOWED_HOSTS_.indexOf(host) === -1) throw bad('지원하지 않는 쇼핑몰입니다: ' + host.slice(0, 40));
+
+  let maxImages = PRODUCT_ORDER_MAX_IMAGES;
+  if (payload.max_images !== undefined && payload.max_images !== null && payload.max_images !== '') {
+    const n = Number(payload.max_images);
+    if (!isFinite(n) || Math.floor(n) !== n || n < 1 || n > PRODUCT_ORDER_MAX_IMAGES) throw bad('max_images 는 1~' + PRODUCT_ORDER_MAX_IMAGES + ' 이어야 합니다.');
+    maxImages = n;
+  }
+  let seconds = 20;
+  if (payload.seconds !== undefined && payload.seconds !== null && payload.seconds !== '') {
+    const n = Number(payload.seconds);
+    if (!isFinite(n) || n < 12 || n > 45) throw bad('seconds 는 12~45 사이여야 합니다.');
+    seconds = Math.round(n);
+  }
+  if (payload.auto_render !== undefined && payload.auto_render !== null) {
+    if (typeof payload.auto_render !== 'boolean') throw bad('auto_render 는 true·false 여야 합니다.');
+  }
+
+  /* 이미지 주소 — https 만. 쿼리(축소 파라미터)는 그대로 둔다(노트북이 원본 판단). */
+  const images = [];
+  if (Array.isArray(payload.images)) {
+    if (payload.images.length > PRODUCT_ORDER_MAX_IMAGE_URLS) throw bad('이미지 주소는 ' + PRODUCT_ORDER_MAX_IMAGE_URLS + '개까지입니다.');
+    payload.images.forEach(function (u, i) {
+      const s = String(u || '').trim();
+      if (!/^https:\/\/[^\s]+$/i.test(s) || s.length > PRODUCT_ORDER_IMAGE_URL_MAX) throw bad('images[' + i + '] 주소가 올바르지 않습니다.');
+      if (images.indexOf(s) === -1) images.push(s);
+    });
+  }
+
+  /* 사실표 — 허용 키만, 숫자는 숫자로, 길이는 자른다(모르는 값은 넣지 않는다). */
+  const facts = {};
+  if (payload.facts && typeof payload.facts === 'object') {
+    Object.keys(payload.facts).forEach(function (k) {
+      if (PRODUCT_ORDER_FACT_KEYS.indexOf(k) === -1) return;
+      const v = payload.facts[k];
+      if (v === undefined || v === null || v === '') return;
+      if (k === 'price' || k === 'original_price' || k === 'rating' || k === 'reviews') {
+        const n = productNumber_(v);
+        if (n !== null) facts[k] = n;
+      } else if (k === 'key_points') {
+        facts.key_points = (Array.isArray(v) ? v : []).map(function (x) { return String(x || '').trim().slice(0, 60); })
+          .filter(Boolean).slice(0, PRODUCT_ORDER_MAX_KEY_POINTS);
+      } else if (k === 'images') {
+        /* 사실표 안의 이미지 목록은 위 images 와 같은 규칙으로 접는다. */
+      } else {
+        facts[k] = String(v).trim().slice(0, k === 'name' ? 160 : 80);
+      }
+    });
+    if (!facts.key_points || !facts.key_points.length) delete facts.key_points;
+  }
+
+  const out = { content_id: contentId, brand: brand, url: url, max_images: maxImages, seconds: seconds, auto_render: payload.auto_render === true };
+  if (Object.keys(facts).length) out.facts = facts;
+  if (images.length) out.images = images;
+  if (JSON.stringify(out).length > RENDER_MAX_PAYLOAD_CHARS) {
+    /* 사실·이미지가 길면 링크만 — 노트북이 브라우저/HTTP 로 다시 읽는다(조용히 다른 상품을 만들지 않는다). */
+    delete out.facts;
+    delete out.images;
+  }
+  return out;
+}
+
 function handleHubOrder_(ss, payload, ctx) {
   const type = String((payload && payload.type) || '').trim();
   if (HUB_ORDER_TYPES.indexOf(type) === -1) {
@@ -778,6 +873,7 @@ function handleHubOrder_(ss, payload, ctx) {
 
   const realRender = isRealRenderOrder_(type, payload);
   const isDraft = type === 'content_draft';
+  const isProduct = type === 'product_extract';
   let prompt = '';
   let body;
   if (realRender) {
@@ -797,6 +893,15 @@ function handleHubOrder_(ss, payload, ctx) {
       type: 'content_draft',
       workspace: workspace,
       payload: hubDraftPayload_(payload)
+    };
+  } else if (isProduct) {
+    // 상품 수집(2026-11-24, v2) — 사실·이미지는 큐의 product_extract 오더로 내려간다(LOW·자동승인).
+    body = {
+      key: token,
+      action: 'queue_enqueue',
+      type: 'product_extract',
+      workspace: workspace,
+      payload: hubProductExtractPayload_(payload)
     };
   } else {
     prompt = hubOrderPrompt_(type, payload);
@@ -837,11 +942,11 @@ function handleHubOrder_(ss, payload, ctx) {
     const code = String(e.code || json.code || '');
     // 큐(Apps Script)가 아직 content_render 를 모르는 동안: 옛 동작으로 되돌리지 않고 분명히 알린다.
     // (포털 오더함 큐는 code 'type' + "보낼 수 없는 오더" 로, 노트북 큐는 ERR_UNKNOWN_TYPE 으로 거절한다 — 둘 다 같은 안내)
-    if ((realRender || isDraft) && (code === 'ERR_UNKNOWN_TYPE' || code === 'type' || /ERR_UNKNOWN_TYPE|허용되지 않은 작업 타입|보낼 수 없는 오더/.test(msg))) {
-      const what = isDraft ? 'content_draft(초안 생성)' : 'content_render(영상 렌더)';
+    if ((realRender || isDraft || isProduct) && (code === 'ERR_UNKNOWN_TYPE' || code === 'type' || /ERR_UNKNOWN_TYPE|허용되지 않은 작업 타입|보낼 수 없는 오더/.test(msg))) {
+      const what = isProduct ? 'product_extract(상품 수집)' : (isDraft ? 'content_draft(초안 생성)' : 'content_render(영상 렌더)');
       throw createAppError_('ERR_QUEUE_TYPE_UNKNOWN',
         '노트북 큐가 아직 ' + what + ' 를 모릅니다. 큐 Apps Script 를 새 버전으로 배포한 뒤 다시 보내 주세요(오더는 만들어지지 않았습니다).',
-        { queue_code: code || 'ERR_UNKNOWN_TYPE', order_type: isDraft ? 'content_draft' : 'content_render' });
+        { queue_code: code || 'ERR_UNKNOWN_TYPE', order_type: isProduct ? 'product_extract' : (isDraft ? 'content_draft' : 'content_render') });
     }
     const hint = /unauthorized/i.test(msg) ? ' — QUEUE_TOKEN 이 그 웹앱의 키와 다릅니다'
       : (code === 'workspace' ? ' — QUEUE_WORKSPACE 값이 큐의 허용 목록에 없습니다'
@@ -850,7 +955,7 @@ function handleHubOrder_(ss, payload, ctx) {
       { queue_code: code });
   }
 
-  const queueType = isDraft ? 'content_draft' : (realRender ? 'content_render' : 'claude_prompt');
+  const queueType = isProduct ? 'product_extract' : (isDraft ? 'content_draft' : (realRender ? 'content_render' : 'claude_prompt'));
   const out = hubOrderResult_(json, type, workspace, prompt, queueType,
     realRender ? (body.payload.cuts ? body.payload.cuts.length : 0) : undefined,
     realRender ? { captions: (body.payload.captions || []).length, narration: (body.payload.narration || []).length, pace: body.payload.pace || '' } : undefined);
