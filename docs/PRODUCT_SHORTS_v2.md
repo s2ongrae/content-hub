@@ -131,8 +131,8 @@ production       = { images, captions, narration, script, hook, hook_sub, descri
 
 ## 9. 시험
 
-- `content-hub`: `node test/run.js` — `[P] 상품 링크 → 숏폼`(v1 25 + v2 13) + GAS `[8k] product_extract` 20여 항목.
-- `hub-agent`: `node test/run.js` — `test/product.js` 75항목(파싱·5비트·설명란·payload·deps 주입 실행·렌더 예약·이미지 가드),
+- `content-hub`: `node test/run.js` — `[P] 상품 링크 → 숏폼`(v1 25 + v2 17) + GAS `[8k] product_extract` 20여 항목(전체 GAS 915).
+- `hub-agent`: `node test/run.js` — `test/product.js` 85항목(파싱·5비트·설명란·payload·deps 주입 실행·렌더 예약·이미지 가드),
   `gas/test/run.js` — 큐 타입·위험도·접수.
 
 ## 10. 남은 것
