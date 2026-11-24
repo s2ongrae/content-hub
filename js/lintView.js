@@ -104,7 +104,8 @@ function photoCountOf(payload) {
   const lists = [p.studio && p.studio.media, p.media, p.photos, blog.photos];
   for (const arr of lists) {
     if (Array.isArray(arr) && arr.length) {
-      return arr.filter((x) => !x || !x.kind || /photo/i.test(String(x.kind))).length;
+      const n = arr.filter((x) => !x || !x.kind || /photo/i.test(String(x.kind))).length;
+      if (n > 0) return n;
     }
   }
   /* 2026-11-24: 글 안에 사진 장수만 적어 둔 카드(blog.photo_count)도 있다 — 비워 두면 '사진 0장'으로 잘못 잡힌다. */
