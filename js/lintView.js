@@ -379,15 +379,38 @@ export async function renderLintView(main, ctx) {
       const d = (res && res.data) || {};
       const payload = d.payload || {};
       const orig = (payload.blog && typeof payload.blog === 'object') ? payload.blog : {};
+      /* 2026-11-24: 화면에서 고쳐 저장할 때도 점수·린트 요약을 같이 남긴다 —
+         예전에는 본문만 써서 보드의 quality_score 가 옛 값으로 남았다(피클 체험기가 그랬다). */
+      const r = lintBlog({
+        title: titleEl.value, body: bodyEl.value,
+        photoCount: photoEl.value === '' ? undefined : Number(photoEl.value), keywords: kwEl.value
+      }, rules);
+      const ai = r.aiTone || {};
+      const dia = ai.dia || { hits: 0, total: 5 };
+      const warnItems = r.items.filter((i) => i.state === 'warn');
+      const snap = {
+        tool: 'content-hub js/blogLint.js (rules ' + (rules.version || '2026w48') + ')',
+        rules_version: rules.version || '2026w48',
+        checked_at: new Date().toISOString(),
+        score: r.score, pass: r.pass, hold: !!r.hold, hold_reasons: r.holdReasons || [],
+        summary: '제목 ' + r.stats.titleChars + '자 · 본문 ' + r.stats.bodyChars.toLocaleString('ko-KR') + '자 · 사진 '
+          + r.stats.photos + '장 · 문단 평균 ' + r.stats.avgLine + '자 · 2줄 이하 문단 ' + r.stats.shortLines + '개 · 해시태그 ' + r.stats.hashtags + '개',
+        ai_tone: { summary: ai.summary || '', count: ai.count || 0, hold: !!ai.hold, dia: dia.hits + '/' + dia.total },
+        verdict: '점수 ' + r.score + ' / 100 — ' + (r.pass ? '통과' : '고칠 것 ' + warnItems.length + '건: ' + warnItems.map((i) => i.label).join(' · ')),
+        items: r.items.map((i) => ({ id: i.id, label: i.label, state: i.state, value: i.value, note: i.note }))
+      };
       const next = Object.assign({}, orig, {
         title: titleEl.value.trim(),
         body: bodyEl.value,
+        lint: snap,
+        lint_checked_at: snap.checked_at,
         updated_at: new Date().toISOString()
       });
       await api.updateContent({
         content_id: id,
         expected_version: d.version,
         blog_title: titleEl.value.trim(),
+        quality_score: r.score,
         patch: { blog: next }
       });
       const values = cardValues();
