@@ -46,6 +46,8 @@ const mem = {
   poll: {},
   kit: null,
   draft: null,
+  draftCardId: '',     // 이 draft 가 어느 카드의 것인지 — 카드를 바꾸면 버린다
+  track: '',           // 상품 카드의 클립 트랙(product.track) — 수익화면 고정댓글 문구를 보여 준다
   // 공개 표시·네이버 기능(2026-11-24) — 블로그 스튜디오에서 한 번만 고르면 키트에 자동 반영된다.
   compliance: { paid: false, ownMoney: false, blogseTopic: '' },
   feedFilter: 'none',
@@ -197,7 +199,10 @@ function renderFormat(main, ctx, format) {
   const brand = ctx.state.brand;
   const m = mem.materials;
   const cardFromHash = parseCardParam();
-  if (cardFromHash) mem.cardId = cardFromHash;
+  if (cardFromHash) {
+    if (mem.draftCardId && mem.draftCardId !== cardFromHash) { mem.draft = null; mem.track = ''; }
+    mem.cardId = cardFromHash;
+  }
 
   const head = h('div', { class: 'st-head' },
     h('button', { class: 'ghost-btn sm', type: 'button', text: '← 포맷', onclick: () => { location.hash = '#/create'; } }),
@@ -906,6 +911,30 @@ function paintVideo(actions, out, ctx, ui) {
   };
   ui.repaintVideo = paint;
   paint();
+  /* ?card= 로 들어왔으면 카드에 저장된 대본·트랙을 먼저 보여 준다 — 상품 수집 카드의 고정댓글 문구가 여기 있다(v3). */
+  loadCardDraft(ctx, ui);
+}
+
+/** 카드에 이미 저장된 영상 대본·상품 트랙을 읽어 결과 칸에 붙인다(없으면 아무 것도 하지 않는다). */
+async function loadCardDraft(ctx, ui) {
+  const { api } = ctx;
+  const id = mem.cardId;
+  if (!id || !api) return;
+  if (mem.draftCardId === id && mem.draft) return;
+  if (mem.draftTriedFor === id) return;
+  mem.draftTriedFor = id;
+  try {
+    const res = await api.getContentDetail(id);
+    const payload = (res && res.data && res.data.payload) || {};
+    const st = readStudio(payload);
+    const draft = (st.video && st.video.draft) || null;
+    const product = (st.studio && st.studio.product) || null;
+    if (product && product.track) mem.track = String(product.track);
+    if (!draft || !Array.isArray(draft.captions) || !draft.captions.length) return;
+    mem.draft = draft;
+    mem.draftCardId = id;
+    if (ui && ui.repaintVideo) ui.repaintVideo();
+  } catch (e) { /* 카드 읽기 실패는 화면을 막지 않는다 — [대본 만들기]로 다시 뽑을 수 있다 */ }
 }
 
 /** 영상 화면 본문 — [일반 영상 | 🎵 뮤직비디오] 토글 하나로 갈아 끼운다(새 라우트 없음). */
@@ -996,6 +1025,7 @@ function paintNormalVideo(host, out, ctx, ui) {
             if (Object.keys(preset).length) await saveMaterialsToStudio(ctx, 'video', preset);
           } catch (e) { /* 훅 자동 채우기는 실패해도 대본 저장은 끝난 상태다 */ }
           mem.draft = draft;
+          mem.draftCardId = id;
           paintScriptBox(out, ctx, draft, m);
           toast('대본·자막을 카드에 담았습니다', 'ok');
         } catch (err) {
@@ -1323,6 +1353,19 @@ function paintScriptBox(out, ctx, draft, materials) {
     if (cues.length > 60) box.appendChild(h('p', { class: 'st-hint', text: '… ' + (cues.length - 60) + '큐 더 있습니다(카드에 저장됨)' }));
   }
   box.appendChild(h('p', { class: 'st-hint', text: '톤: ' + ((materials.concept && materials.concept.tone) || 'plain') + ' · 담백 rate +6% / 호들갑 +18%·pitch +6Hz / 충청도 아저씨 −4%·pitch −3Hz' }));
+  if (mem.track) {
+    box.appendChild(h('p', { class: 'st-hint', text: '트랙: ' + (mem.track === 'commerce' ? 'B · 쇼핑커넥트 수익화' : 'A · 챌린지') + (mem.track === 'commerce' ? ' — 쇼핑커넥트 태그 필수 · #오늘클립챌린지 금지' : ' — #오늘클립챌린지 · 쇼핑커넥트 태그 금지') }));
+  }
+  /* 클립 수익화 트랙의 대가성 문구는 첫 고정댓글이 공식 위치다(v3) — 카드 draft 에 있으면 그대로 복사하게 둔다. */
+  const pin = String(draft.pinned_comment || '');
+  if (pin) {
+    const pinBox = h('div', { class: 'st-pin' },
+      h('h4', null, '첫 고정댓글 — 그대로 복사'),
+      h('pre', { class: 'st-pre' }, pin),
+      copyTextBtn(h, pin, ctx.toast, '고정댓글 문구 복사'),
+      h('p', { class: 'st-hint', text: '본문 첫 부분 [광고]는 상품 태그를 붙이면 자동 표시됩니다. 안 보이면 직접 넣으세요.' }));
+    box.appendChild(pinBox);
+  }
   out.replaceChildren(box);
 }
 

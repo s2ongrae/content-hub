@@ -112,6 +112,7 @@ function makeEnv() {
   return {
     gas, props, cache, folders, fetched,
     setFetchReply(r) { fetchReply = r; },
+    setNowShift(v) { nowShift = Number(v) || 0; },
     Date: class extends Date { constructor(...a) { super(...(a.length ? a : [Date.now() + nowShift])); } static now() { return Date.now() + nowShift; } }
   };
 }
@@ -532,7 +533,7 @@ const goodProduct = {
   url: 'https://smartstore.naver.com/dailyromantic/products/8087042745',
   facts: { name: '14k 여자목걸이', price: '227,100', original_price: 298100, rating: '4.86', reviews: 2554, shipping: '무료배송', evil: 'x' },
   images: ['https://shop-phinf.pstatic.net/a/1.jpg?type=f588_588', 'https://shop-phinf.pstatic.net/a/1.jpg?type=f588_588', 'https://shop-phinf.pstatic.net/a/2.jpg'],
-  max_images: 6, seconds: 20, auto_render: true
+  max_images: 6, seconds: 20, auto_render: true, track: 'commerce'
 };
 o = callHandler(A.ctx, 'handleHubOrder_', null, goodProduct, { brand: 'daejeon_youth' });
 ok('상품 오더 접수', o.ok, o);
@@ -543,6 +544,7 @@ eq('사실표 숫자는 숫자로', rp.payload.facts.price, 227100);
 ok('허용 외 사실 키는 버린다', !('evil' in rp.payload.facts), rp.payload.facts);
 eq('이미지 주소 중복 제거', rp.payload.images.length, 2);
 ok('장수·길이·렌더 예약이 그대로', rp.payload.max_images === 6 && rp.payload.seconds === 20 && rp.payload.auto_render === true, rp.payload);
+ok('트랙이 큐로 내려간다', rp.payload.track === 'commerce' && rp.payload.force === false, rp.payload);
 ok('payload 는 큐 한도(3,500자) 이내', JSON.stringify(rp.payload).length <= 3500, JSON.stringify(rp.payload).length);
 
 const nProd = A.env.fetched.length;
@@ -556,11 +558,39 @@ const nProd = A.env.fetched.length;
   ['seconds 5', { seconds: 5 }],
   ['auto_render 문자열', { auto_render: 'yes' }],
   ['이미지 http', { images: ['http://shop-phinf.pstatic.net/a.jpg'] }],
-  ['이미지 13개', { images: Array.from({ length: 13 }, (_, i) => 'https://shop-phinf.pstatic.net/' + i + '.jpg') }]
+  ['이미지 13개', { images: Array.from({ length: 13 }, (_, i) => 'https://shop-phinf.pstatic.net/' + i + '.jpg') }],
+  ['track 오타', { track: 'challeng' }],
+  ['force 문자열', { force: 'yes' }]
 ].forEach(([name, patch]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, patch), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
 ok('거부된 상품 오더는 큐를 부르지 않았다', A.env.fetched.length === nProd);
+
+/* 12시간 중복 억제(v3) — 같은 (brand+url)이면 오더를 만들지 않고 기존 카드를 알려 준다. */
+const dup = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, { content_id: 'CH-20261124-P2' }), { brand: 'daejeon_youth' });
+eq('중복이면 ERR_PRODUCT_DUPLICATE', dup.code, 'ERR_PRODUCT_DUPLICATE');
+ok('기존 카드를 알려 준다', /CH-20261124-P1/.test(dup.message || ''), dup.message);
+eq('중복이면 큐를 부르지 않는다', A.env.fetched.length, nProd);
+eq('브라우저와 같은 주소 해시(22b4bc84)', ev(A.ctx, 'productUrlHash_')(goodProduct.url), '22b4bc84');
+eq('해시: 쿼리·끝 슬래시를 버린다', ev(A.ctx, 'productUrlHash_')(goodProduct.url + '/?NaPm=xyz'), '22b4bc84');
+eq('해시: 다른 상품은 다른 값', ev(A.ctx, 'productUrlHash_')('https://musinsa.com/app/goods/123'), '0f79c788');
+ok('색인에 기존 카드·남은 시간', (function () {
+  const idx = JSON.parse(A.env.props.get('PRODUCT_DEDUP_INDEX') || '[]');
+  return idx.length === 1 && idx[0][0] === 'daejeon_youth' && idx[0][2] === 'CH-20261124-P1' && idx[0][3] > 0;
+})(), A.env.props.get('PRODUCT_DEDUP_INDEX'));
+ok('쿼리 파라미터가 달라도 같은 상품', callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, { url: goodProduct.url + '?NaPm=xyz' }), { brand: 'daejeon_youth' }).code === 'ERR_PRODUCT_DUPLICATE');
+ok('다른 브랜드는 따로 센다', callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, { brand: 'ppiyak_kimmary' }), { brand: 'ppiyak_kimmary' }).ok === true);
+ok('force:true 면 다시 받는다', (function () {
+  const before = A.env.fetched.length;
+  const r2 = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, { content_id: 'CH-20261124-P3', force: true }), { brand: 'daejeon_youth' });
+  return r2.ok && A.env.fetched.length === before + 1;
+})());
+A.env.setNowShift(13 * 60 * 60 * 1000);
+ok('12시간이 지나면 다시 받는다', callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, { content_id: 'CH-20261124-P4' }), { brand: 'daejeon_youth' }).ok === true);
+A.env.setNowShift(0);
+eq('색인은 12시간 지난 기록을 버린다', JSON.parse(A.env.props.get('PRODUCT_DEDUP_INDEX') || '[]').length, 1);
+A.env.props.delete('PRODUCT_DEDUP_INDEX');   // 뒤 시험에 색인을 남기지 않는다
+
 A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code: 'ERR_UNKNOWN_TYPE', message: '허용되지 않은 작업 타입입니다: product_extract' } }) });
-o = callHandler(A.ctx, 'handleHubOrder_', null, goodProduct, { brand: 'daejeon_youth' });
+o = callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({}, goodProduct, { force: true }), { brand: 'daejeon_youth' });
 eq('큐가 product_extract 를 모르면 같은 안내', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');
 ok('무엇을 배포해야 하는지 말한다(상품 수집)', /product_extract/.test(o.message || '') && /배포/.test(o.message || ''), o.message);
 A.env.setFetchReply(okReply);

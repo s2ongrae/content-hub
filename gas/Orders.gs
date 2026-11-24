@@ -773,7 +773,78 @@ const PRODUCT_ORDER_MAX_IMAGE_URLS = 12;
 const PRODUCT_ORDER_MAX_KEY_POINTS = 5;
 const PRODUCT_ORDER_IMAGE_URL_MAX = 500;
 const PRODUCT_ORDER_FACT_KEYS = ['name', 'brand', 'category', 'price', 'original_price', 'rating', 'reviews', 'shipping', 'key_points', 'images'];
-const PRODUCT_ORDER_ALLOWED_KEYS = ['type', 'content_id', 'brand', 'url', 'facts', 'images', 'max_images', 'seconds', 'auto_render'];
+const PRODUCT_ORDER_ALLOWED_KEYS = ['type', 'content_id', 'brand', 'url', 'facts', 'images', 'max_images', 'seconds', 'auto_render', 'track', 'force'];
+const PRODUCT_TRACKS_ = ['challenge', 'commerce'];
+
+/* ── 12시간 중복 억제 (2026-11-24, v3 P1) ──
+ * 같은 (brand + url)을 12시간 안에 다시 요청하면 오더를 만들지 않고 기존 카드를 알려 준다(ERR_PRODUCT_DUPLICATE).
+ * 색인은 스크립트 속성 하나(JSON)에 두고 최근 80건·12시간만 남긴다 — 시트를 훑지 않아 빠르고, 속성 한도를 넘기지 않는다.
+ * 강제 재수집은 payload.force=true 하나뿐이다(사진이 바뀌었거나 앞 수집이 모자랐을 때). */
+const PRODUCT_DEDUP_PROP_ = 'PRODUCT_DEDUP_INDEX';
+const PRODUCT_DEDUP_WINDOW_MS_ = 12 * 60 * 60 * 1000;
+const PRODUCT_DEDUP_MAX_ENTRIES_ = 80;
+
+/** 같은 상품인지 보는 주소 — 쿼리·해시·끝 슬래시를 버린다(허브 js/productShorts.js canonicalProductUrl 과 같은 규칙). */
+function productCanonicalUrl_(url) {
+  var s = String(url == null ? '' : url).trim();
+  if (!s) return '';
+  s = s.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  var m = s.match(/^https:\/\/([^\/]+)(\/.*)?$/i);
+  if (!m) return s.toLowerCase();
+  return 'https://' + m[1].toLowerCase() + (m[2] || '');
+}
+
+/** FNV-1a 32bit — 브라우저·노트북·GAS 가 같은 해시를 낸다(짧은 색인 키). */
+function productFnv1aHex_(text) {
+  var s = String(text == null ? '' : text);
+  var h = 0x811c9dc5;
+  for (var i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  var hex = (h >>> 0).toString(16);
+  while (hex.length < 8) hex = '0' + hex;
+  return hex;
+}
+
+function productUrlHash_(url) {
+  return productFnv1aHex_('product|' + productCanonicalUrl_(url));
+}
+
+/** 색인 읽기 — 깨진 값은 빈 배열로 본다(오더를 막지 않는다). */
+function productDedupRead_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(PRODUCT_DEDUP_PROP_);
+    var arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(function (x) { return x && x.length >= 4; });
+  } catch (e) { return []; }
+}
+
+function productDedupCheck_(brand, url, nowMs) {
+  var list = productDedupRead_();
+  var hash = productUrlHash_(url);
+  for (var i = list.length - 1; i >= 0; i--) {
+    var x = list[i];
+    if (String(x[0]) === brand && String(x[1]) === hash && (nowMs - Number(x[3] || 0)) < PRODUCT_DEDUP_WINDOW_MS_) {
+      return { hit: true, card_id: String(x[2] || ''), at: Number(x[3]) || 0 };
+    }
+  }
+  return { hit: false };
+}
+
+function productDedupWrite_(brand, url, cardId, nowMs) {
+  var cutoff = nowMs - PRODUCT_DEDUP_WINDOW_MS_;
+  var hash = productUrlHash_(url);
+  var list = productDedupRead_().filter(function (x) {
+    return Number(x[3] || 0) >= cutoff && !(String(x[0]) === brand && String(x[1]) === hash);
+  });
+  list.push([brand, hash, String(cardId || ''), nowMs]);
+  if (list.length > PRODUCT_DEDUP_MAX_ENTRIES_) list = list.slice(list.length - PRODUCT_DEDUP_MAX_ENTRIES_);
+  try {
+    PropertiesService.getScriptProperties().setProperty(PRODUCT_DEDUP_PROP_, JSON.stringify(list));
+  } catch (e) { /* 색인 저장 실패는 오더를 막지 않는다(다음에 또 받으면 화면 기록이 먼저 막는다) */ }
+}
 
 /** 상품 오더 payload 검사 → 큐에 보낼 모양. 어긋나면 ERR_VALIDATION_FAILED. */
 function hubProductExtractPayload_(payload) {
@@ -805,6 +876,13 @@ function hubProductExtractPayload_(payload) {
   if (payload.auto_render !== undefined && payload.auto_render !== null) {
     if (typeof payload.auto_render !== 'boolean') throw bad('auto_render 는 true·false 여야 합니다.');
   }
+  /* 트랙(2026-11-24, v3) — 대본·설명란·고정댓글 문구가 이 값에 따라 달라진다. */
+  let track = 'commerce';
+  if (payload.track !== undefined && payload.track !== null && payload.track !== '') {
+    track = String(payload.track);
+    if (PRODUCT_TRACKS_.indexOf(track) === -1) throw bad('track 은 ' + PRODUCT_TRACKS_.join('·') + ' 중 하나여야 합니다.');
+  }
+  if (payload.force !== undefined && payload.force !== null && typeof payload.force !== 'boolean') throw bad('force 는 true·false 여야 합니다.');
 
   /* 이미지 주소 — https 만. 쿼리(축소 파라미터)는 그대로 둔다(노트북이 원본 판단). */
   const images = [];
@@ -839,7 +917,7 @@ function hubProductExtractPayload_(payload) {
     if (!facts.key_points || !facts.key_points.length) delete facts.key_points;
   }
 
-  const out = { content_id: contentId, brand: brand, url: url, max_images: maxImages, seconds: seconds, auto_render: payload.auto_render === true };
+  const out = { content_id: contentId, brand: brand, url: url, max_images: maxImages, seconds: seconds, auto_render: payload.auto_render === true, track: track, force: payload.force === true };
   if (Object.keys(facts).length) out.facts = facts;
   if (images.length) out.images = images;
   if (JSON.stringify(out).length > RENDER_MAX_PAYLOAD_CHARS) {
@@ -876,6 +954,7 @@ function handleHubOrder_(ss, payload, ctx) {
   const isProduct = type === 'product_extract';
   let prompt = '';
   let body;
+  let productPayload = null;
   if (realRender) {
     // 검증 실패는 큐를 부르기 전에 끝낸다(설정 검사 뒤라도 외부 호출은 하지 않는다).
     body = {
@@ -896,12 +975,23 @@ function handleHubOrder_(ss, payload, ctx) {
     };
   } else if (isProduct) {
     // 상품 수집(2026-11-24, v2) — 사실·이미지는 큐의 product_extract 오더로 내려간다(LOW·자동승인).
+    productPayload = hubProductExtractPayload_(payload);
+    /* 12시간 중복 억제(v3) — 같은 (brand+url)이면 오더를 만들지 않고 기존 카드를 알려 준다. */
+    if (productPayload.force !== true) {
+      const hit = productDedupCheck_(productPayload.brand, productPayload.url, nowMs_());
+      if (hit.hit) {
+        const mins = Math.max(1, Math.ceil((PRODUCT_DEDUP_WINDOW_MS_ - (nowMs_() - hit.at)) / 60000));
+        throw createAppError_('ERR_PRODUCT_DUPLICATE',
+          '같은 상품을 12시간 안에 이미 수집했습니다 — 기존 카드 ' + (hit.card_id || '') + ' 를 쓰거나, 강제 재수집(force)으로 다시 보내 주세요(오더는 만들어지지 않았습니다).',
+          { card_id: hit.card_id, collected_at: new Date(hit.at).toISOString(), minutes_left: mins, url_hash: productUrlHash_(productPayload.url), window_hours: 12 });
+      }
+    }
     body = {
       key: token,
       action: 'queue_enqueue',
       type: 'product_extract',
       workspace: workspace,
-      payload: hubProductExtractPayload_(payload)
+      payload: productPayload
     };
   } else {
     prompt = hubOrderPrompt_(type, payload);
@@ -956,6 +1046,7 @@ function handleHubOrder_(ss, payload, ctx) {
   }
 
   const queueType = isProduct ? 'product_extract' : (isDraft ? 'content_draft' : (realRender ? 'content_render' : 'claude_prompt'));
+  if (isProduct && productPayload) productDedupWrite_(productPayload.brand, productPayload.url, productPayload.content_id, nowMs_());
   const out = hubOrderResult_(json, type, workspace, prompt, queueType,
     realRender ? (body.payload.cuts ? body.payload.cuts.length : 0) : undefined,
     realRender ? { captions: (body.payload.captions || []).length, narration: (body.payload.narration || []).length, pace: body.payload.pace || '' } : undefined);

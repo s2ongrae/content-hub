@@ -110,6 +110,13 @@
 .st-check.warn { border-color: var(--warn); color: var(--warn); }
 .st-check.fail { border-color: var(--danger); color: var(--danger); }
 
+/* ── 클립 트랙·고정댓글(v3, 2026-11-24) ── */
+.st-track-note { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.st-track-note p { margin: 0; }
+.st-pin { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line-soft); }
+.st-pin h4 { margin: 0 0 4px; font-size: 12.5px; color: var(--tx-2); }
+.st-pin .st-pre { margin: 0 0 6px; }
+
 /* ── 4:5 카드 미리보기 ── */
 .st-cards { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 8px; }
 @media (min-width: 520px) { .st-cards { grid-template-columns: 1fr 1fr; } }

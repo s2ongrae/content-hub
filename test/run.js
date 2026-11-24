@@ -1766,6 +1766,62 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: hub_order 로 product_extract 를 보낸다', /api\.post\('hub_order'/.test(pvSrc) && /productExtractRequest\(/.test(pvSrc));
     ok('화면: 결과를 카드에서 다시 읽는다(get_content_detail)', /api\.getContentDetail\(cardId\)/.test(pvSrc));
     ok('화면: 카드 번호를 남겨 다시 눌러도 같은 카드', /LS_CARD/.test(pvSrc) && /createContent\(/.test(pvSrc));
+
+    /* v3(2026-11-24) — 클립 공식 대가성 문구 분리 · 트랙 · 12시간 중복 억제 */
+    ok('클립 공식 문구는 네이버 지정 문장 그대로', P.SC_NOTICE_CLIP === '이 포스팅은 네이버 쇼핑 커넥트 활동의 일환으로, 판매 발생 시 수수료를 제공받습니다.', P.SC_NOTICE_CLIP);
+    ok('일반 제휴 문구와 분리돼 있다', P.AFFILIATE_NOTICE !== P.SC_NOTICE_CLIP && P.AFFILIATE_NOTICE.indexOf('제휴 링크') >= 0);
+
+    const tCommerce = P.trackRules('commerce');
+    const tChallenge = P.trackRules('challenge');
+    eq('트랙: 모르는 값은 수익화로(안전한 쪽)', P.normalizeTrack('zzz'), 'commerce');
+    ok('트랙 B: 고정댓글 = 공식 문장', tCommerce.pinned_comment === P.SC_NOTICE_CLIP);
+    ok('트랙 B: 챌린지 태그·내돈내산 금지 안내', tCommerce.forbidden.indexOf(P.CLIP_CHALLENGE_TAG) >= 0 && tCommerce.forbidden.indexOf('내돈내산') >= 0);
+    ok('트랙 A: 고정댓글 없음 + 쇼핑커넥트 태그 금지', tChallenge.pinned_comment === '' && tChallenge.forbidden.join(',').indexOf('쇼핑커넥트') >= 0);
+    ok('트랙 A: 필수에 #오늘클립챌린지·정보 태그', tChallenge.required.join(',').indexOf(P.CLIP_CHALLENGE_TAG) >= 0 && tChallenge.required.join(',').indexOf('정보 태그') >= 0);
+
+    const dCommerce = P.descriptionBlocks(facts, { track: 'commerce' });
+    ok('수익화 설명란: 본문에 대가성 문구를 넣지 않는다(고정댓글 전용)', dCommerce.notice === '' && dCommerce.text.indexOf(P.SC_NOTICE_CLIP) < 0, dCommerce.text);
+    ok('수익화 설명란: 고정댓글 문구를 따로 돌려준다', dCommerce.pinned_comment === P.SC_NOTICE_CLIP && dCommerce.ad_label === '[광고]');
+    ok('수익화 설명란: 챌린지 태그 없음', dCommerce.text.indexOf(P.CLIP_CHALLENGE_TAG) < 0, dCommerce.text);
+    ok('수익화 설명란: 마지막 행동이 상품 태그 CTA', /상품 태그 확인/.test(dCommerce.text), dCommerce.text);
+    ok('수익화 설명란: 트랙 검사 통과', dCommerce.warnings.length === 0, dCommerce.warnings);
+
+    const dChallenge = P.descriptionBlocks(facts, { track: 'challenge' });
+    ok('챌린지 설명란: 해시태그 1번이 #오늘클립챌린지', dChallenge.text.split('\n\n').pop().indexOf(P.CLIP_CHALLENGE_TAG) === 0, dChallenge.text.split('\n\n').pop());
+    ok('챌린지 설명란: 쇼핑커넥트·고정댓글 없음', dChallenge.text.indexOf('쇼핑커넥트') < 0 && dChallenge.pinned_comment === '');
+    ok('챌린지에 협찬이면 일반 표기를 본문에', P.descriptionBlocks(facts, { track: 'challenge', affiliate: true }).notice === P.AFFILIATE_NOTICE);
+
+    ok('검사: 수익화에 챌린지 태그면 잡는다', P.trackWarnings({ track: 'commerce', text: '#오늘클립챌린지 #상품', pinned: P.SC_NOTICE_CLIP }).length === 1);
+    ok('검사: 수익화에 내돈내산이면 잡는다', P.trackWarnings({ track: 'commerce', text: '#상품', pinned: P.SC_NOTICE_CLIP }).length === 0
+      && P.trackWarnings({ track: 'commerce', text: '내돈내산 후기', pinned: P.SC_NOTICE_CLIP }).length === 1);
+    ok('검사: 고정댓글 문구가 없으면 알린다', P.trackWarnings({ track: 'commerce', text: '#상품', pinned: '' }).some((m) => /고정댓글/.test(m)));
+    ok('검사: 챌린지에 쇼핑커넥트 태그면 잡는다', P.trackWarnings({ track: 'challenge', text: '#오늘클립챌린지 쇼핑커넥트 태그' }).length === 1);
+
+    const reqC = P.productExtractRequest(facts, { content_id: 'CH-P3', brand: 'daejeon_youth', url: 'https://smartstore.naver.com/x/products/3', track: 'challenge' });
+    ok('오더: 트랙이 실린다(기본 수익화·force false)', reqC.track === 'challenge' && reqC.force === false, { track: reqC.track, force: reqC.force });
+    ok('오더: force 는 요청할 때만 true', P.productExtractRequest(facts, { content_id: 'CH-P3', url: 'https://smartstore.naver.com/x/products/3', force: true }).force === true);
+    ok('오더: 트랙이 붙어도 큐 한도 이내', JSON.stringify(reqC).length <= P.PRODUCT_PAYLOAD_LIMIT, JSON.stringify(reqC).length);
+
+    ok('URL 해시: 쿼리가 달라도 같은 상품', P.urlHash('https://smartstore.naver.com/x/products/3?NaPm=1') === P.urlHash('https://smartstore.naver.com/x/products/3/'));
+    ok('URL 해시: 다른 상품은 다른 해시', P.urlHash('https://smartstore.naver.com/x/products/3') !== P.urlHash('https://smartstore.naver.com/x/products/4'));
+    const now = Date.parse('2026-11-24T12:00:00+09:00');
+    ok('중복: 11시간 59분 전 수집은 막는다', P.dedupState({ content_id: 'C1', at: new Date(now - 11 * 3600e3 - 59 * 60e3).toISOString() }, now).blocked === true);
+    ok('중복: 12시간이 지나면 통과', P.dedupState({ content_id: 'C1', at: new Date(now - 12 * 3600e3).toISOString() }, now).blocked === false);
+    ok('중복: 기록이 없으면 통과', P.dedupState(null, now).blocked === false);
+    ok('중복: 남은 시간을 분으로 알린다', P.dedupState({ content_id: 'C1', at: new Date(now - 3600e3).toISOString() }, now).minutes_left === 660);
+    ok('중복: 기존 카드를 같이 돌려준다', P.dedupState({ content_id: 'C1', at: new Date(now - 3600e3).toISOString() }, now).content_id === 'C1');
+
+    ok('화면: 트랙 선택(A/B)이 있다', /PRODUCT_TRACKS/.test(pvSrc) && /trackRules\(track\)/.test(pvSrc) && /writeTrack/.test(pvSrc));
+    ok('화면: [고정댓글 문구 복사] 버튼', /고정댓글 문구 복사/.test(pvSrc) && /SC_NOTICE_CLIP/.test(pvSrc));
+    ok('화면: 중복이면 기존 카드로 안내 + 강제 재수집', /ERR_PRODUCT_DUPLICATE/.test(pvSrc) && /강제로 다시 수집/.test(pvSrc) && /showDuplicate/.test(pvSrc));
+    ok('화면: 오더에 트랙·force 를 싣는다', /track: track, force: force/.test(pvSrc));
+
+    const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('스튜디오 카드: 고정댓글 복사 버튼', /draft\.pinned_comment/.test(csSrc) && /고정댓글 문구 복사/.test(csSrc));
+    ok('스튜디오 카드: 카드에서 대본·트랙을 먼저 읽는다', /loadCardDraft/.test(csSrc) && /product\.track/.test(csSrc));
+    const ordSrc = fs.readFileSync(path.join(ROOT, 'gas', 'Orders.gs'), 'utf8');
+    ok('GAS: 중복이면 오더를 만들지 않는다(ERR_PRODUCT_DUPLICATE)', /ERR_PRODUCT_DUPLICATE/.test(ordSrc) && /PRODUCT_DEDUP_WINDOW_MS_/.test(ordSrc));
+    ok('GAS: 트랙·force 허용 키', /'track', 'force'/.test(ordSrc));
   } catch (err) {
     ok('상품 링크 시험', false, (err && err.stack) || err);
   }
