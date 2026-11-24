@@ -21,6 +21,14 @@ export const OWN_MONEY_RE = /내돈내산/g;
 export const PROFIT_LINK_RE = /(https?:\/\/[^\s]*(?:(?:connect|shopping)\.naver\.com|smartstore\.naver\.com|brand\.naver\.com|naver\.me\/|link\.coupang\.com|coupang\.com\/vp|partners\.coupang\.com|aliexpress\.com\/item)[^\s]*)/gi;
 export const NATIVE_FEATURE_RE = /(내돈내산|글감|블로그씨|미션위젯|챌린지\s*프로그램|위젯)/;
 
+/**
+ * 제휴(수익) 고지 문구 — 네이버 쇼핑 커넥트·쿠팡파트너스 글이 본문에 반드시 남기는 문장.
+ * 2026-11-24 추가: 이 문장은 “경제적 대가를 제공받아 작성”과 다른 종류의 고지인데,
+ * 기존 PAID_HINT_RE 의 `제공받` 이 이 문장을 체험·협찬 대가로 오인해서
+ * 제휴 글이 늘 “대가 표시 없음” 경고를 달았다(DY-20261119-001 실측).
+ */
+export const PROFIT_NOTICE_RE = /(쇼핑\s*커넥트|크리에이터샵|커넥트\s*활동|쿠팡\s*파트너스|파트너스\s*활동|수수료를?\s*(?:제공|지급)\s*받|일정액의?\s*수수료|제휴\s*마케팅)/;
+
 const head400 = (body) => [...String(body || '')].slice(0, 400).join('');
 
 /**
@@ -31,7 +39,10 @@ const head400 = (body) => [...String(body || '')].slice(0, 400).join('');
  */
 export function analyzeCompliance(body) {
   const text = String(body || '');
-  const paid = PAID_HINT_RE.test(text);
+  /* 제휴 고지 문장은 빼고 '대가 표현'을 센다 — 제휴 고지는 수수료 고지이지 체험·협찬 대가가 아니다. */
+  const paidText = text.split('\n').filter((l) => !PROFIT_NOTICE_RE.test(l)).join('\n');
+  const paid = PAID_HINT_RE.test(paidText);
+  const profitNotice = PROFIT_NOTICE_RE.test(text);
   const noticeAnywhere = PAID_NOTICE_RE.test(text);
   const noticeTop = PAID_NOTICE_RE.test(head400(text));
   const ownMoney = (text.match(OWN_MONEY_RE) || []).length;
@@ -47,7 +58,7 @@ export function analyzeCompliance(body) {
   if (conflict) state = 'conflict';
   else if (paid && !noticeAnywhere) state = 'needs_notice';
   else if (paid && noticeAnywhere && !noticeTop) state = 'notice_late';
-  return { paid, noticeTop, noticeAnywhere, ownMoney, profitLinks, conflict, state };
+  return { paid, profitNotice, noticeTop, noticeAnywhere, ownMoney, profitLinks, conflict, state };
 }
 
 /** 본문 맨 앞에 대가성 문구를 넣는다. 이미 표기가 있으면 그대로 돌려준다(멱등). */
@@ -88,6 +99,7 @@ export function complianceLine(analysis) {
   if (a.state === 'conflict') return '⛔ 내돈내산 인증 + 제휴 링크가 한 글에 있습니다 — 둘 중 하나를 빼야 합니다(운영정책·표시광고법)';
   if (a.state === 'needs_notice') return '⚠️ 대가를 받은 글인데 표시 문구가 없습니다 — 맨 위에 자동으로 넣었습니다';
   if (a.state === 'notice_late') return '⚠️ 표시 문구가 본문 뒤쪽에 있습니다 — 맨 위로 옮기세요';
+  if (a.profitNotice && (a.profitLinks.length || a.ownMoney === 0)) return '✅ 제휴(수익) 고지 문구 있음 — 내돈내산 인증만 붙이지 마세요';
   if (a.ownMoney) return '✅ 내돈내산 인증 글 — 제휴 링크 없이 유지하세요';
   if (a.profitLinks && a.profitLinks.length) return 'ℹ️ 제휴 링크 글이면 내돈내산 인증을 붙이지 마세요';
   return '✅ 표시·충돌 문제 없음';
@@ -180,5 +192,5 @@ export function mergePasteSteps(steps, native) {
 }
 
 if (typeof window !== 'undefined') {
-  window.BlogCompliance = { analyzeCompliance, withDisclosureNote, stripProfitLinks, stripOwnMoney, nativeSteps, DISCLOSURE_TEXT };
+  window.BlogCompliance = { analyzeCompliance, withDisclosureNote, stripProfitLinks, stripOwnMoney, nativeSteps, DISCLOSURE_TEXT, PROFIT_NOTICE_RE };
 }

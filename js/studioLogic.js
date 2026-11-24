@@ -12,8 +12,8 @@
  */
 
 import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261123c';
-import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261123c';
-import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124';
+import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261124';
+import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 

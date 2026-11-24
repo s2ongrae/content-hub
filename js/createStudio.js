@@ -25,8 +25,8 @@ import {
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
 } from './studioLogic.js?v=20261124';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261123c';
-import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261123c';
-import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124';
+import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261124';
+import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
 import { lintAiTone } from './blogAiTone.js?v=20261123c';
 import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261123c';
 import { paintAiClip } from './aiClip.js?v=20261123c';

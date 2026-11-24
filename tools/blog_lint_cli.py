@@ -59,16 +59,23 @@ DEFAULT_LEXICON = [
     "삼겹살", "칼국수", "고기", "맛집", "술집", "해장", "제육", "혼밥", "주차",
 ]
 
-INFO_HEAD_RE = re.compile("^(?:\U0001F4CD|\u23F0|\U0001F697|\U0001F4B0|\U0001F4DE|\u260E|\U0001F4CC|\u2714|\U0001F551|\U0001F550|\U0001F552|\U0001F17F|\u23F3|\U0001F374|\U0001F699|\U0001F39F)")
+INFO_HEAD_RE = re.compile("^(?:\U0001F4CD|\u23F0|\U0001F697|\U0001F4B0|\U0001F4CA|\U0001F4C8|\U0001F3E6|\U0001F4A1|\U0001F4B3|\U0001F4DE|\u260E|\U0001F4CC|\u2714|\U0001F551|\U0001F550|\U0001F552|\U0001F17F|\u23F3|\U0001F374|\U0001F699|\U0001F39F)")
 CAPTION_HEAD_RE = re.compile(r"^(?:\u25B2|\u25B3)")
 HASHTAG_LINE_RE = re.compile(r"^#[^\s#]+(?:\s+#[^\s#]+)*$")
 PHOTO_MARK_RE = re.compile(r"^(?:\[(?:사진|\U0001F4F8)[^\]]*\]|!\[[^\]]*\]\([^)]*\))$")
 IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+LINK_CARD_RE = re.compile(r"^\[LINK_CARD:[^\]]*\]$")
+LINK_CARD_TOKEN_RE = re.compile(r"\[LINK_CARD:[^\]]*\]")
+PHOTO_LINE_RE = re.compile(r"^\[(?:사진|📸)[^\]]*\]$")
+SUBHEAD_RE = re.compile(r"^(?:[▍■◆▶▸]|\*\*|#{1,6}\s|\d{1,2}[.)]\s|[①-⑳]|※)")
+FOOD_HINT_RE = re.compile(r"(맛집|고기|술집|카페|식당|삼겹|오겹|국수|칼국수|해장|제육|혼밥|주차|야장|꼬치|찜|탕|분식|베이|디저트|와인|호프|파스타)")
+# 2026-11-24: 정보 카드 머리 확장(📊🏦💡) — js/blogTone.js INFO_HEAD_RE 와 같은 목록
+
 HTML_ONLY_RE = re.compile(r"^</?(img|br|div|p|figure|figcaption)\b", re.I)
 TAG_RE = re.compile(r"#[^\s#.,!?()\[\]{}\"'<>]+")
 INFO_PATTERNS = [
     ("동", re.compile(r"[가-힣]{2,}동")),
-    ("도로명", re.compile(r"[가-힣]{2,}로\s?\d|[가-힣]{2,}로\b")),
+    ("도로명", re.compile(r"[가-힣]{2,}(?:로|길)\s?\d")),
     ("시·구", re.compile(r"[가-힣]{2,}(시|구)\s")),
     ("시간", re.compile(r"\d{1,2}\s?:\s?\d{2}")),
     ("전화", re.compile(r"0\d{1,2}[-)\s]\s?\d{3,4}\s?-\s?\d{4}")),
@@ -171,6 +178,63 @@ def hashtags_of(body: str, extra: str) -> list[str]:
     return out
 
 
+PAID_HINT_RE = re.compile(r"(체험단|협찬|제공\s*받|무상\s*으로?\s*제공|서비스\s*이용권|제품을\s*제공|원고료|광고비)")
+PAID_NOTICE_RE = re.compile(r"(경제적\s*대가|제공\s*받아\s*작성|대가를\s*받|무상으로\s*제공\s*받|협찬\s*받아\s*작성|본\s*게시물은.{0,20}제공\s*받)")
+PROFIT_NOTICE_RE = re.compile(r"(쇼핑\s*커넥트|크리에이터샵|커넥트\s*활동|쿠팡\s*파트너스|파트너스\s*활동|수수료를?\s*(?:제공|지급)\s*받|일정액의?\s*수수료|제휴\s*마케팅)")
+OWN_MONEY_RE = re.compile(r"내돈내산")
+PROFIT_LINK_RE = re.compile(r"https?://[^\s]*(?:(?:connect|shopping)\.naver\.com|smartstore\.naver\.com|brand\.naver\.com|naver\.me/|link\.coupang\.com|coupang\.com/vp|partners\.coupang\.com|aliexpress\.com/item)[^\s]*", re.I)
+NATIVE_FEATURE_RE = re.compile(r"(내돈내산|글감|블로그씨|미션위젯|챌린지\s*프로그램|위젯)")
+
+
+def _compliance(body: str) -> dict:
+    """공개 표시 3항목 — js/blogCompliance.js analyzeCompliance 와 같은 판정."""
+    text = str(body or "")
+    paid_text = "\n".join(l for l in text.split("\n") if not PROFIT_NOTICE_RE.search(l))
+    return {
+        "paid": bool(PAID_HINT_RE.search(paid_text)),
+        "profit_notice": bool(PROFIT_NOTICE_RE.search(text)),
+        "notice_anywhere": bool(PAID_NOTICE_RE.search(text)),
+        "notice_top": bool(PAID_NOTICE_RE.search(text[:400])),
+        "own_money": len(OWN_MONEY_RE.findall(text)),
+        "profit_links": list(dict.fromkeys(PROFIT_LINK_RE.findall(text))),
+        "conflict": bool(OWN_MONEY_RE.search(text)) and bool(PROFIT_LINK_RE.search(text)),
+        "native": bool(NATIVE_FEATURE_RE.search(text)),
+    }
+
+
+def _keyword_tokens(keywords: list[str]) -> list[str]:
+    """키워드 문구 전체 + 낱말 단위 — "스마트스토어 개인판매자 개설" → "스마트스토어"."""
+    out: list[str] = []
+    for k in keywords or []:
+        k = (k or "").strip()
+        if not k:
+            continue
+        if k not in out:
+            out.append(k)
+        for w in k.split():
+            if len(w) >= 2 and w not in out:
+                out.append(w)
+    return out
+
+
+def _is_place_post(title: str, keywords: list[str], lexicon: list[str]) -> bool:
+    """지역 + 메뉴(고기·술집·카페…)가 함께 있는 '장소 글'인가. 아니면 맛집 기준을 강제하지 않는다."""
+    text = f"{title or ''} {' '.join(keywords or [])}"
+    region = any(w in text for w in (lexicon or []))
+    return bool(region and FOOD_HINT_RE.search(text))
+
+
+def _is_structural_line(line: str) -> bool:
+    s = (line or "").strip()
+    if not s:
+        return True
+    if HASHTAG_LINE_RE.match(s) or LINK_CARD_RE.match(s) or PHOTO_LINE_RE.match(s) or PHOTO_MARK_RE.match(s):
+        return True
+    if SUBHEAD_RE.match(s) or s[0] in "━─╌":
+        return True
+    return False
+
+
 def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
           keywords: list[str], t: dict, lexicon: list[str], core: list[str]) -> tuple[str, str, str]:
     """(state, value, note) — state 는 pass / near / warn"""
@@ -178,12 +242,15 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
         win = title[: t["title_window"]]
         if not win:
             return "warn", "제목 없음", "제목을 넣어 주세요"
-        hit = [k for k in keywords if k and k in win] or [w for w in lexicon if w in win]
+        tokens = _keyword_tokens(keywords)
+        hit = [k for k in tokens if k and k in win] or [w for w in lexicon if w in win]
         if hit:
             return "pass", win, f"앞 {t['title_window']}자에 \"{hit[0]}\""
         later = [w for w in lexicon if w in title]
         if later:
             return "near", win, f"지역·메뉴가 \"{later[0]}\" 뒤쪽에 있음 — 앞으로 당기세요"
+        if not _is_place_post(title, keywords, lexicon):
+            return "near", win, "주제어를 앞 14자에 — 지역·메뉴 글이 아니어서 경고는 아니에요"
         return "warn", win, "지역명·메뉴명이 앞 14자에 없음"
 
     if rule_id == "title_len":
@@ -204,6 +271,8 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
             return "pass", "·".join(hit), f"앞 {t['first_screen_chars']}자에 {len(hit)}종"
         if hit:
             return "pass", hit[0], "1종(권장 3종: 위치·영업·주차)"
+        if not _is_place_post(title, keywords, lexicon):
+            return "near", "해당 없음", "장소 글이 아니어서 위치·영업 정보는 필요 없습니다"
         return "warn", "없음", "주소·영업시간·전화가 첫 화면에 없음"
 
     if rule_id == "body_len":
@@ -266,9 +335,12 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
         blank_max = float(t.get("layout_blank_ratio_max", 0.5))
         groups = layout_groups(body)
         kinds = [layout_kind(g) for g in groups]
-        over = sum(1 for l in lines if len(l) > line_max)
+        # 2026-11-24: 해시태그·링크카드·사진·소제목·구분선은 글자 길이·덩어리 판정에서 뺀다(js/blogLint.js 와 같음)
+        over = sum(1 for l in lines if not _is_structural_line(l) and len(l) > line_max)
         info_gap = sum(1 for i, k in enumerate(kinds) if i > 0 and k == "info" and kinds[i - 1] == "info")
-        orphans = sum(1 for i, g in enumerate(groups) if len(g) == 1 and kinds[i] == "prose")
+        orphans = sum(1 for i, g in enumerate(groups)
+                      if len(g) == 1 and kinds[i] == "prose"
+                      and not _is_structural_line(g[0]) and not g[0].strip().startswith(("(", "[", "（")))
         all_lines = str(body or "").replace("\r\n", "\n").split("\n")
         blank_ratio = (sum(1 for l in all_lines if not l.strip()) / len(all_lines)) if all_lines else 0
         bad = []
@@ -289,25 +361,92 @@ def judge(rule_id: str, title: str, body: str, photos: int, tags: list[str],
     if rule_id == "hashtags":
         n = len(tags)
         lo, hi = t["hashtag_count"]
+        place = _is_place_post(title, keywords, lexicon)
         required = core[: t["core_tags_required"]]
         missing = [c for c in required if c not in tags]
-        label = f"{n}개" + (f" · 빠진 핵심 {len(missing)}" if missing else " · 핵심 OK")
+        strict = place          # 장소 글일 때만 핵심 태그를 강제한다(2026-11-24)
+        label = f"{n}개" + (f" · 빠진 핵심 {len(missing)}" if (missing and strict) else "")
         if n > t["hashtag_warn_over"]:
             return "warn", label, "15개 초과 — 무관 태그는 스팸 필터 위험"
-        if len(missing) >= 2:
-            return "warn", label, "핵심 태그 " + "·".join(missing) + " 빠짐"
-        if lo <= n <= hi and not missing:
-            return "pass", label, f"권장 10~12개 · 핵심 {len(required)}개 포함"
         if n == 0:
             return "warn", label, "본문 끝에 해시태그를 붙이세요"
+        if strict and len(missing) >= 2:
+            return "warn", label, "핵심 태그 " + "·".join(missing) + " 빠짐"
+        if lo <= n <= hi and (not missing or not strict):
+            return "pass", label, (f"권장 10~12개 · 핵심 {len(required)}개 포함" if strict else "권장 10~12개")
         if n < lo:
             return "near", label, f"{lo - n}개 부족"
         if n > hi:
             return "near", label, f"{n - hi}개 초과"
         return "near", label, "핵심 태그 1개 빠짐"
 
+    if rule_id == "link_card":
+        stripped = LINK_CARD_TOKEN_RE.sub("", body)
+        cards = len(LINK_CARD_TOKEN_RE.findall(body))
+        if re.search(r"https?://", stripped):
+            return "warn", "줄글 URL 있음", "링크 카드로 바꾸세요"
+        if cards == 0:
+            return "near", "카드 0개", "관련 내 글 1개를 링크 카드로 넣으세요"
+        if cards > 2:
+            return "warn", f"{cards}개", "링크 카드는 1~2개를 권장합니다"
+        return "pass", f"{cards}개", "카드 1개 = URL 1개"
+
+    if rule_id == "link_anchor":
+        bad, n = [], 0
+        for m in LINK_CARD_TOKEN_RE.finditer(body):
+            n += 1
+            before = [x.strip() for x in body[: m.start()].split("\n") if x.strip()]
+            prev = re.sub(r"^[>*\-\s]+", "", before[-1]) if before else ""
+            if len(prev) < 5 or re.search(r"여기|링크|클릭|참고|바로가기", prev):
+                bad.append(prev or "(설명 없음)")
+        if not n:
+            return "near", "카드 없음", "카드 앞에 글 제목을 그대로 쓴 한 줄을 두세요"
+        if bad:
+            return "warn", f"{len(bad)}건", "카드 앞 설명에 글 핵심 주제를 적으세요"
+        return "pass", "OK", "카드 앞 한 줄 설명 있음"
+
+    if rule_id == "link_embed_hint":
+        n = len(LINK_CARD_TOKEN_RE.findall(body))
+        if not n:
+            return "near", "—", "카드가 없으면 안내도 필요 없습니다"
+        return "pass", "안내 표시", "URL 붙여넣고 Enter → 카드만 남기기"
+
+    if rule_id in ("disclosure_paid", "own_money_conflict", "native_features"):
+        a = _compliance(body)
+        if rule_id == "disclosure_paid":
+            if a["paid"]:
+                if a["notice_top"]:
+                    return "pass", "상단 표기 있음", "앞 400자에 경제적 대가 표기"
+                if a["notice_anywhere"]:
+                    return "near", "본문 뒤쪽 표기", "표시는 본문 맨 위(앞 400자)에 두세요"
+                return "warn", "표기 없음", "대가를 받은 글은 본문 맨 위에 “경제적 대가를 제공받아 작성” 문구를 넣으세요"
+            if a["profit_notice"]:
+                return "pass", "제휴 고지 있음", "쇼핑 커넥트·파트너스 고지 문구 — ‘대가 표시’는 따로 필요 없습니다"
+            return "near", "대가 표현 없음", "체험·협찬 글에만 표시가 필요합니다"
+        if rule_id == "own_money_conflict":
+            if a["conflict"]:
+                return "warn", f"내돈내산 {a['own_money']}회 + 수익 링크 {len(a['profit_links'])}개", "한 글에 함께 쓰면 운영정책·표시광고법 위반입니다 — 둘 중 하나를 빼세요"
+            if a["profit_links"]:
+                return "near", f"수익 링크 {len(a['profit_links'])}개", "제휴 링크 글은 내돈내산 인증을 붙이지 마세요"
+            if a["own_money"]:
+                return "pass", "내돈내산만", "수익 링크가 없어 함께 쓰기 위험 없음"
+            return "near", "해당 없음", "내돈내산 인증을 붙일 글인지 한 번 확인하세요"
+        if a["native"]:
+            return "pass", "흔적 있음", "네이버 네이티브 기능(내돈내산·글감·블로그씨·위젯) 중 하나를 씁니다"
+        return "near", "없음", "발행 전 확인: 내돈내산 인증 · 글감 카드 · 블로그씨 · 미션위젯"
+
     return "warn", "—", "알 수 없는 규칙"
 
+
+# 링크 카드 3 + 공개 표시 3 — 웹(#/lint)과 같은 항목. 가중치 0(점수에 넣지 않는다).
+EXTRA_RULES = [
+    {"id": "link_card", "label": "링크 카드", "weight": 0, "fix": "줄글 주소 대신 [LINK_CARD: URL] 표시로 바꾸세요."},
+    {"id": "link_anchor", "label": "링크 문구", "weight": 0, "fix": "카드 앞 한 줄에 글 제목을 그대로 쓰세요(여기·링크·클릭 금지)."},
+    {"id": "link_embed_hint", "label": "붙이는 순서", "weight": 0, "fix": "URL을 붙여넣고 Enter → 카드가 뜨면 남은 URL 글자를 지우세요."},
+    {"id": "disclosure_paid", "label": "대가 표시", "weight": 0, "policy": True, "fix": "대가를 받은 글은 본문 맨 위에 “경제적 대가를 제공받아 작성했습니다”를 텍스트로 넣으세요."},
+    {"id": "own_money_conflict", "label": "내돈내산·제휴", "weight": 0, "policy": True, "fix": "내돈내산 인증과 수익형 링크는 한 글에 같이 쓰지 마세요."},
+    {"id": "native_features", "label": "네이버 기능", "weight": 0, "policy": True, "fix": "내돈내산·글감·블로그씨·미션위젯 중 하나를 발행 전에 확인하세요."},
+]
 
 AI_TONE_DEFAULTS = {
     "version": "2026w48b",
@@ -704,12 +843,14 @@ def lint(title: str, body: str, photo_count: int | None, keyword_csv: str, rules
     tags = hashtags_of(body, "")
 
     items = []
-    for rule in rules["rules"]:
+    rules_all = list(rules["rules"]) + EXTRA_RULES
+    for rule in rules_all:
         state, value, note = judge(rule["id"], title, body, photos, tags, keywords, t, lexicon, core)
         items.append({
             "id": rule["id"],
             "label": rule.get("label") or rule["id"],
             "weight": float(rule.get("weight") or 0),
+            "policy": bool(rule.get("policy")),
             "state": state,
             "value": value,
             "note": note,
@@ -732,7 +873,7 @@ def lint(title: str, body: str, photo_count: int | None, keyword_csv: str, rules
     return {
         "version": rules.get("version"),
         "score": score,
-        "pass": all(it["state"] != "warn" for it in items),
+        "pass": all(not (it["state"] == "warn" and (it["weight"] > 0 or it.get("policy"))) for it in items),
         "items": items,
         "stats": stats,
         "aiTone": ai,

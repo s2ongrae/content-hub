@@ -11,7 +11,7 @@
  */
 
 import { api } from './api.js';
-import { applyBlogRhythm } from './blogTone.js?v=20261123c';
+import { applyBlogRhythm } from './blogTone.js?v=20261124';
 import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261123c';
 
 

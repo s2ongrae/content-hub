@@ -6,8 +6,8 @@
  * 초안은 이 브라우저에만 저장한다(새로고침해도 남게).
  */
 
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261124';
-import { analyzeCompliance, complianceLine, withDisclosureNote, stripProfitLinks, stripOwnMoney } from './blogCompliance.js?v=20261124';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261124b';
+import { analyzeCompliance, complianceLine, withDisclosureNote, stripProfitLinks, stripOwnMoney } from './blogCompliance.js?v=20261124b';
 
 const DRAFT_KEY = 'contenthub.lint_draft.v1';
 /* 카드에서 불러온 값은 수동 초안과 섞지 않는다(수동 메모가 지워지지 않게 별도 키). */

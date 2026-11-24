@@ -1826,6 +1826,78 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('상품 링크 시험', false, (err && err.stack) || err);
   }
 
+  /* [14] 블로그 카드 자동 반영 · 웹/CLI 판정 일치 (2026-11-24, docs/BLOG_CARD_AUTOMATION_v1.md)
+     같은 초안을 웹 린터(js/blogLint.js)와 CLI(tools/blog_lint_cli.py)에 넣어 항목별 판정이 같은지 본다.
+     어긋나면 #/lint 점수와 tools/blog_card_cli.py 가 쓰는 quality_score 가 달라진다. */
+  console.log('\n[14] 블로그 카드 자동 반영 · 웹/CLI 일치');
+  try {
+    const os = require('os');
+    const { spawnSync: run } = require('child_process');
+    const BL = await import('file://' + path.join(ROOT, 'js', 'blogLint.js'));
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'blog_lint_rules_2026w48.json'), 'utf8'));
+    const ruleSet = { targets: seed.targets || {}, coreTags: seed.coreTags, titleLexicon: seed.titleLexicon,
+      rules: seed.rules || [], aiTone: seed.aiTone || {}, version: seed.version || '2026w48' };
+
+    const fixture = [
+      '# [대전 괴정동 고기집] 진미오겹살, 집게 한 번 안 들고 먹은 후기',
+      '',
+      '안녕하세요, 대전 청년입니다.',
+      '고기집에서 누가 굽느냐로 눈치 싸움 해본 적 있나?',
+      '회식하는 직장인이든 데이트하는 커플이든, 집게를 잡은 사람은 고기를 못 먹는다.',
+      '결론부터 말하면 회식·데이트 장소로 괜찮다.',
+      '',
+      '📍 위치 : 대전 서구 용문로 41-80',
+      '⏰ 영업 : 매일 15:00 ~ 24:00',
+      '🚗 주차 : 건물 지하 2시간 무료',
+      '',
+      '▲ 골목에서 노란 간판이 먼저 보인다.',
+      '유리문에는 오후 3시부터 밤 00시까지라고 적혀 있다.',
+      '',
+      '1. 원금이 반토막 난 과정',
+      '제가 넣은 돈은 대략 1억 1,300만 원입니다.',
+      '지금 찍힌 평가 금액은 약 5,800만 원입니다.',
+      '',
+      '이 포스팅은 네이버 쇼핑 커넥트 활동의 일환으로,',
+      '판매 발생 시 수수료를 제공받습니다.',
+      '',
+      '[LINK_CARD: https://blog.naver.com/youth-daejeon/224480755004]',
+      '',
+      '#대전맛집 #괴정동맛집 #진미오겹살 #진미오겹살본점 #대전오겹살 #괴정동고기집 #제주오겹살 #제주고기 #대전서구맛집 #대전청년 #괴정동'
+    ].join('\n');
+    const tmp = path.join(os.tmpdir(), 'ch-blogcard-' + process.pid + '.md');
+    fs.writeFileSync(tmp, fixture, 'utf8');
+
+    const title = fixture.split('\n')[0].replace(/^#\s*/, '');
+    const body = fixture.split('\n').slice(1).join('\n').trim();
+    const js = BL.lintBlog({ title, body, photoCount: 7, keywords: '대전 괴정동 맛집, 진미오겹살' }, ruleSet);
+
+    const py = run('python3', [path.join(ROOT, 'tools', 'blog_lint_cli.py'), tmp, '--photo', '7',
+      '--keyword', '대전 괴정동 맛집, 진미오겹살', '--json'], { encoding: 'utf8' });
+    ok('CLI 실행', py.status === 0 || py.status === 1, (py.stderr || '').slice(0, 200));
+    const cli = JSON.parse(py.stdout || '{}');
+    eq('웹/CLI 점수 일치', cli.score, js.score);
+    const jmap = {};
+    (js.items || []).forEach((i) => { jmap[i.id] = i.state; });
+    const diffs = (cli.items || []).filter((i) => jmap[i.id] !== i.state).map((i) => i.id + ':' + i.state + '/' + jmap[i.id]);
+    ok('웹/CLI 항목 판정 일치', diffs.length === 0, diffs.join(' '));
+    ok('웹/CLI 항목 수 15', (cli.items || []).length === 15 && (js.items || []).length === 15, (cli.items || []).length + '/' + (js.items || []).length);
+
+    /* 2026-11-24 규칙 보정 — 해시태그 한 줄은 길이 초과로 세지 않는다 */
+    const ll = (js.items || []).filter((i) => i.id === 'line_layout')[0] || {};
+    ok('해시태그·소제목은 줄바꿈 감점에서 빠진다', !/54자 초과/.test(String(ll.value)) , ll.value);
+    /* 제휴 고지 문장은 대가 표시 경고로 이어지지 않는다 */
+    const dp = (js.items || []).filter((i) => i.id === 'disclosure_paid')[0] || {};
+    ok('쇼핑 커넥트 고지를 제휴 고지로 본다', dp.state === 'pass', dp.value + ' / ' + dp.state);
+    /* 장소 글이 아니면 맛집 핵심 태그를 강제하지 않는다 */
+    const nonPlace = BL.lintBlog({ title: '[스마트스토어 개설] 무재고 위탁판매 : 30분', body: '본문입니다.\n\n#스마트스토어개설 #무재고위탁판매 #직장인부업 #대전직장인 #묶음 #태그 #여섯 #일곱 #여덟 #아홉', photoCount: 7 }, ruleSet);
+    const ht = (nonPlace.items || []).filter((i) => i.id === 'hashtags')[0] || {};
+    ok('맛집 글이 아니면 핵심 태그 경고 없음', ht.state !== 'warn', ht.value + ' / ' + ht.state);
+    ok('CLI 도구가 있다', fs.existsSync(path.join(ROOT, 'tools', 'blog_card_cli.py')));
+    try { fs.unlinkSync(tmp); } catch (e) { /* 지워지지 않아도 시험 결과와 무관 */ }
+  } catch (err) {
+    ok('블로그 카드 자동 반영 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();

@@ -29,6 +29,9 @@
    (`취재→새 콘텐츠·초안`, `역삽입→블로그 주소 달기`, `무결성 점검→시트·파일 점검`, `콜드스타트→초기 세팅`, `린터→글 점검`, `메타→정보`).
    **탭 이름·상태·행동 버튼은 [`docs/UI_TERMS_v1.md`](docs/UI_TERMS_v1.md) 표가 기준**이고, `test/run.js [12]`가 옛 용어가 돌아오면 실패한다.
 10. **PWA는 manifest + 192/512 아이콘까지.** `tools/make_icons.py`로 아이콘을 다시 만들고, **Service Worker는 넣지 않는다**(캐시 꼬임).
+11. **블로그 초안은 카드·린트까지 한 번에 (2026-11-24)** — 초안을 만들었으면 `tools/blog_card_cli.py --apply`로
+   본문·`blog.lint`·`quality_score`를 카드에 남긴다. CLI 판정은 웹 `#/lint`와 같아야 하고 `test/run.js [14]`가 확인한다
+   ([`docs/BLOG_CARD_AUTOMATION_v1.md`](docs/BLOG_CARD_AUTOMATION_v1.md)). 발행은 자동으로 누르지 않는다.
 
 ## 판단 기준 (콘텐츠)
 

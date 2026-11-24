@@ -144,6 +144,17 @@
 - 라우터에 화면을 추가하면 `index.html`의 탭(`data-route`)과 `js/app.js`의 렌더 맵 두 곳을 같이 고친다.
 - 톤: 사용자는 "짜치다"(유행·감성 부족)에 민감하다. 카드·뱃지·이모지를 더 얹기보다 여백·정렬·색을 다듬는다.
 
+## 10. 블로그 초안 → 허브 카드 (2026-11-24, 자동으로 삭삭)
+
+- 초안을 만들었으면 **같은 작업 안에서** `python3 tools/blog_card_cli.py draft.md --card <id> --photo N --env hub.env --apply`까지 돌린다.
+  이 한 번으로 ①린트 ②카드 반영(본문·제목·해시태그) ③`blog.lint`·`quality_score` 기록이 끝난다(새 글이면 `--new --place`).
+- 도구는 `tools/blog_lint_cli.py`의 `lint()`를 쓰고, 그 판정은 웹 `#/lint`(`js/blogLint.js`)와 같아야 한다 —
+  `test/run.js [14]`가 같은 초안으로 두 곳을 돌려 점수·항목이 어긋나면 실패한다.
+- 린터 15항목 = 9항목(가중치 있음) + 링크 카드 3 + 공개 표시 3(가중치 0, 정책 경고는 `pass`를 막음).
+- 세부 규칙·보정 내역·남는 경고: [`docs/BLOG_CARD_AUTOMATION_v1.md`](docs/BLOG_CARD_AUTOMATION_v1.md) · [`docs/BLOG_STANDARD_v4.md`](docs/BLOG_STANDARD_v4.md) · [`docs/BLOG_NATIVE_FEATURES_v1.md`](docs/BLOG_NATIVE_FEATURES_v1.md)
+- 발행은 절대 자동으로 누르지 않는다. 네이버 임시저장 글을 고칠 때는 사진·레이아웃이 깨질 수 있으니 **허브 카드에만** 반영하고,
+  임시저장에 반영해야 할 차이는 카드 `blog.edit_notes`에 적어 사용자에게 알린다.
+
 
 ## 에이전트 동시 작업 규칙 (피클·집 노트북·회사 PC 공통, 2026-11-19)
 
