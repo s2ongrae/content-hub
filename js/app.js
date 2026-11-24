@@ -18,6 +18,7 @@ import { getAnalytics } from './analyticsView.js?v=20261123k';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123k';
 import { renderCreateView } from './create-view.js?v=20261123k';
 import { renderCreateStudio } from './createStudio.js?v=20261124';
+import { renderProductView } from './productView.js?v=20261124';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123k';
 import { draftSection, draftPreview } from './draftView.js?v=20261123k';
 import { produceSection } from './produceView.js?v=20261123k';
@@ -540,7 +541,9 @@ function renderRoute() {
     board: renderBoard,
     approve: renderApprove,
     /* ＋ 만들기 = 제작 스튜디오. #/create/legacy 는 예전 채널 조립기(지우지 않고 남긴다) */
-    create: (main) => (routeSub === 'legacy' ? renderCreateView(main, ctx) : renderCreateStudio(main, ctx, { format: routeSub })),
+    create: (main) => (routeSub === 'legacy' ? renderCreateView(main, ctx)
+      : routeSub === 'product' ? renderProductView(main, ctx)
+        : renderCreateStudio(main, ctx, { format: routeSub })),
     capture: renderCapture,
     review: renderReview,
     perf: (main) => renderPerfView(main, ctx),

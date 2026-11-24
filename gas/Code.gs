@@ -238,6 +238,8 @@ const M1_HANDLERS = {
   // 원스톱 만들기 화면 (2026-11-18, O4) — gas/Orders.gs
   list_drive_media: handleListDriveMedia_,
   hub_order: handleHubOrder_,
+  // 상품 링크 1차 추출 (2026-11-24) — gas/Product.gs
+  product_fetch: handleProductFetch_,
   hub_order_status: handleHubOrderStatus_,
   upload_video_chunk: handleUploadVideoChunk_,
   upload_video_list: handleUploadVideoList_,

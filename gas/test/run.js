@@ -128,7 +128,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Result.gs', 'Blog.gs', 'BlogSeo.gs', 'Insight.gs', 'AiBrief.gs', 'Analytics.gs', 'PostDetail.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Result.gs', 'Blog.gs', 'BlogSeo.gs', 'Insight.gs', 'AiBrief.gs', 'Analytics.gs', 'PostDetail.gs', 'Product.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -2763,6 +2763,55 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
     const selfCheck = A.ctx.aiBriefSelfTest();
     eq3(selfCheck.ok, true, 'aiBriefSelfTest 정상 반환');
     eq3(JSON.stringify(selfCheck).indexOf('SECRET_SHOULD_NOT_LEAK'), -1, 'selfTest 응답에 키 값 미노출');
+  }
+})();
+
+
+/* ── 상품 링크 1차 추출 (2026-11-24, gas/Product.gs) ── */
+(() => {
+  const ok3 = (cond, name, extra) => ok(name, cond, extra);
+  const eq3 = (a, b, name) => eq(name, a, b);
+  try {
+    const P = loadGas();
+    const wl = ev(P.ctx, 'ACTION_WHITELIST');
+    const HM = ev(P.ctx, 'M1_HANDLERS');
+    ok3(wl.product_fetch && wl.product_fetch.mode === 'READ' && typeof HM.product_fetch === 'function', 'product_fetch 가 화이트리스트·핸들러에 있다');
+
+    const html = '<html><head>'
+      + '<meta property="og:title" content="14k 여자목걸이 &amp; 하트">'
+      + '<meta property="og:image" content="https://shop-phinf.pstatic.net/a.png">'
+      + '<meta property="og:description" content="14k 18k 하트 금 목걸이, 기념일 선물, 무료배송">'
+      + '<script type="application/ld+json">{"@type":"Product","name":"14k 여자목걸이","category":"주얼리","offers":{"price":227100},"aggregateRating":{"ratingValue":4.86,"reviewCount":2554}}</script>'
+      + '</head><body>리뷰 2,554건</body></html>';
+    let reply = { code: 200, body: html };
+    P.ctx.UrlFetchApp = { fetch: () => ({ getResponseCode: () => reply.code, getContentText: () => reply.body }) };
+
+    const r1 = callHandler(P.ctx, 'handleProductFetch_', null, { url: 'https://smartstore.naver.com/x/products/1' });
+    ok3(r1.ok && r1.data.facts.price === 227100, 'JSON-LD 가격을 편다', r1.code || (r1.data && r1.data.facts && r1.data.facts.price));
+    ok3(r1.ok && r1.data.facts.rating === 4.86 && r1.data.facts.reviews === 2554, '평점·리뷰를 편다');
+    ok3(r1.ok && r1.data.facts.name === '14k 여자목걸이', 'JSON-LD 상품명을 먼저 쓴다', r1.data && r1.data.facts && r1.data.facts.name);
+    const savedReply = reply;
+    reply = { code: 200, body: '<html><head><meta property="og:title" content="하트 &amp; 목걸이"></head></html>' };
+    const rOg = callHandler(P.ctx, 'handleProductFetch_', null, { url: 'https://smartstore.naver.com/x/products/9' });
+    ok3(rOg.ok && rOg.data.facts.name === '하트 & 목걸이', 'JSON-LD 가 없으면 og:title 로 가고 엔티티를 푼다', rOg.data && rOg.data.facts && rOg.data.facts.name);
+    reply = savedReply;
+    ok3(r1.ok && r1.data.facts.images.length === 1, '대표 이미지를 담는다');
+    ok3(r1.ok && r1.data.facts.key_points.length >= 2 && /무료배송/.test(r1.data.facts.shipping), '설명에서 소구점·배송을 뽑는다');
+
+    reply = { code: 429, body: 'too many requests' };
+    const r2 = callHandler(P.ctx, 'handleProductFetch_', null, { url: 'https://smartstore.naver.com/x/products/2' });
+    eq3(r2.code, 'ERR_PRODUCT_BLOCKED', '429 는 BLOCKED 로 분명히 실패한다(빈 값으로 넘기지 않는다)');
+    reply = { code: 403, body: 'forbidden' };
+    eq3(callHandler(P.ctx, 'handleProductFetch_', null, { url: 'https://www.musinsa.com/app/goods/1' }).code, 'ERR_PRODUCT_BLOCKED', '403 도 BLOCKED');
+    eq3(callHandler(P.ctx, 'handleProductFetch_', null, { url: 'https://example.com/item/1' }).code, 'ERR_VALIDATION_FAILED', '허용 밖 도메인은 거부');
+    eq3(callHandler(P.ctx, 'handleProductFetch_', null, { url: 'http://smartstore.naver.com/x/products/1' }).code, 'ERR_VALIDATION_FAILED', 'https 만 허용');
+    eq3(callHandler(P.ctx, 'handleProductFetch_', null, {}).code, 'ERR_VALIDATION_FAILED', '빈 링크 거부');
+
+    reply = { code: 200, body: '<html><head><meta property="og:title" content="그냥 페이지"></head></html>' };
+    const r3 = callHandler(P.ctx, 'handleProductFetch_', null, { url: 'https://smartstore.naver.com/x/products/3' });
+    ok3(r3.ok && r3.data.facts.price === null, '가격이 없으면 null(지어내지 않는다)');
+  } catch (err) {
+    ok3(false, '상품 링크 시험', (err && err.stack) || err);
   }
 })();
 

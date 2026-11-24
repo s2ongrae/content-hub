@@ -1676,6 +1676,61 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('공개 표시 시험', false, (err && err.stack) || err);
   }
 
+  /* 상품 링크 → 숏폼 (2026-11-24, docs/PRODUCT_SHORTS_v1.md) */
+  console.log('[P] 상품 링크 → 숏폼');
+  try {
+    const P = await import('file://' + path.join(ROOT, 'js', 'productShorts.js'));
+
+    const ok1 = P.normalizeProductUrl('https://smartstore.naver.com/dailyromantic/products/8087042745?NaPm=xyz');
+    ok('URL: 스마트스토어 허용', !!ok1.url && ok1.host === 'smartstore.naver.com', ok1);
+    ok('URL: 쿼리(NaPm 등)는 버린다', ok1.url.indexOf('NaPm') < 0, ok1.url);
+    ok('URL: http 거부', !!P.normalizeProductUrl('http://smartstore.naver.com/a/products/1').error);
+    ok('URL: 모르는 몰 거부', !!P.normalizeProductUrl('https://example.com/item/1').error);
+    ok('URL: 빈 값 안내', P.normalizeProductUrl('').error.indexOf('붙여넣') >= 0);
+
+    const facts = P.normalizeFacts({
+      name: '14k 여자목걸이 금 여성 하트 선물 : 데일리로맨틱', category: '패션잡화>주얼리',
+      price: '227,100', original_price: '298,100', rating: '4.86', reviews: '2,554',
+      shipping: '무료배송', key_points: ['14k 18k 하트 금 목걸이', '기념일 선물'], images: ['1.jpg', '2.jpg']
+    });
+    ok('사실: 숫자는 숫자로', facts.price === 227100 && facts.original_price === 298100 && facts.reviews === 2554);
+    ok('사실: 할인율은 정가·판매가가 있을 때만', facts.discount_pct === 24, facts.discount_pct);
+    ok('사실: 없는 값은 null', P.normalizeFacts({ name: 'x' }).rating === null);
+
+    const noPrice = P.normalizeFacts({ name: '손전등', images: ['1.jpg'] });
+    ok('사실: 가격이 없으면 할인율 계산 안 함', noPrice.discount_pct === null);
+
+    const s1 = P.productScript(facts, { seconds: 20 });
+    ok('대본: 5비트 순서(hook·info·build·climax·payoff)', s1.beats.map((b) => b.beat).join(',') === 'hook,info,build,climax,payoff');
+    ok('대본: 첫 자막은 훅, 마지막은 결론', s1.captions[0].beat === 'hook' && s1.captions[s1.captions.length - 1].beat === 'payoff');
+    ok('대본: 정보 비트에 실제 가격', s1.beats[1].text.indexOf('227,100원') >= 0, s1.beats[1].text);
+    ok('대본: 훅 보조 글자 6자 이내', [...s1.hook_sub].length <= 6, s1.hook_sub);
+    ok('대본: 자막·내레이션 시간이 겹치지 않는다', s1.captions.every((c, i) => i === 0 || c.start >= s1.captions[i - 1].end - 0.001));
+    ok('대본: 20초 안에 끝난다', s1.captions[s1.captions.length - 1].end <= 20.001);
+
+    const s2 = P.productScript(noPrice);
+    ok('대본: 가격 미확인이면 지어내지 않고 밝힌다', s2.beats[1].text.indexOf('미확인') >= 0, s2.beats[1].text);
+
+    const d = P.descriptionBlocks(facts, { affiliate: true });
+    ok('설명란: 5블록(빈 줄 1개씩)', d.text.split('\n\n').length === 6, d.text.split('\n\n').length);
+    ok('설명란: 제휴 표기가 해시태그 바로 앞', d.text.split('\n\n')[4].indexOf('제휴') >= 0 && d.text.split('\n\n')[5].charAt(0) === '#');
+    ok('설명란: 내돈내산 문구와 동시 출력 금지', d.text.indexOf('내돈내산') < 0);
+    ok('설명란: 제휴 끄면 표기 없음', P.descriptionBlocks(facts, { affiliate: false }).notice === '');
+
+    const m = P.factsToMaterials(facts, {});
+    ok('재료: 상품명이 장소 칸으로', m.place.name.indexOf('14k') === 0);
+    ok('재료: 가격이 메뉴·가격 칸으로', m.content.price_menu === '227,100원');
+    ok('재료: 소구점이 메모로', m.content.memo.indexOf('하트') >= 0);
+
+    ok('렌더: 이미지 0장이면 막는다', P.canRender(P.normalizeFacts({ name: 'x' })).ok === false);
+    ok('렌더: 이름·이미지 있으면 통과', P.canRender(facts).ok === true);
+
+    const appSrc = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+    ok('화면: #/create/product 라우트가 있다', /renderProductView\(main, ctx\)/.test(appSrc) && /productView\.js\?v=/.test(appSrc));
+  } catch (err) {
+    ok('상품 링크 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();
