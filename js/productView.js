@@ -93,7 +93,18 @@ export function renderProductView(main, ctx) {
     PRODUCT_TRACKS.forEach((id) => {
       const r = trackRules(id);
       const b = h('button', { class: 'st-chip' + (track === id ? ' on' : ''), type: 'button', text: r.label });
-      b.addEventListener('click', () => { track = normalizeTrack(id); writeTrack(track); paintTrack(); });
+      b.addEventListener('click', () => {
+        if (track === normalizeTrack(id)) return;
+        track = normalizeTrack(id);
+        writeTrack(track);
+        paintTrack();
+        /* 트랙을 바꾸면 앞서 만든 대본·문구는 다른 트랙의 것 — 남겨 두면 잘못 복사한다. */
+        if (outHost.firstChild) {
+          while (outHost.firstChild) outHost.removeChild(outHost.firstChild);
+          outHost.appendChild(h('div', { class: 'panel' },
+            h('p', { class: 'st-hint', text: '트랙을 ' + trackRules(track).label + ' 로 바꿨습니다 — [🎬 5비트 대본 만들기]를 다시 누르면 이 트랙 문구로 나옵니다.' })));
+        }
+      });
       trackBox.appendChild(b);
     });
     trackNote.replaceChildren(
