@@ -100,12 +100,16 @@ function blogBodyOf(doc) {
 /** 카드 payload 에 남은 사진 수 — studio.media → media → photos 순. 배열이 아예 없으면 null(모르는 값은 비워 둔다). */
 function photoCountOf(payload) {
   const p = payload || {};
-  const lists = [p.studio && p.studio.media, p.media, p.photos];
+  const blog = (p.blog && typeof p.blog === 'object') ? p.blog : {};
+  const lists = [p.studio && p.studio.media, p.media, p.photos, blog.photos];
   for (const arr of lists) {
-    if (Array.isArray(arr)) {
+    if (Array.isArray(arr) && arr.length) {
       return arr.filter((x) => !x || !x.kind || /photo/i.test(String(x.kind))).length;
     }
   }
+  /* 2026-11-24: 글 안에 사진 장수만 적어 둔 카드(blog.photo_count)도 있다 — 비워 두면 '사진 0장'으로 잘못 잡힌다. */
+  const n = Number(blog.photo_count != null ? blog.photo_count : (blog.photoCount != null ? blog.photoCount : NaN));
+  if (Number.isFinite(n) && n > 0) return n;
   return null;
 }
 
