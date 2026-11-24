@@ -22,9 +22,10 @@ import {
   photoPlanFor, buildBlogKit, signKit, buildFeedCards, feedCaption, hashtagsOf, buildDraftRequest,
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
   errorText, orderLine, titleOptions, firstPrice, FEED_CARDS
-} from './studioLogic.js?v=20261121g';
+} from './studioLogic.js?v=20261124';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261121g';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261121g';
+import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';
@@ -41,7 +42,9 @@ const mem = {
   poll: {},
   kit: null,
   draft: null,
-  feedFilter: 'none'
+  feedFilter: 'none',
+  // 공개 표시·네이버 기능(2026-11-24) — 블로그 스튜디오에서 사람이 한 번만 고르면 키트에 자동 반영된다.
+  compliance: { paid: false, ownMoney: false, blogseTopic: '' }
 };
 
 function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -606,6 +609,35 @@ function paintBlog(actions, out, ctx, ui) {
   const { h, toast, api } = ctx;
   const m = mem.materials;
 
+  /* ── 공개 표시 · 네이버 기능 (2026-11-24 자동화) ──
+     사람이 글마다 규칙을 외우지 않게, 두 가지 사실만 고르면
+     ① 대가성 문구를 본문 맨 앞에 자동 배치 ② 내돈내산 × 제휴링크 충돌 자동 판정
+     ③ 글감·블로그씨·미션위젯 단계를 붙여넣기 순서에 자동 삽입 한다. */
+  const paidBox = h('input', { type: 'checkbox' });
+  paidBox.checked = !!(mem.compliance && mem.compliance.paid);
+  const ownBox = h('input', { type: 'checkbox' });
+  ownBox.checked = !!(mem.compliance && mem.compliance.ownMoney);
+  const seEl = h('input', { type: 'text', value: (mem.compliance && mem.compliance.blogseTopic) || '', placeholder: '예: 이번 주 절약 습관 (없으면 비움)', autocomplete: 'off' });
+  const noticeLine = h('p', { class: 'st-hint' });
+
+  function syncCompliance() {
+    mem.compliance = { paid: paidBox.checked, ownMoney: ownBox.checked, blogseTopic: seEl.value.trim() };
+    noticeLine.textContent = paidBox.checked
+      ? '본문 맨 앞에 표시 문구가 자동으로 들어갑니다: ' + DISCLOSURE_TEXT
+      : '대가를 받지 않은 직접 결제·방문 글이면 [내돈내산 인증]을 붙이세요(글감·블로그씨·미션위젯 단계도 자동으로 붙습니다).';
+    noticeLine.className = 'st-hint' + (paidBox.checked ? '' : '');
+  }
+  [paidBox, ownBox].forEach((el) => el.addEventListener('change', syncCompliance));
+  seEl.addEventListener('input', syncCompliance);
+  syncCompliance();
+
+  actions.appendChild(h('div', { class: 'panel', style: 'margin-bottom:10px' },
+    h('h3', null, '공개 표시 · 네이버 기능'),
+    h('label', { class: 'st-check' }, paidBox, h('span', { text: ' 업체에서 제공받은 글이다(체험단·협찬)' })),
+    h('label', { class: 'st-check' }, ownBox, h('span', { text: ' 내 돈 주고 산 물건·직접 예약한 방문이다(내돈내산 인증)' })),
+    h('label', { class: 'field' }, h('span', { class: 'field-label', text: '블로그씨 오늘의 주제 (선택)' }), seEl),
+    noticeLine));
+
   const free = h('button', { class: 'btn primary', type: 'button', text: '⚡ 바로 만들기 (무료 · 즉시)' });
   const ai = h('button', { class: 'btn', type: 'button', text: '🤖 AI 초안 생성 (노트북 1회)' });
   actions.appendChild(h('div', { class: 'row' }, free, ai));
@@ -614,7 +646,7 @@ function paintBlog(actions, out, ctx, ui) {
   free.addEventListener('click', async () => {
     free.disabled = true;
     try {
-      const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [] }));
+      const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [], compliance: mem.compliance, blogseTopic: (mem.compliance && mem.compliance.blogseTopic) || '' }));
       mem.kit = kit;
       ui.out.replaceChildren();
       paintKit(out, ctx, kit, ui);
@@ -643,7 +675,7 @@ function paintBlog(actions, out, ctx, ui) {
           const draft = (st.formats.blog && (st.formats.blog.draft || st.formats.blog.ai)) || null;
           if (!draft) { toast('카드에 초안이 아직 없습니다 — 잠시 뒤 [결과 새로고침]을 눌러 주세요', 'err'); return; }
           mem.draft = draft;
-          const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [] }));
+          const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [], compliance: mem.compliance, blogseTopic: (mem.compliance && mem.compliance.blogseTopic) || '' }));
           mem.kit = kit;
           paintKit(out, ctx, kit, ui, draft);
           toast('AI 초안을 카드에서 가져왔습니다', 'ok');
@@ -689,6 +721,30 @@ function paintKit(out, ctx, kit, ui, draft) {
   box.appendChild(h('div', { class: 'row' },
     copyTextBtn(h, text, ctx.toast, '키트 복사'),
     downloadBtn(h, '블로그키트.md', text, ctx.toast)));
+
+  /* ── 공개 표시 · 네이버 기능 자동 결과 (2026-11-24) ── */
+  const comp = kit.compliance || {};
+  const compBox = h('div', null);
+  box.appendChild(h('h3', { text: '공개 표시 · 네이버 기능' }));
+  if (comp.paid) {
+    compBox.appendChild(h('p', { class: 'st-hint', text: '✅ 대가성 문구를 본문 맨 앞에 넣었습니다 — ' + DISCLOSURE_TEXT }));
+  }
+  if (comp.pulled_links && comp.pulled_links.length) {
+    compBox.appendChild(h('p', { class: 'st-hint err',
+      text: '⛔ 내돈내산 인증 글이라 제휴 링크 ' + comp.pulled_links.length + '개를 본문에서 자동으로 뺐습니다(운영정책·표시광고법) — 아래 링크 카드 자리로 옮겼습니다.' }));
+    comp.pulled_links.forEach((u) => compBox.appendChild(h('p', { class: 'st-hint', text: '· ' + u })));
+  } else if (comp.conflict) {
+    compBox.appendChild(h('p', { class: 'st-hint err', text: '⛔ 내돈내산 인증 + 제휴 링크가 한 글에 있습니다 — 내돈내산을 끄거나 링크를 빼 주세요.' }));
+  }
+  const steps = Array.isArray(kit.native) ? kit.native : [];
+  if (steps.length) {
+    const list = h('div', { class: 'gate' });
+    steps.forEach((n) => list.appendChild(h('div', { class: 'gate-row' },
+      h('span', { text: n.label }), h('span', { class: 'gv na', text: '자동 단계' }))));
+    compBox.appendChild(list);
+    compBox.appendChild(h('p', { class: 'st-hint', text: '붙이는 순서에 위 단계가 들어 있습니다 — 기능 설명은 docs/BLOG_NATIVE_FEATURES_v1.md' }));
+  }
+  box.appendChild(compBox);
 
   /* ── 톤 · 2줄 호흡 (제미니 확정안 A, 2026-11-21) ── */
   const bodyText = (kit.blocks || []).map((b) => b.text).join('\n\n');

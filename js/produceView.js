@@ -29,7 +29,7 @@ import {
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery
 } from './produceLogic.js?v=20261121g';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261121g';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261121g';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261124';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
