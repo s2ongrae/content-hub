@@ -73,6 +73,14 @@ tools/make_icons.py      # 아이콘 생성기 (Pillow)
 DEPLOY_GUIDE.md         # 시트 + GAS 3분 배포 가이드
 ```
 
+## 영상 글자 디자인 · 구간 제목 · 워터마크 (2026-11-25 Phase 1)
+
+카드 상세 → 제작 ④ 클린 마스터 안의 **글자 디자인 · 구간 제목** 패널에서 자막 프리셋 5종·색·외곽선·그림자·검정 박스(둥글기 18px)·위치(X/Y)를 고르고,
+구간마다 노란 제목과 검정 알약 배지를 넣습니다. 1080×1920 캔버스 미리보기(이 기기 사진/영상 한 프레임을 배경으로)에서 끌어서 옮깁니다.
+값은 카드 `studio.formats.video.design` 에만 저장하고 오더는 `payload_source:'drive'` 만 실어 **GAS 재배포 없이** 노트북이 ASS 로 굽습니다.
+**영상·사진 모두 `@s2ongrae` 워터마크가 기본 ON**(45% · 오른쪽 위/아래). 끄기·문구·위치 변경 가능.
+자세한 값·규칙: [`docs/VIDEO_DESIGN_v1.md`](docs/VIDEO_DESIGN_v1.md)
+
 ## 숏폼 공방 (연재 탭 → 🎬 숏폼 공방)
 
 무료 공개 스킬(`Jakeschincariol/youtube-agent-skill`, MIT)과 당근 스토리 숏폼 관찰을 이 채널에 맞게 옮겼습니다.

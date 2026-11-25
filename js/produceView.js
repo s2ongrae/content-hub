@@ -19,8 +19,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261123k';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261123k';
+import { buildEDL } from './yt/edl.js?v=20261125k';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261125k';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -29,10 +29,12 @@ import {
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S,
   PACE_IDS, PACE_LABELS, PACE_NOTES
-} from './produceLogic.js?v=20261123k';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261123k';
+} from './produceLogic.js?v=20261125k';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261125k';
 import { readStudio, mergeFormat } from './studioLogic.js?v=20261124';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261123k';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261125k';
+import { designPanel } from './designView.js?v=20261125k';
+import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261125k';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -867,6 +869,8 @@ export function produceSection(ctx) {
         frameLock: state.frame_lock, frameLockImage: state.frame_lock_image, frameLockSeconds: state.frame_lock_seconds,
         motion: state.motion, motionQuality: state.motion_quality
         , pace: state.pace
+        // 글자 디자인(2026-11-25) — 값이 있으면 오더는 payload_source:'drive' 만 싣고 노트북이 카드에서 읽는다.
+        , design: state.design
       });
       return { cr, b };
     };
@@ -940,6 +944,26 @@ export function produceSection(ctx) {
           h('select', { class: 'pr-sel', 'aria-label': '훅 유지시간', onchange: (e) => change((st) => { st.hook_hold = Number(e.target.value); }) },
             ...HOOK_HOLDS.map((v) => h('option', { value: String(v), selected: hookHoldShown === v ? '' : null, text: v.toFixed(1) + '초' }))))),
       h('span', { class: 'pr-check-s', text: tState })));
+
+    // 글자 디자인 · 구간 제목 · 미리보기(2026-11-25) — 템플릿 바로 아래. 여기서 고른 값이 같은 오더의 ASS 에 들어간다.
+    //   카드 자막을 미리보기 샘플·구간 스냅에 쓴다(자막이 없으면 안내 문구로).
+    const repDur = Number(state.render && state.render.report && state.render.report.duration) || 0;
+    const lastCueEnd = capRes.cues.length ? Number(capRes.cues[capRes.cues.length - 1].end) || 0 : 0;
+    const designCtx = {
+      h, state, change, toast, contentId,
+      cues: capRes.cues,
+      size: state.sub_style === 'long' ? 56 : 68,
+      duration: repDur || lastCueEnd || 0,
+      // 오프닝 훅 구간에는 구간 제목을 놓지 않는다 — 트랙 A 이고 템플릿이 켜져 있을 때만.
+      hookEnd: brand === 'daejeon_youth' && state.template !== 'none' ? (typeof state.hook_hold === 'number' ? state.hook_hold : DEFAULT_HOOK_HOLD) : 0,
+      brandBadge: state.template !== 'none'
+    };
+    box.append(designPanel(designCtx));
+    // 워터마크는 기본값이라 늘 켜져 있다 — 카드에서 읽는다는 안내는 '자막 디자인·구간'을 실제로 건드렸을 때만.
+    const designNow = normalizeDesign(state.design);
+    if (hasCaptionDesign(designNow) || designNow.segments.length) {
+      box.append(h('span', { class: 'pr-check-s', text: '글자 디자인·구간이 켜져 있어요 — 오더는 카드에서 읽어요(큐에 디자인을 싣지 않아요). 카드 저장이 끝난 뒤 보내 주세요.' }));
+    }
 
     // 첫 프레임 잠금(2026-11-21) — AI 클립을 이어 붙일 때 얼굴·장면이 흔들리는 것을 막는다.
     //   기준 사진을 '참고'가 아니라 0.0초 첫 프레임으로 박고, 앞 클립 마지막 프레임을 다음 클립 첫 프레임으로 잇는다.

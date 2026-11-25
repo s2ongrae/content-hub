@@ -10,8 +10,9 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261123k';
-import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261123k';
+import { tcToSec } from './yt/edl.js?v=20261125k';
+import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261125k';
+import { hasDesign, normalizeDesign, defaultDesign } from './designModel.js?v=20261125k';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -125,7 +126,7 @@ export function defaultMake() { return { burn: true, ai_notice: true, bgm: '', b
 export function defaultSrt() { return { confirmed: false, skipped: false, ai: true, hash: '', cues: 0, at: '' }; }
 
 export function defaultState() {
-  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', voice_mode: 'tts', voice_file: '', voice_offset_ms: 0, voice_fallback_tts: false, voice_meta: null, template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '', motion: 'auto', motion_quality: 'standard', pace: 'standard' };
+  return { v: 1, inputs: [], profile: 'captions', crop_x: '', plan: false, cuts: false, cut_list: [], cut_input: '', srt: defaultSrt(), make: defaultMake(), order_tr: null, order_fin: null, fin_report: null, review: {}, render: null, burn: true, narrate: false, sub_style: 'auto', voice: '', voice_mode: 'tts', voice_file: '', voice_offset_ms: 0, voice_fallback_tts: false, voice_meta: null, template: 'auto', title: '', badge: '', hook: '', hook_sub: '', outro: '', hook_pos: '', hook_hold: '', frame_lock: false, frame_lock_image: '', frame_lock_seconds: '', motion: 'auto', motion_quality: 'standard', pace: 'standard', design: null };
 }
 
 /** 저장된 값을 믿지 않고 모양을 다시 맞춘다(손상·옛 버전 방어). */
@@ -177,6 +178,12 @@ export function normalizeState(raw) {
   s.motion_quality = MOTION_QUALITIES.indexOf(String(raw.motion_quality || '')) >= 0 ? String(raw.motion_quality) : 'standard';
   // 템포(2026-11-23) — 옛 저장값에는 없으므로 비면 standard(지금까지와 같다).
   s.pace = PACE_IDS.indexOf(String(raw.pace || '')) >= 0 ? String(raw.pace) : 'standard';
+  // 글자 디자인·워터마크(2026-11-25) — 기본값(워터마크 ON)과 같으면 null 로 둔다.
+  //   null 이면 '기본값'이라는 뜻이고, 렌더는 기본값으로 워터마크를 넣는다(카드 payload 를 키우지 않는다).
+  (function () {
+    const d = raw.design && typeof raw.design === 'object' ? normalizeDesign(raw.design) : null;
+    s.design = d && JSON.stringify(d) !== JSON.stringify(defaultDesign()) ? d : null;
+  })();
   if (raw.review && typeof raw.review === 'object') {
     Object.keys(raw.review).forEach((k) => { if (/^r[1-7]$/.test(k)) s.review[k] = raw.review[k] === true; });
   }
@@ -346,7 +353,7 @@ export function normalizeCues(raw, label, opts) {
 }
 
 /** 오더 payload 만들기 — 계약 v1(+ cuts·자막·내레이션). 하나라도 어긋나면 { ok:false, errors }. */
-export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, voiceMode, voiceFile, voiceOffsetMs, voiceFallback, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds, motion, motionQuality, pace }) {
+export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, cuts, fit, captions, narration, burnSubtitles, subStyle, narrate, payloadSource, voice, voiceMode, voiceFile, voiceOffsetMs, voiceFallback, template, title, badge, hook, hookSub, outro, hookPos, hookHold, frameLock, frameLockImage, frameLockSeconds, motion, motionQuality, pace, design }) {
   const errors = [];
   if (!CONTENT_ID_RE.test(String(contentId || ''))) errors.push('콘텐츠 ID 형식이 맞지 않아요(영문·숫자·_·- 40자 이내)');
   if (brand !== 'daejeon_youth' && brand !== 'ppiyak_kimmary') errors.push('트랙을 알 수 없어요');
@@ -390,9 +397,21 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   if (SUB_STYLES.indexOf(sub) < 0) { errors.push('자막 스타일은 ' + SUB_STYLES.join(' · ') + ' 중 하나여야 해요'); sub = 'auto'; }
   const totalCues = cap.cues.length + nar.cues.length;
   if (source === 'inline' && totalCues > MAX_CUES_INLINE) source = 'drive';   // 40큐가 넘으면 카드에서 읽는다
+  // 글자 디자인·워터마크(2026-11-25) — 값은 카드(studio.formats.video.design)에만 있다. 큐는 고정 키로 payload 를 다시 만들므로
+  //   디자인을 실으면 조용히 사라진다 → 오더에는 payload_source:'drive' 만 싣고 노트북이 카드에서 읽는다(기획안 §4).
+  //   워터마크가 기본 ON 이라 '값이 없어도' designOn 이다. 자막이 없으면 구울 것이 없으니 카드로 보내지 않는다.
+  const designOn = hasDesign(design);
+  if (designOn && cap.cues.length > 0) source = 'drive';
   if (errors.length) return { ok: false, errors };
-  if (source === 'drive') payload.payload_source = 'drive';
-  else {
+  if (source === 'drive') {
+    payload.payload_source = 'drive';
+    // 디자인·워터마크 때문에 카드로 보내는 경우(자막이 40큐 이내)에는 자막을 함께 실어 둔다 —
+    //   카드 읽기가 실패해도 노트북이 자막만으로 렌더를 끝낼 수 있게(그때는 워터마크만 빠진다).
+    if (designOn && totalCues <= MAX_CUES_INLINE) {
+      if (cap.cues.length) payload.captions = cap.cues;
+      if (nar.cues.length) payload.narration = nar.cues;
+    }
+  } else {
     if (cap.cues.length) payload.captions = cap.cues;
     if (nar.cues.length) payload.narration = nar.cues;
   }
@@ -453,7 +472,7 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
     delete payload.narration;
     payload.payload_source = 'drive';
   }
-  return { ok: true, payload, notes: { cues: cap.cues.length, narration: nar.cues.length, source: payload.payload_source || 'inline', burn: willBurn, template: payload.template } };
+  return { ok: true, payload, notes: { cues: cap.cues.length, narration: nar.cues.length, source: payload.payload_source || 'inline', burn: willBurn, template: payload.template, design: designOn } };
 }
 
 /**

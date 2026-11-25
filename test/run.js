@@ -582,6 +582,10 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
         replaceChildren(...kids) { this.children = []; this.append(...kids); }
         querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
         querySelectorAll(sel) { const out = []; const cls = (sel.match(/^\.([\w-]+)/) || [])[1]; (function w(n) { (n.children || []).forEach((c) => { if (!c || !c.tag) return; if (!cls || (c.className || '').split(/\s+/).indexOf(cls) >= 0) out.push(c); w(c); }); })(this); return out; }
+        // 글자 디자인 미리보기 캔버스(2026-11-25) — 브라우저의 2D 컨텍스트 대신 아무 일도 하지 않는 객체
+        getContext() { return new Proxy({}, { get: (t, k) => (k === 'measureText' ? () => ({ width: 10 }) : () => {}) }); }
+        getBoundingClientRect() { return { left: 0, top: 0, width: 360, height: 640 }; }
+        setPointerCapture() {}
         closest() { return null; }
         remove() {}
         focus() {}
@@ -1896,6 +1900,92 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     try { fs.unlinkSync(tmp); } catch (e) { /* 지워지지 않아도 시험 결과와 무관 */ }
   } catch (err) {
     ok('블로그 카드 자동 반영 시험', false, (err && err.stack) || err);
+  }
+
+  /* ⑮ 글자 디자인 · 구간 제목(2026-11-25 Phase 1) — 화면 값 ↔ 카드 ↔ 노트북이 같은가 */
+  console.log('[15] 글자 디자인 · 구간 제목');
+  try {
+    const dm = await import('file://' + path.join(ROOT, 'js', 'designModel.js'));
+    const PL = await import('file://' + path.join(ROOT, 'js', 'produceLogic.js'));
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'video_template.json'), 'utf8'));
+    ok('프리셋 5종 = seeds/video_template.json', JSON.stringify(dm.PRESETS.map((p) => ({ id: p.id, label: p.label, caption: p.caption }))) === JSON.stringify(seed.design.presets));
+    ok('기본값 = 현행 자막(Y1419 · base) + 워터마크 ON', dm.isDefaultDesign(dm.defaultDesign()) && dm.defaultDesign().roles.caption.pos.y === 1419 && dm.defaultDesign().watermark.enabled === true && dm.defaultDesign().watermark.text === '@s2ongrae');
+    ok('워터마크가 기본이라 값이 없어도 design 을 적용한다', dm.hasDesign(null) === true && dm.hasDesign(dm.defaultDesign()) === true && dm.hasCaptionDesign(dm.defaultDesign()) === false);
+    ok('워터마크를 끄고 자막도 안 건드리면 예전과 같다(hasDesign false)', dm.hasDesign({ watermark: { enabled: false } }) === false);
+    ok('프리셋을 적용해도 자막 위치는 지킨다', (() => { const c = dm.normalizeCaption({ pos: { x: 30, y: 1350 } }); const a = dm.applyPreset(c, 'box'); return a.pos.y === 1350 && a.pos.x === 30 && a.box.on === true && a.preset === 'box'; })());
+    ok('구간: 최대 6 · 겹침 정리 · 20/16자 상한 · 빈 칸 제거', (() => {
+      const d = dm.normalizeDesign({ segments: [
+        { start: 0, end: 5, title: 'A'.repeat(30), badge: 'B'.repeat(30) },
+        { start: 3, end: 8, title: '둘' }, { start: 9, end: 2, title: '나쁨' }, { start: 10, end: 12, title: '' },
+        ...Array.from({ length: 6 }, (_, i) => ({ start: 20 + i * 3, end: 21 + i * 3, title: 'x' + i }))
+      ] });
+      return d.segments.length === 6 && d.segments[0].title.length === 20 && d.segments[1].start === 5;
+    })());
+    const tl = dm.applyTimeline({ segments: [{ start: 0, end: 4, title: '훅겹침' }, { start: 5, end: 30, title: '넘침' }] }, { duration: 12, hookEnd: 2.4 });
+    ok('훅 끝에서 시작 · 영상 길이에서 자름 + 경고', tl.design.segments[0].start === 2.4 && tl.design.segments[1].end === 12 && tl.warnings.length === 2, tl);
+    ok('가독성 하한 경고(외곽선 0·박스 없음)', dm.designWarnings({ roles: { caption: { outline: { px: 0 }, shadow: { on: true, alpha: 40, blur: 9 }, box: { on: false } } } }, {}).some((w) => w.code === 'contrast'));
+    ok('미리보기 좌표: 밑단 y · 박스는 가장 긴 줄 폭', (() => {
+      const lay = dm.captionLayout({ box: { on: true, alpha: 70, radius: 18 }, pos: { x: 0, y: 1419 } }, { size: 68, lines: ['짧은 줄', '아주 길게 늘어진 두 번째 자막 줄'] });
+      return lay.text.y === 1419 && lay.text.x === 540 && lay.box.h === Math.round(68 * 1.22) * 2 + 20 && lay.box.w > 68 * 12;
+    })());
+    ok('캔버스 → 1080×1920 좌표 환산', (() => { const p = dm.canvasToDesign(120, 200, 1 / 3); return p.x === 360 && p.y === 600; })());
+    ok('자막 범위로: 가장 가까운 큐 시작·다음 큐 시작', (() => {
+      const s = dm.snapSegmentToCues({ start: 4.2, end: 9 }, [{ start: 0, end: 3 }, { start: 3.1, end: 7 }, { start: 7.1, end: 10 }]);
+      return s.start === 3.1 && s.end === 7.1;
+    })());
+    ok('designForCard: 기본값이면 null', dm.designForCard(dm.defaultDesign()) === null && dm.designForCard({ segments: [{ start: 0, end: 5, title: '가' }] }).segments.length === 1);
+
+    /* 카드 · 오더 — design 이 있으면 payload_source:'drive' 만, 없으면 지금과 같은 payload */
+    const base = { contentId: 'C-DG', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', captions: [{ start: 0, end: 3, text: '가' }, [3.1, 6, '나']], template: 'daejeon_youth' };
+    const noD = PL.buildRenderPayload(Object.assign({}, base));
+    const withD = PL.buildRenderPayload(Object.assign({}, base, { design: dm.designForCard({ roles: { caption: { preset: 'box', box: { on: true, alpha: 70, radius: 18 } } } }) }));
+    ok('기본(워터마크)에도 카드로 보내되 자막을 함께 실어 둔다(카드 읽기 실패 대비)', noD.ok && noD.payload.payload_source === 'drive' && noD.payload.captions.length === 2 && noD.payload.design === undefined && noD.notes.design === true, noD.payload);
+    ok('design 있어도 payload_source:drive · 디자인 본문은 큐에 싣지 않는다', withD.ok && withD.payload.payload_source === 'drive' && withD.payload.design === undefined && withD.notes.design === true, withD.payload);
+    ok('워터마크를 끄고 자막만 바꾸지 않았으면 예전처럼 인라인(회귀 0)', (() => {
+      const off = PL.buildRenderPayload(Object.assign({}, base, { design: dm.normalizeDesign({ watermark: { enabled: false } }) }));
+      return off.ok && off.payload.payload_source === undefined && off.payload.captions.length === 2 && off.notes.design === false;
+    })());
+    ok('자막 없이 클린 마스터만 만드는 오더는 카드로 보내지 않는다', (() => {
+      const clean = PL.buildRenderPayload({ contentId: 'C-CLEAN', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', template: 'daejeon_youth' });
+      return clean.ok && clean.payload.payload_source === undefined;
+    })());
+    ok('design 오더는 자막을 굽는다(willBurn)', withD.ok && noD.notes.burn === true && withD.notes.burn === true);
+    ok('normalizeState: design 저장 · 기본값은 null', (() => { const s = PL.normalizeState({ design: { segments: [{ start: 0, end: 5, title: '가' }] } }); const t = PL.normalizeState({ design: { roles: { caption: { pos: { y: 1419 } } } } }); return s.design.segments.length === 1 && t.design === null; })());
+
+    /* 워터마크(2026-11-25) — 영상·사진 모두 기본 @s2ongrae */
+    ok('워터마크 기본값 @s2ongrae · 45% · 오른쪽 위', dm.WATERMARK_DEFAULT.text === '@s2ongrae' && dm.WATERMARK_DEFAULT.opacity === 45 && dm.WATERMARK_DEFAULT.position === 'top-right');
+    ok('워터마크 자리: 오른쪽 위 / 왼쪽 아래', (() => { const a = dm.watermarkPoint('top-right'); const b = dm.watermarkPoint('bottom-left'); return a.x === 1008 && a.y === 250 && a.align === 'right' && b.x === 72 && b.y === 1400 && b.align === 'left'; })());
+    ok('워터마크 문구·위치를 바꾸면 그대로 남는다', (() => { const d = dm.normalizeDesign({ watermark: { text: '@my_handle', position: 'bottom-right', opacity: 70 } }); const tl = dm.applyTimeline(d, { duration: 10 }); return d.watermark.text === '@my_handle' && tl.design.watermark.position === 'bottom-right' && tl.design.watermark.opacity === 70; })());
+    {
+      const SC = await import('file://' + path.join(ROOT, 'js', 'studioCanvas.js'));
+      ok('사진 카드 워터마크 기본값 @s2ongrae · 오른쪽 아래', SC.CARD_WATERMARK_DEFAULT.enabled === true && SC.CARD_WATERMARK_DEFAULT.text === '@s2ongrae' && SC.CARD_WATERMARK_DEFAULT.position === 'bottom-right');
+      const p1 = SC.cardWatermarkPoint('bottom-right');
+      const p2 = SC.cardWatermarkPoint('top-left');
+      ok('사진 카드(1080×1350) 워터마크 자리', p1.x === 1032 && p1.y === 1296 && p1.align === 'right' && p2.x === 48 && p2.y === 54 && p2.align === 'left', [p1, p2]);
+    }
+
+    /* 노트북과 같은 값인가 — 옆 저장소(hub-agent)가 있으면 대조 */
+    const nbPath = path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'design.js');
+    if (fs.existsSync(nbPath)) {
+      const nb = require(nbPath);
+      ok('노트북과 프리셋이 같다', JSON.stringify(nb.PRESETS.map((p) => ({ id: p.id, label: p.label, caption: p.caption }))) === JSON.stringify(dm.PRESETS.map((p) => ({ id: p.id, label: p.label, caption: p.caption }))));
+      ok('노트북과 상한·기본값이 같다', nb.MAX_SEGMENTS === dm.MAX_SEGMENTS && nb.MAX_SEG_TITLE === dm.MAX_SEG_TITLE && nb.MAX_SEG_BADGE === dm.MAX_SEG_BADGE && nb.CAPTION_DEFAULT_Y === dm.CAPTION_DEFAULT_Y);
+      ok('노트북과 정규화 결과가 같다(표본 3)', [
+        { roles: { caption: { preset: 'neon', pos: { x: 20, y: 1300 } } }, segments: [{ start: 0, end: 5.6, title: '돈키호테 쇼핑리스트 2단', badge: '이번엔 일본 약국템만' }] },
+        { roles: { caption: { color: '#FFFFFF', outline: { px: 0 }, shadow: { on: true, alpha: 80, blur: 9 } } } },
+        { roles: { title: { color: '#FFE84D', size: 78 }, badge: { size: 42 } }, segments: [{ start: 20, end: 2, title: 'x' }] }
+      ].every((s) => JSON.stringify(nb.normalizeDesign(s)) === JSON.stringify(dm.normalizeDesign(s))));
+      ok('노트북과 자막 박스 폭 계산이 같다', nb.measureLineWidth('이번엔 일본 약국템만', 42) === dm.measureLineWidth('이번엔 일본 약국템만', 42));
+      ok('노트북과 워터마크 기본값·자리가 같다', (() => {
+        const a = nb.watermarkPoint('top-right'); const b = dm.watermarkPoint('top-right');
+        const c = nb.watermarkPoint('bottom-left'); const d2 = dm.watermarkPoint('bottom-left');
+        return JSON.stringify(nb.WATERMARK_DEFAULT) === JSON.stringify(dm.WATERMARK_DEFAULT) && a.x === b.x && a.y === b.y && a.align === 9 && b.align === 'right' && c.x === d2.x && c.y === d2.y && c.align === 1 && d2.align === 'left';
+      })());
+    } else {
+      console.log('  - hub-agent 가 옆에 없어 노트북 대조를 건너뜀');
+    }
+  } catch (err) {
+    ok('글자 디자인 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

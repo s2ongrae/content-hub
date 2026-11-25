@@ -8,10 +8,14 @@
  *  · 개별 PNG 로 내려받는다. 인스타 업로드는 지금은 수동(설계 §5③).
  */
 
+import { PHOTO_WATERMARK_DEFAULT, watermarkPoint } from './designModel.js?v=20261125k';
+
 export const CARD_W = 1080;
 export const CARD_H = 1350;
 export const CARD_RATIO = CARD_W / CARD_H;
 export const CARD_FONT = '"Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif';
+// 워터마크 기본값(2026-11-25) — 사진·카드뉴스에도 @s2ongrae 를 기본으로 넣는다(사용자 지시).
+export const CARD_WATERMARK_DEFAULT = PHOTO_WATERMARK_DEFAULT;
 
 /** 보정 프리셋 — 밝기·따뜻함만. 값은 canvas filter 문자열. */
 export const FILTER_PRESETS = [
@@ -121,8 +125,35 @@ function paintCard(canvas, card, image, opts) {
   ctx.font = '600 28px ' + CARD_FONT;
   ctx.fillStyle = theme.accent;
   ctx.fillText(o.brandName || '대전 청년', pad, CARD_H - pad - 20);
+
+  // 워터마크(2026-11-25) — 옅은 흰 글씨 + 얇은 그림자. 브랜드 이름과 반대쪽 모서리(기본 오른쪽 아래).
+  paintWatermark(ctx, o.watermark);
   ctx.restore();
   return true;
+}
+
+/** 카드 워터마크 자리(1080×1350) — designModel.watermarkPoint 를 카드 비율에 맞춰 쓴다. */
+export function cardWatermarkPoint(position) {
+  return watermarkPoint(position, { width: CARD_W, height: CARD_H, pad: 48, yTop: 54, yBottom: CARD_H - 54 });
+}
+
+function paintWatermark(ctx, raw) {
+  const wm = raw === false ? null : Object.assign({}, CARD_WATERMARK_DEFAULT, raw && typeof raw === 'object' ? raw : {});
+  if (!wm || wm.enabled === false) return;
+  const text = String(wm.text || '').trim();
+  if (!text) return;
+  const p = cardWatermarkPoint(wm.position);
+  ctx.save();
+  ctx.font = '700 ' + (Number(wm.size) || 30) + 'px ' + CARD_FONT;
+  ctx.textAlign = p.align;
+  ctx.textBaseline = 'middle';
+  ctx.globalAlpha = Math.max(0.05, Math.min(1, (Number(wm.opacity) || 45) / 100));
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText(text, p.x, p.y);
+  ctx.restore();
 }
 
 /** 카드 한 장을 캔버스에 그린다. 반환: canvas | null */

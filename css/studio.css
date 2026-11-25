@@ -135,3 +135,13 @@
   margin: 6px 0 4px; font-size: 15px; font-weight: 700; line-height: 1.45;
   overflow-wrap: anywhere; color: var(--tx);
 }
+
+/* 사진·카드뉴스 워터마크 (2026-11-25) — 영상과 같은 @s2ongrae 표시 */
+.st-wm-on { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--tx); }
+.st-wm-on input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+.st-wm-text { max-width: 170px; }
+.st-wm-pos { max-width: 130px; }
+.dg-wm { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.dg-wmrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+.dg-wmop { grid-column: 1 / -1; }
+@media (max-width: 520px) { .dg-wmrow { grid-template-columns: 1fr; } }

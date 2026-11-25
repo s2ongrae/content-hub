@@ -14,7 +14,7 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261123c';
+import { produceSection } from './produceView.js?v=20261125v1';
 import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261123c';
 import {
   FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
@@ -24,7 +24,8 @@ import {
   errorText, orderLine, titleOptions, firstPrice, FEED_CARDS,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
 } from './studioLogic.js?v=20261124';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME } from './studioCanvas.js?v=20261123c';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261125k';
+import { WATERMARK_POSITIONS } from './designModel.js?v=20261125k';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261124';
 import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
 import { lintAiTone } from './blogAiTone.js?v=20261123c';
@@ -51,6 +52,8 @@ const mem = {
   // 공개 표시·네이버 기능(2026-11-24) — 블로그 스튜디오에서 한 번만 고르면 키트에 자동 반영된다.
   compliance: { paid: false, ownMoney: false, blogseTopic: '' },
   feedFilter: 'none',
+  // 사진·카드뉴스 워터마크(2026-11-25) — 기본 @s2ongrae. 카드마다 그려지고, 끄거나 문구·위치를 바꿀 수 있다.
+  watermark: Object.assign({}, CARD_WATERMARK_DEFAULT),
   mvLinked: false
 };
 
@@ -1425,6 +1428,21 @@ function paintFeed(actions, out, ctx, ui) {
   });
   actions.appendChild(h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '보정' }), filters));
 
+  /* 워터마크(2026-11-25) — 기본 @s2ongrae. 사진·카드뉴스에도 영상과 같은 계정 표시를 넣는다. */
+  const wmOn = h('input', { type: 'checkbox' });
+  wmOn.checked = mem.watermark.enabled !== false;
+  wmOn.addEventListener('change', () => { mem.watermark.enabled = wmOn.checked; paintCards(); });
+  const wmText = h('input', { class: 'input st-wm-text', type: 'text', maxlength: '24', value: mem.watermark.text || '', placeholder: '@s2ongrae', 'aria-label': '워터마크 문구' });
+  wmText.addEventListener('input', () => { mem.watermark.text = wmText.value; paintCards(); });
+  const wmPos = h('select', { class: 'input st-wm-pos', 'aria-label': '워터마크 위치', onchange: () => { mem.watermark.position = wmPos.value; paintCards(); } },
+    ...WATERMARK_POSITIONS.map((p) => h('option', { value: p.id, selected: mem.watermark.position === p.id ? '' : null, text: p.label })));
+  const wmRow = h('div', { class: 'st-field-row' },
+    h('span', { class: 'field-label', text: '워터마크' }),
+    h('label', { class: 'st-wm-on' }, wmOn, h('span', { text: '넣기' })),
+    wmText, wmPos);
+  actions.appendChild(wmRow);
+  actions.appendChild(h('p', { class: 'st-hint', text: '카드에도 영상과 같은 계정 표시(@s2ongrae)가 들어갑니다 — 옅은 흰 글씨로 오른쪽 아래에. 끄거나 문구·위치를 바꿀 수 있어요.' }));
+
   const grid = h('div', { class: 'st-cards' });
   out.replaceChildren(h('div', { class: 'panel' }, h('h3', null, '카드 미리보기'), grid));
 
@@ -1436,7 +1454,7 @@ function paintFeed(actions, out, ctx, ui) {
       const bank = photo ? mem.photos[photo.id] : null;
       const url = bank && bank.previewUrl ? bank.previewUrl : '';
       const img = url ? await loadImageSafe(url) : null;
-      const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name });
+      const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
       const holder = h('div', { class: 'st-card' },
         canvas || h('div', { class: 'st-card-fallback', text: '카드를 그리지 못했습니다' }),
         h('span', { class: 'st-card-cap', text: '0' + card.no + ' ' + card.kicker + ' — ' + card.headline }));
@@ -1452,7 +1470,7 @@ function paintFeed(actions, out, ctx, ui) {
       const photo = (m.photos || []).find((p) => p.name === card.photo);
       const bank = photo ? mem.photos[photo.id] : null;
       const img = bank && bank.previewUrl ? await loadImageSafe(bank.previewUrl) : null;
-      const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name });
+      const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
       const blob = await canvasToPng(canvas);
       if (blob && downloadBlob(blob, cardFileName(m.place.name, card.no))) n++;
     }
