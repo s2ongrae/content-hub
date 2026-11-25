@@ -321,6 +321,54 @@ function upsertRows_(sheet, rows, keyFn) {
   return { updated: updated, added: appended.length };
 }
 
+/**
+ * 하루치 통계를 통째로 갈아 끼운다 — 같은 날을 다시 보내면 **옛 줄이 남지 않는다**.
+ * upsertRows_ 는 키가 같은 줄만 덮어써서, 정정 전송에서 빠진 검색어·유입경로 줄이 그대로 남아
+ * 합계가 부풀었다(2026-11-25 전수 점검 2-5). 문서(docs/BLOG_STATS_INGEST.md)의 "같은 날을 다시
+ * 보내면 덮어쓴다"와 코드를 맞춘다. 호출부(라우터)가 이미 쓰기 락을 잡고 있으므로 여기서 잡지 않는다.
+ * rows 가 비면 그 날 줄을 지우기만 한다(읽지 못한 항목을 0으로 속이지 않는다 — 호출부가 빈 묶음은 보내지 않는다).
+ */
+function replaceDayRows_(sheet, day, blogId, rows) {
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  const dayIdx = headers.indexOf('day');
+  const blogIdx = headers.indexOf('blog_id');
+  const lastRow = sheet.getLastRow();
+  const hits = [];
+  if (lastRow >= 2 && dayIdx >= 0 && blogIdx >= 0) {
+    // 두 열만 읽는다 — 조회수 시트가 1년 치(수만 줄)로 늘어도 전체 행을 다시 쓰지 않는다.
+    const dayVals = sheet.getRange(2, dayIdx + 1, lastRow - 1, 1).getValues();
+    const blogVals = sheet.getRange(2, blogIdx + 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < dayVals.length; i++) {
+      if (dayKey_(dayVals[i][0]) === day && String(blogVals[i][0]) === String(blogId)) hits.push(i + 2);
+    }
+  }
+  if (hits.length) {
+    // 붙어 있는 줄끼리 묶어 아래에서부터 지운다(위에서 지우면 아래 행 번호가 밀린다).
+    const blocks = [];
+    hits.forEach(function (r) {
+      const last = blocks[blocks.length - 1];
+      if (last && r === last[1] + 1) last[1] = r; else blocks.push([r, r]);
+    });
+    for (let b = blocks.length - 1; b >= 0; b--) {
+      if (typeof sheet.deleteRows === 'function') {
+        sheet.deleteRows(blocks[b][0], blocks[b][1] - blocks[b][0] + 1);
+      } else {
+        // deleteRows 가 없는 스텁 환경: 값만 비운다(빈 줄은 집계에서 0으로 읽힌다).
+        const n = blocks[b][1] - blocks[b][0] + 1;
+        sheet.getRange(blocks[b][0], 1, n, lastCol)
+          .setValues(Array.from({ length: n }, function () { return new Array(lastCol).fill(''); }));
+      }
+    }
+  }
+  if (!rows || !rows.length) return { removed: hits.length, added: 0 };
+  const fresh = rows.map(function (r) {
+    return headers.map(function (h) { return Object.prototype.hasOwnProperty.call(r, h) ? r[h] : ''; });
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, fresh.length, lastCol).setValues(fresh);
+  return { removed: hits.length, added: fresh.length };
+}
+
 function syncBlog_(ss, brand) {
   const blogId = blogIdFor_(brand);
   const posts = fetchBlogPosts_(blogId);          // 네트워크는 락 밖에서
@@ -683,40 +731,72 @@ function handleBlogStatsIngest_(ss, payload, ctx) {
   const n = normalizeBlogIngest_(payload);
   const stamp = formatKstIso_(new Date());
   const day = n.day;
-  const key3 = function (f) { return function (r) { return dayKey_(r.day) + '|' + String(r.blog_id) + '|' + f(r); }; };
 
   if (n.daily) {
     const row = { blog_id: blogId, day: day, synced_at: stamp };
     if (n.daily.visitors != null) row.visitors = n.daily.visitors;
     if (n.daily.pageviews != null) row.pageviews = n.daily.pageviews;
-    upsertRows_(blogSheet_(ss, 'Blog_Visitors'), [row], function (r) { return String(r.blog_id) + '|' + dayKey_(r.day); });
+    replaceDayRows_(blogSheet_(ss, 'Blog_Visitors'), day, blogId, [row]);
   }
   if (n.post_views.length) {
-    upsertRows_(blogSheet_(ss, 'Blog_Post_Views'), n.post_views.map(function (r) {
+    replaceDayRows_(blogSheet_(ss, 'Blog_Post_Views'), day, blogId, n.post_views.map(function (r) {
       return { day: day, blog_id: blogId, log_no: r.log_no, views: r.views, synced_at: stamp };
-    }), key3(function (r) { return String(r.log_no); }));
+    }));
   }
   if (n.keywords.length) {
-    upsertRows_(blogSheet_(ss, 'Blog_Keywords'), n.keywords.map(function (r) {
+    replaceDayRows_(blogSheet_(ss, 'Blog_Keywords'), day, blogId, n.keywords.map(function (r) {
       return { day: day, blog_id: blogId, keyword: r.keyword, count: r.count, synced_at: stamp };
-    }), key3(function (r) { return String(r.keyword); }));
+    }));
   }
   if (n.inflow.length) {
-    upsertRows_(blogSheet_(ss, 'Blog_Inflow'), n.inflow.map(function (r) {
+    replaceDayRows_(blogSheet_(ss, 'Blog_Inflow'), day, blogId, n.inflow.map(function (r) {
       return { day: day, blog_id: blogId, channel: r.channel, count: r.count, synced_at: stamp };
-    }), key3(function (r) { return String(r.channel); }));
+    }));
   }
   if (n.audience.length) {
-    upsertRows_(blogSheet_(ss, 'Blog_Audience'), n.audience.map(function (r) {
+    replaceDayRows_(blogSheet_(ss, 'Blog_Audience'), day, blogId, n.audience.map(function (r) {
       return { day: day, blog_id: blogId, kind: r.kind, label: r.label, pct: r.pct, synced_at: stamp };
-    }), key3(function (r) { return String(r.kind) + '|' + String(r.label); }));
+    }));
   }
   PropertiesService.getScriptProperties().setProperty('BLOG_LAST_INGEST_' + blogId, stamp);
+
+  const counts = {
+    daily: n.daily ? 1 : 0, post_views: n.post_views.length, keywords: n.keywords.length,
+    inflow: n.inflow.length, audience: n.audience.length
+  };
+  logBlogStatsIngest_(ss, {
+    blogId: blogId, day: day, counts: counts, dropped: n.dropped,
+    actor: (ctx && ctx.clientId) || 'unknown',
+    idempotencyKey: (ctx && ctx.idempotencyKey) || ''
+  });
+
   return {
     blog_id: blogId, day: day, saved_at: stamp, dropped: n.dropped,
-    counts: { daily: n.daily ? 1 : 0, post_views: n.post_views.length, keywords: n.keywords.length,
-              inflow: n.inflow.length, audience: n.audience.length }
+    counts: counts
   };
+}
+
+/**
+ * 수신 감사 로그 — System_Health 에 event_type=BLOG_STATS_INGEST 한 줄(2026-11-25 전수 점검 2-4).
+ * Channel_Logs 의 doPost 공통 감사에는 남지만, 운영 이벤트 시트에는 없어서 “언제 무엇이 들어왔나”를
+ * 한 곳에서 볼 수 없었다. 기록 실패가 수신을 막지는 않는다.
+ */
+function logBlogStatsIngest_(ss, info) {
+  try {
+    const c = info.counts || {};
+    const rows = (c.daily || 0) + (c.post_views || 0) + (c.keywords || 0) + (c.inflow || 0) + (c.audience || 0);
+    appendSystemHealth_({
+      eventType: 'BLOG_STATS_INGEST',
+      status: info.dropped ? 'PARTIAL' : 'SUCCESS',
+      actor: info.actor || 'unknown',
+      detail: 'blog=' + info.blogId + ' day=' + info.day
+        + ' rows=' + rows
+        + ' daily=' + (c.daily || 0) + ' post_views=' + (c.post_views || 0) + ' keywords=' + (c.keywords || 0)
+        + ' inflow=' + (c.inflow || 0) + ' audience=' + (c.audience || 0)
+        + ' dropped=' + (info.dropped || 0)
+        + (info.idempotencyKey ? ' idem=' + info.idempotencyKey : '')
+    }, ss);
+  } catch (e) { /* 기록 실패는 수신 결과를 바꾸지 않는다 */ }
 }
 
 /** 시트에 쌓인 통계 → 화면용 묶음 (글별 조회수 · 최근 7일 검색어/유입 · 가장 최근 독자 분포) */

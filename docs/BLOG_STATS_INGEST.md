@@ -91,6 +91,11 @@
 시트 `Blog_Post_Views` · `Blog_Keywords` · `Blog_Inflow` · `Blog_Audience`, 그리고 `Blog_Visitors`의 `pageviews` 열.
 첫 전송 때 자동으로 만들어진다. 구현: `gas/Blog.gs` `handleBlogStatsIngest_`, 시험: `gas/test/run.js` [B6].
 
+수신할 때마다 `System_Health`에 `BLOG_STATS_INGEST` 한 줄이 남는다(상태 SUCCESS/PARTIAL, 건수, 버린 줄, 보낸 이).
+`Channel_Logs`의 요청 감사와 별개로 **운영 이벤트 시트 한 곳에서** 수신 이력을 볼 수 있다.
+같은 `day`를 다시 보내면 그날 줄은 통째로 갈아 끼워진다(이번에 안 온 검색어·유입경로 줄이 남지 않는다).
+읽지 못해 **아예 빼고 보낸 항목**은 그대로 남는다 — 항목별로 따로 갈아 끼운다.
+
 ## 피클에게 그대로 붙여 줄 지시문
 
 > 네이버 블로그 `youth-daejeon` 통계를 매일 읽어서 콘텐츠허브로 보내는 루틴을 만들어 줘. 읽는 건 어제 하루치: 방문자·페이지뷰, 글별 조회수, 유입 검색어, 유입 경로, 성별·연령. 형식과 규칙은 콘텐츠허브 레포 `docs/BLOG_STATS_INGEST.md`를 따라. 처음 한 번은 서버로 보내지 말고 만든 JSON을 나한테 보여 줘서 화면 숫자와 맞는지 확인받아. 로그인이 풀리거나 캡차·2단계 인증이 뜨면 재시도하지 말고 멈춘 뒤 나한테 알려 줘. 토큰·주소는 네 비밀 저장소에서만 쓰고 어디에도 적지 마.

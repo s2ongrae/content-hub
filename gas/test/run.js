@@ -834,6 +834,8 @@ class FakeSheet {
   getLastRow() { return this.rows.length; }
   getLastColumn() { return this.rows.reduce((m, r) => Math.max(m, r.length), 0); }
   setFrozenRows() {}
+  appendRow(vals) { this.rows.push(vals.slice()); return this; }
+  deleteRows(start, n) { this.rows.splice(start - 1, n); return this; }
   getRange(r, c, nr, nc) {
     const sh = this; nr = nr || 1; nc = nc || 1;
     const rng = {
@@ -1114,6 +1116,47 @@ eq('같은 키워드 중복은 첫 값만', IS.getSheetByName('Blog_Keywords').r
 callHandler(B.ctx, 'handleBlogStatsIngest_', IS, goodPayload(), { brand: 'daejeon_youth' });
 eq('같은 날 다시 보내면 덮어씀(조회수 2줄 + 헤더)', IS.getSheetByName('Blog_Post_Views').getLastRow(), 3);
 eq('방문자·페이지뷰 저장', IS.getSheetByName('Blog_Visitors').rows[1].slice(2, 3)[0] === 37 && IS.getSheetByName('Blog_Visitors').rows[1][4] === 90, true);
+
+/* 2-4 수신 감사 로그 — System_Health 에 BLOG_STATS_INGEST 한 줄(2026-11-25) */
+{
+  const health = IS.getSheetByName('System_Health');
+  ok('첫 수신에 System_Health 시트가 생긴다(운영 이벤트 시트에 남긴다)', !!health && health.rows.length >= 2, health && health.rows);
+  const last = health && health.rows[health.rows.length - 1];
+  ok('수신 로그: 이벤트·상태·상세(건수·버린 줄)', !!last && last[1] === 'BLOG_STATS_INGEST' && last[2] === 'PARTIAL'
+    && /day=/.test(last[9]) && /post_views=2/.test(last[9]) && /keywords=2/.test(last[9]) && /dropped=6/.test(last[9]), last);
+  const A = new FakeSS();
+  callHandler(B.ctx, 'handleBlogStatsIngest_', A, goodPayload(), { brand: 'daejeon_youth', clientId: 'pickle', idempotencyKey: 'blogstat-daejeon_youth-' + KST_YDAY });
+  const alog = A.getSheetByName('System_Health').rows[1];
+  ok('수신 로그에 누가 보냈는지(actor)·멱등키가 남는다', alog && alog[8] === 'pickle' && /idem=blogstat-daejeon_youth-/.test(alog[9]), alog);
+  ok('수신 로그는 수신 응답을 바꾸지 않는다', callHandler(B.ctx, 'handleBlogStatsIngest_', A, goodPayload(), { brand: 'daejeon_youth', clientId: 'pickle' }).ok === true);
+}
+
+/* 2-5 같은 날 재전송은 '덮어쓰기' — 이번에 안 온 검색어·유입경로 줄이 남지 않는다 */
+{
+  const RS = new FakeSS();
+  const d1 = KST_YDAY;
+  const d2 = new Date(Date.now() + 9 * 3600000 - 2 * 86400000).toISOString().slice(0, 10);
+  callHandler(B.ctx, 'handleBlogStatsIngest_', RS, { day: d1, keywords: [{ keyword: '봉명동 냉삼', count: 5 }, { keyword: '대전 삼겹살', count: 3 }], inflow: [{ channel: '네이버 검색', count: 9 }, { channel: '인스타그램', count: 1 }] }, { brand: 'daejeon_youth' });
+  callHandler(B.ctx, 'handleBlogStatsIngest_', RS, { day: d2, keywords: [{ keyword: '봉명동 냉삼', count: 4 }], inflow: [{ channel: '네이버 검색', count: 8 }] }, { brand: 'daejeon_youth' });
+  callHandler(B.ctx, 'handleBlogStatsIngest_', RS, { day: d1, keywords: [{ keyword: '봉명동 냉삼', count: 7 }], inflow: [{ channel: '네이버 검색', count: 10 }] }, { brand: 'daejeon_youth' });
+  const kw = RS.getSheetByName('Blog_Keywords');
+  const sameDay = kw.rows.slice(1).filter(function (r) { return String(r[0]).slice(0, 10) === d1; });
+  eq('정정 전송 뒤 그날 검색어는 이번에 온 1줄뿐', sameDay.length, 1);
+  eq('그 줄의 값은 새 값(7)', Number(sameDay[0] && sameDay[0][3]), 7);
+  eq('다른 날 줄은 그대로 남는다', kw.rows.slice(1).filter(function (r) { return String(r[0]).slice(0, 10) === d2; }).length, 1);
+  eq('유입경로도 그날 줄만 갈아 끼운다', RS.getSheetByName('Blog_Inflow').rows.slice(1).filter(function (r) { return String(r[0]).slice(0, 10) === d1; }).length, 1);
+  eq('안 보낸 항목(조회수)은 건드리지 않는다', RS.getSheetByName('Blog_Post_Views'), null);
+  const summ = callHandler(B.ctx, 'handleListBlogStats_', (function () {
+    const s = new FakeSS();
+    s.insertSheet('Blog_Posts').rows = [['blog_id', 'log_no', 'title', 'url', 'category', 'published_at', 'comment_cnt', 'sympathy_cnt', 'share_cnt', 'photo_count', 'content_id', 'first_seen_at', 'synced_at']];
+    s.insertSheet('Contents').rows = [['content_id']];
+    s.insertSheet('Rank_Log').rows = [['rank_log_id']];
+    callHandler(B.ctx, 'handleBlogStatsIngest_', s, { day: d1, keywords: [{ keyword: '옛 검색어', count: 9 }, { keyword: '봉명동 냉삼', count: 5 }] }, { brand: 'daejeon_youth' });
+    callHandler(B.ctx, 'handleBlogStatsIngest_', s, { day: d1, keywords: [{ keyword: '봉명동 냉삼', count: 5 }] }, { brand: 'daejeon_youth' });
+    return s;
+  })(), { days: 7 }, { brand: 'daejeon_youth' });
+  ok('화면용 7일 검색어 합계가 부풀지 않는다', summ.ok && summ.data.keywords_7d.length === 1 && summ.data.keywords_7d[0].count === 5, summ.data && summ.data.keywords_7d);
+}
 o = callHandler(B.ctx, 'handleBlogStatsIngest_', IS, { day: '2999-01-01', keywords: [{ keyword: 'a', count: 1 }] }, { brand: 'daejeon_youth' });
 eq('미래 날짜는 거부', o.code, 'ERR_VALIDATION_FAILED');
 o = callHandler(B.ctx, 'handleBlogStatsIngest_', IS, { day: KST_YDAY }, { brand: 'daejeon_youth' });

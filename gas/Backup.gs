@@ -533,10 +533,19 @@ function applyRetention_(tier, folder) {
   return { kept: keys.slice(0, keepN), trashed: trashed };
 }
 
-function appendSystemHealth_(payload) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('System_Health');
-  if (!sheet) return;
+function appendSystemHealth_(payload, ssArg) {
+  const ss = ssArg || SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) return false;
+  let sheet = ss.getSheetByName('System_Health');
+  if (!sheet) {
+    // 시트가 없으면(새 스프레드시트·시험 환경) 스키마대로 만들고 남긴다 — 로그를 조용히 버리지 않는다.
+    if (typeof SHEET_SCHEMAS === 'undefined' || !SHEET_SCHEMAS.System_Health || typeof ss.insertSheet !== 'function') return false;
+    sheet = ss.insertSheet('System_Health');
+    sheet.getRange(1, 1, 1, SHEET_SCHEMAS.System_Health.length).setValues([SHEET_SCHEMAS.System_Health]);
+  } else {
+    ensureSheetColumns_(ss, 'System_Health',
+      (typeof SHEET_SCHEMAS !== 'undefined' && SHEET_SCHEMAS.System_Health) || []);
+  }
   const id = 'SYS-' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMddHHmmss')
     + '-' + Math.floor(100 + Math.random() * 900);
   sheet.appendRow([
@@ -552,6 +561,7 @@ function appendSystemHealth_(payload) {
     payload.detail || '',
     formatKstIso_(new Date())
   ]);
+  return true;
 }
 
 /* ------------------------------------------------------------------ *
