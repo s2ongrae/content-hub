@@ -2015,6 +2015,136 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('글자 디자인 시험', false, (err && err.stack) || err);
   }
 
+  /* ────────────────────────── [16] 성래 님 스타일 DNA (2026-11-25, #50347) ──────────────────────────
+     발행글 4편 실측으로 박은 문법(인용구 섹션·▲ 캡션·📌 정보카드·⭐ 총평·펀치라인·해시태그 2줄)을
+     뼈대 조립(0토큰) → 빈 자리 채우기 → 목소리 린터 순서로 검사한다.
+     시드(seeds/blog_style_dna_2026w48.json) · 허브 모듈(js/blogStyle.js) · 노트북(draft.js) 세 곳이 같은 값이어야 한다. */
+  console.log('\n[16] 블로그 스타일 DNA · 뼈대 조립 · 목소리·품질 린터');
+  try {
+    const BS = await import('file://' + path.join(ROOT, 'js', 'blogStyle.js'));
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'blog_style_dna_2026w48.json'), 'utf8'));
+    eq('시드와 모듈 기본값이 같다(종류별 블록)', JSON.stringify(seed.kinds), JSON.stringify(BS.STYLE_DNA.kinds));
+    eq('시드와 모듈 인용구·캡션·정보카드 규칙이 같다',
+      JSON.stringify([seed.quote, seed.caption, seed.info_card, seed.rating, seed.hashtag]),
+      JSON.stringify([BS.STYLE_DNA.quote, BS.STYLE_DNA.caption, BS.STYLE_DNA.info_card, BS.STYLE_DNA.rating, BS.STYLE_DNA.hashtag]));
+    eq('펀치라인 금지 어미가 같다', JSON.stringify(seed.punch.ban_endings), JSON.stringify(BS.STYLE_DNA.punch.ban_endings));
+
+    const materials = {
+      place: { name: '진미오겹살' },
+      content: {
+        memo: ['안녕하세요, 대전 청년입니다.',
+          '이번엔 집게를 한 번도 안 들고 고기를 먹은 이야기입니다.',
+          '📍 진미오겹살 본점', '고기를 다 구워준다고 해서 반신반의하고 갔습니다.', '사장님이 테이블마다 돌면서 구워주십니다.',
+          '📍 폭탄 계란찜', '이건 밥이 아니라 술 안주입니다.', '불판 옆에서 부풀어 오르는 걸 보고 있으면 소주를 부르게 됩니다.'].join('\n\n'),
+        region_dong: '괴정동', category: '고기집', hours: '매일 15:00~24:00',
+        price_menu: '삼겹살 180g 16,000원', parking: '건물 지하 2시간 무료', tel: '042-000-0000',
+        address: '대전 서구 용문로 41-80'
+      },
+      concept: { kind: 'review' },
+      photos: [{ name: 'A.jpg', role: '외관' }, { name: 'B.jpg', role: '메뉴판' }, { name: 'C.jpg', role: '음식' }],
+      links: [{ title: '석암 솔직후기', url: 'https://blog.naver.com/youth-daejeon/224459297302' }]
+    };
+    const bp = BS.buildStyleSkeleton({ materials: materials, links: materials.links });
+    eq('글 종류(장소+리뷰) = place', bp.kind, 'place');
+    eq('블록 순서가 확정안과 같다', bp.blocks.map((b) => b.id).join(','),
+      'opener,forecast,cover,section_1,section_2,info_card,rating,punch,hashtags');
+    const text = BS.renderStyleSkeleton(bp);
+    ok('인용구 섹션 2개(+⭐ 총평) — > 머리 / 빈 > / > 판정', BS.quoteSections(text).length === 3
+      && BS.quoteSections(text).filter((h) => h.indexOf('📍') === 0).length === 2, BS.quoteSections(text));
+    ok('인용구 판정은 원문 첫 줄을 그대로 올린다', text.indexOf('> 고기를 다 구워준다고 해서 반신반의하고 갔습니다.') >= 0);
+    ok('사진은 ▲ 캡션으로 붙고 번호 순서 그대로', /\[사진 1\] A\.jpg\n▲ /.test(text) && /\[사진 3\] C\.jpg/.test(text));
+    ok('정보카드 5항목(위치·영업·가격·주차·전화)', ['📍 위치', '🕘 영업', '🍴 가격', '🅿 주차', '☎ 전화'].every((h) => text.indexOf(h) >= 0));
+    ok('정보카드에 없는 값은 지어내지 않고 빈 자리로 남긴다', text.indexOf('⟦빠진 정보') < 0 || text.indexOf('🚫 휴무') < 0);
+    ok('⭐ 총평 3줄이 들어간다', ['맛 ⟦별점⟧', '가성비 ⟦별점⟧', '서비스 ⟦별점⟧'].every((r) => text.indexOf(r) >= 0));
+    ok('해시태그 2줄 + 👉 교차링크', (text.match(/^#/gm) || []).length === 2 && /^👉 같은 괴정동 맛집 편: 석암 솔직후기/m.test(text));
+    ok('같은 사진이 두 번 나오지 않는다', (text.match(/\[사진 1\]/g) || []).length === 1);
+
+    const filled = BS.fillStyleSlots(text, {
+      opener: 'Lv.2 빚 있는 청년 카푸어',
+      section_punch: [{ text: '집게를 안 든다는 말, 진짜였습니다.' }, { text: '이건 밥이 아니라 술 안주입니다.' }],
+      rating: [{ row: '맛', stars: '★★★★★', note: '껍데기까지 쫀득함' }],
+      outro: '집게는 사장님이 들고, 소주잔은 제가 들었습니다.',
+      captions: [{ aside: '고기 식은 건 비밀' }]
+    });
+    ok('AI 결과로 빈 별점·애드리브가 채워진다',
+      filled.indexOf('맛 ★★★★★ (껍데기까지 쫀득함)') >= 0 && filled.indexOf('(고기 식은 건 비밀)') >= 0, filled.slice(0, 300));
+    ok('판정 자리는 내 원문이 있으면 안 덮어쓴다', filled.indexOf('> 고기를 다 구워준다고 해서 반신반의하고 갔습니다.') >= 0 && filled.indexOf('> 집게를 안 든다는 말') < 0);
+    /* 도입·마무리 슬롯은 메모에 그 자리가 없을 때만 생긴다(내 문장이 있으면 내 문장이 이긴다). */
+    const bp2 = BS.buildStyleSkeleton({ materials: Object.assign({}, materials, { content: Object.assign({}, materials.content, { memo: '그냥 짧은 메모입니다.' }) }) });
+    const t2 = BS.renderStyleSkeleton(bp2);
+    const filled2 = BS.fillStyleSlots(t2, { opener: 'Lv.2 빚 있는 청년 카푸어', outro: '집게는 사장님이 들고, 소주잔은 제가 들었습니다.' });
+    ok('메모에 인사·마무리가 없으면 AI 가 도입·펀치를 채운다', filled2.indexOf('Lv.2 빚 있는 청년 카푸어') >= 0 && filled2.indexOf('소주잔은 제가 들었습니다') >= 0, filled2.slice(0, 300));
+    ok('AI 가 안 보낸 자리는 슬롯으로 남는다', BS.slotsOf(filled).some((s) => /가성비|서비스/.test(s)));
+
+    /* 목소리 린터 — 발행글 원문은 통과하고, 예전 평문 키트는 인용구·펀치에서 걸린다. */
+    const original = fs.readFileSync(path.join(ROOT, 'test', 'fixtures', 'blog_style_original_20261117.txt'), 'utf8');
+    const vOrig = BS.lintVoice(original, { kind: 'place', photoCount: 20 });
+    const byId = (r, id) => (r.items.filter((x) => x.id === id)[0] || {}).state;
+    ok('발행글 원문: 인용구·정보카드·별점·펀치 통과', byId(vOrig, 'quote_sections') === 'pass' && byId(vOrig, 'info_card') === 'pass'
+      && byId(vOrig, 'rating') === 'pass' && byId(vOrig, 'punch_end') === 'pass' && byId(vOrig, 'hashtags') === 'pass', vOrig.summary);
+    ok('발행글 원문: 거친 표현·로컬 비유·숫자도 통과', byId(vOrig, 'rough_voice') === 'pass' && byId(vOrig, 'local_metaphor') === 'pass' && byId(vOrig, 'numbers') === 'pass', vOrig.summary);
+    ok('발행글 원문 목소리 점수 85 이상', vOrig.score >= 85, vOrig.score);
+    const vKit = BS.lintVoice('■ 본문\n\n안녕하세요, 대전 청년입니다.\n\n   [사진] a.jpg — 가게 입구 모습\n\n주소: 대전 서구\n영업: 15:00~24:00\n\n맛있게 먹었습니다.\n\n#대전맛집 #괴정동', { kind: 'place', photoCount: 3 });
+    ok('예전 평문 키트: 인용구·정보카드·펀치라인에서 걸린다', byId(vKit, 'quote_sections') === 'warn' && byId(vKit, 'info_card') === 'warn' && byId(vKit, 'captions') === 'warn', vKit.summary);
+    ok('평문 키트가 원문보다 점수가 낮다', vKit.score < vOrig.score, vKit.score + ' < ' + vOrig.score);
+    const vTeacher = BS.lintVoice(original.replace('나쁜건 오빠가', '앞으로도 좋은 하루 되시길 바라며 나쁜건 오빠가').replace(/맛 ⭐+/, '맛 ⭐⭐⭐⭐⭐') + '\n\n여러분도 꼭 가 보세요. 맛집을 아는 건 소소한 행복이니까요.', { kind: 'place', photoCount: 20 });
+    ok('교훈·당부로 끝나면 펀치라인에서 걸린다', byId(vTeacher, 'punch_end') === 'warn', JSON.stringify(vTeacher.items.filter((x) => x.id === 'punch_end')));
+
+    /* 54자 초과 — 인용구·정보카드·해시태그는 예외, 서술만 센다. */
+    const longQuote = '> ' + '가'.repeat(60);
+    const longProse = '나'.repeat(60);
+    const ll = BS.longLines(longQuote + '\n' + longProse + '\n#해시태그'.padEnd(0) + '#' + '태그'.repeat(20));
+    ok('인용구 54자 초과는 예외로 표시된다', ll.filter((x) => x.kind === 'quote')[0].exempt === true);
+    ok('서술 54자 초과는 감점 대상', ll.filter((x) => x.kind === 'prose')[0].exempt === false);
+    ok('해시태그 줄은 예외', ll.filter((x) => x.kind === 'hashtag').every((x) => x.exempt));
+
+    /* 품질 7지침 (2026-11-25 #50614) — 시드·모듈·노트북 세 곳이 같은 값 */
+    eq('품질 규칙이 시드와 같다', JSON.stringify(seed.quality), JSON.stringify(BS.STYLE_DNA.quality));
+    const qOrig = BS.lintQuality(original, { kind: 'place', food: true });
+    const qById = (r, id) => (r.items.filter((x) => x.id === id)[0] || {}).state;
+    ok('발행글: 추상 AI 표현·광고성 통과', qById(qOrig, 'abstract_ai') === 'pass' && qById(qOrig, 'ad_words') === 'pass', qOrig.summary);
+    ok('발행글: 메뉴 묘사·경험 통과', qById(qOrig, 'menu_desc') === 'pass' && qById(qOrig, 'experience') !== 'warn', qOrig.summary);
+    const qAi = BS.lintQuality('분위기가 느껴졌습니다. 맛의 방향이 분명했습니다. 최고의 맛입니다. 주차는 건물 지하에 있습니다. 주차는 넓습니다. 주차는 편합니다.', { kind: 'place', food: true });
+    ok('AI 샘플: 추상 표현·광고성·메뉴 묘사에서 걸린다', qById(qAi, 'abstract_ai') === 'warn' && qById(qAi, 'ad_words') === 'warn' && qById(qAi, 'menu_desc') === 'warn', qAi.summary);
+    ok('AI 샘플이 발행글보다 품질 점수가 낮다', qAi.score < qOrig.score, qAi.score + ' < ' + qOrig.score);
+    ok('공백 제외 글자수를 센다', BS.charsNoSpace('가 나\n다') === 3);
+    ok('품질 프롬프트가 7지침을 담는다', BS.qualityPromptLines('place').join(' ').indexOf('자료 구분') >= 0 && BS.qualityPromptLines('place').join(' ').indexOf('종결 반복 상한') >= 0);
+    const kitQ = (await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=style-test')).buildBlogKit({ materials: materials });
+    ok('스튜디오 키트에 목소리·품질 점수가 같이 담긴다', !!kitQ.style && !!kitQ.style.quality && typeof kitQ.style.quality.score === 'number', JSON.stringify(kitQ.style && Object.keys(kitQ.style)));
+    ok('음식 글 판별(스튜디오)', (await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=style-test2')).isFoodPost(materials) === true
+      && (await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=style-test3')).isFoodPost({ place: { name: '쏘나타' }, content: { category: '중고차' } }) === false);
+
+    /* 노트북(hub-agent)과 같은 값 — 시드·허브 모듈·draft.js 3곳 */
+    const DRAFT_PATH = path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'draft.js');
+    if (fs.existsSync(DRAFT_PATH)) {
+      const D = require(DRAFT_PATH);
+      eq('노트북 draft.STYLE.kinds 가 시드와 같다', JSON.stringify(D.STYLE.kinds),
+        JSON.stringify(Object.keys(seed.kinds).reduce((o, k) => { o[k] = seed.kinds[k].blocks.map((b) => b.id); return o; }, {})));
+      eq('노트북 펀치라인 금지 어미가 시드와 같다', JSON.stringify(D.STYLE.punch_ban), JSON.stringify(seed.punch.ban_endings));
+      const dp = D.buildPrompt(D.validate({ content_id: 'C1', brand: 'daejeon_youth', format: 'blog', concept: { kind: 'review', tone: 'plain' }, memo_sha256: '0'.repeat(64) }),
+        [{ id: 'U01', text: '원문', sha256: 'x' }], { place_name: '진미오겹살' }, [{ name: 'a.jpg', role: '외관' }]);
+      ok('노트북 프롬프트가 빈 자리 채우기를 요구한다', /섹션 판정 한 줄/.test(dp) && /section_punch/.test(dp) && /⭐ 총평/.test(dp) && /블록 순서: opener/.test(dp));
+      ok('노트북 프롬프트가 품질 7지침을 같이 보낸다', /품질 7지침/.test(dp) && /자료 구분/.test(dp));
+      eq('노트북 품질 규칙이 시드와 같다', JSON.stringify([D.STYLE.quality.length, D.STYLE.quality.abstract_ban, D.STYLE.quality.ad_words]),
+        JSON.stringify([seed.quality.length_chars, seed.quality.abstract_ban, seed.quality.ad_words]));
+      const qDraft = D.normalizeDraft(D.validate({ content_id: 'C1', brand: 'daejeon_youth', format: 'blog', concept: { kind: 'review', tone: 'plain' }, memo_sha256: '0'.repeat(64) }),
+        { titles: ['x'], outro: '분위기가 느껴졌습니다. 최고의 맛이었습니다.', opener: '대전 청년', section_punch: [{ text: '판정' }] }, [{ id: 'U01', text: '원문', sha256: 'x' }]);
+      ok('노트북: AI 추상 표현·광고성 문구를 경고로 남긴다', qDraft.warnings.some((w) => /추상 표현/.test(w)) && qDraft.warnings.some((w) => /광고성/.test(w)), JSON.stringify(qDraft.warnings).slice(0, 200));
+      ok('노트북 프롬프트가 사진 자리표시를 금지한다', /\[사진 위치\]/.test(dp) && /교훈형 엔딩/.test(dp));
+    } else {
+      console.log('  - hub-agent 가 옆에 없어 노트북 대조는 건너뜀');
+    }
+
+    /* CLI — 웹앱과 같은 모듈을 쓰는가 */
+    ok('blog_style_cli.mjs 가 있다', fs.existsSync(path.join(ROOT, 'tools', 'blog_style_cli.mjs')));
+    const cli = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'blog_style_cli.mjs'), 'lint', path.join(ROOT, 'test', 'fixtures', 'blog_style_original_20261117.txt'), '--kind', 'place', '--photo', '20', '--json'], { encoding: 'utf8' });
+    ok('CLI 실행(종료 코드 0/1)', cli.status === 0 || cli.status === 1, (cli.stderr || '').slice(0, 200));
+    const cliOut = JSON.parse(cli.stdout || '{}');
+    eq('CLI 와 모듈 점수가 같다', cliOut.score, vOrig.score);
+  } catch (err) {
+    ok('블로그 스타일 DNA 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();

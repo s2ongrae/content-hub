@@ -1,0 +1,488 @@
+{
+  "version": "2026w48",
+  "source": "성래 님 발행글 4편 실측(2026-10-29~11-17) + 제미니 고정방 확정안(2026-11-25)",
+  "measure": {
+    "line_avg": [
+      36.1,
+      37.2,
+      39.8,
+      45.9
+    ],
+    "line_median": [
+      35,
+      48
+    ],
+    "quote_blocks": [
+      4,
+      10
+    ],
+    "over54_lines": [
+      3,
+      15
+    ],
+    "short_lines": [
+      2,
+      14
+    ],
+    "asides": [
+      1,
+      17
+    ],
+    "hashtag_lines": 2,
+    "info_card_lines": [
+      8,
+      20
+    ]
+  },
+  "kinds": {
+    "place": {
+      "label": "맛집·장소",
+      "blocks": [
+        {
+          "id": "opener",
+          "label": "도입 — 자기소개 + 자조 타이틀",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "forecast",
+          "label": "오늘 글 예고",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "sections",
+          "label": "인용구 섹션 + 1:1 사진(▲ 캡션 + 괄호 애드리브)",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "info_card",
+          "label": "📌 업체정보 + 6항목(📍🕘🚫🍴🅿☎)",
+          "required": true,
+          "role": "FACT"
+        },
+        {
+          "id": "rating",
+          "label": "⭐ 맛·가성비·서비스 3줄",
+          "required": true,
+          "role": "AI"
+        },
+        {
+          "id": "punch",
+          "label": "펀치라인 종결",
+          "required": true,
+          "role": "AI"
+        },
+        {
+          "id": "hashtags",
+          "label": "해시태그 2줄",
+          "required": true,
+          "role": "AUTO"
+        },
+        {
+          "id": "crosslink",
+          "label": "👉 같은 동네 편 교차링크",
+          "required": false,
+          "role": "AUTO"
+        }
+      ]
+    },
+    "info": {
+      "label": "정보·리뷰",
+      "blocks": [
+        {
+          "id": "opener",
+          "label": "도입 — 자기소개 + 자조 타이틀",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "forecast",
+          "label": "핵심 요약·예고",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "sections",
+          "label": "인용구 + 1:1 사진 본문",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "numbers",
+          "label": "숫자·스펙 요약",
+          "required": false,
+          "role": "FACT"
+        },
+        {
+          "id": "punch",
+          "label": "펀치라인 종결",
+          "required": true,
+          "role": "AI"
+        },
+        {
+          "id": "hashtags",
+          "label": "해시태그 + 교차링크",
+          "required": true,
+          "role": "AUTO"
+        }
+      ]
+    },
+    "story": {
+      "label": "자기서사·정산",
+      "blocks": [
+        {
+          "id": "opener",
+          "label": "도입 — 자기소개 + 자조 타이틀",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "forecast",
+          "label": "상황 예고",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "sections",
+          "label": "인용구 + 1:1 사진 서사",
+          "required": true,
+          "role": "MIX"
+        },
+        {
+          "id": "punch",
+          "label": "펀치라인(또는 자판 난타)",
+          "required": true,
+          "role": "AI"
+        },
+        {
+          "id": "hashtags",
+          "label": "해시태그 + 교차링크",
+          "required": true,
+          "role": "AUTO"
+        }
+      ]
+    }
+  },
+  "quote": {
+    "head_chars": 32,
+    "punch_chars": 40,
+    "heads": {
+      "section": "📍",
+      "menu": "📋",
+      "food": "🍴",
+      "side": "🥗",
+      "review": "⭐",
+      "tip": "🍯",
+      "money": "📊",
+      "place_info": "📌"
+    }
+  },
+  "caption": {
+    "head": "▲",
+    "max_chars": 42,
+    "aside_chars": 40,
+    "roles": [
+      "외관",
+      "메뉴판",
+      "음식",
+      "분위기",
+      "마무리"
+    ]
+  },
+  "info_card": {
+    "title": "📌 업체정보",
+    "fields": [
+      {
+        "key": "address",
+        "head": "📍",
+        "label": "위치"
+      },
+      {
+        "key": "hours",
+        "head": "🕘",
+        "label": "영업"
+      },
+      {
+        "key": "closed_days",
+        "head": "🚫",
+        "label": "휴무"
+      },
+      {
+        "key": "price_menu",
+        "head": "🍴",
+        "label": "가격"
+      },
+      {
+        "key": "parking",
+        "head": "🅿",
+        "label": "주차"
+      },
+      {
+        "key": "wait_time",
+        "head": "⏳",
+        "label": "대기"
+      },
+      {
+        "key": "tel",
+        "head": "☎",
+        "label": "전화"
+      }
+    ],
+    "required": [
+      "📍",
+      "🕘",
+      "🍴",
+      "🅿",
+      "☎"
+    ]
+  },
+  "rating": {
+    "head": "⭐ 대전청년의 솔직 총평",
+    "tome": "내 돈 내고 먹고 남기는 얘기입니다",
+    "rows": [
+      "맛",
+      "가성비",
+      "서비스"
+    ]
+  },
+  "opener": {
+    "greeting": "안녕하세요, 대전 청년입니다.",
+    "greeting_emoji": "🙋✨",
+    "templates": [
+      "안녕하세요, {self}입니다.",
+      "안녕하세요, 오늘은 {self}입니다."
+    ]
+  },
+  "punch": {
+    "ban_endings": [
+      "뜻이니까요",
+      "중요합니다",
+      "도움이 되셨",
+      "기대해",
+      "기대하겠습니다",
+      "마치겠습니다",
+      "알아보았습니다",
+      "함께 이겨내",
+      "응원합니다",
+      "저장해 두세요",
+      "방문해 보세요",
+      "즐거운 하루",
+      "다음 편에서",
+      "정리해 보았습니다",
+      "추천드립니다",
+      "하시길 바랍니다",
+      "챙겨 보세요",
+      "기억해 두세요",
+      "니까요",
+      "보세요",
+      "바랍니다",
+      "되세요",
+      "좋겠습니다"
+    ],
+    "examples": [
+      "나쁜건 오빠가 다 마셔서 사라지게 해줄게.",
+      "가오는 잡았고, 통장은 잡혔습니다.",
+      "차라도 똑바로 굴러가니 다행이네요.",
+      "제발 코스닥도 음흉하고 발작적이고 폭발적인 뜨거운 급등 부탁드립니다. 제가 잘못했어요."
+    ]
+  },
+  "rough_voice": {
+    "allow": [
+      "개박살",
+      "개작살",
+      "박살",
+      "쳐발",
+      "개소리",
+      "미개한",
+      "흡연충",
+      "찌질이",
+      "후두려",
+      "짖어대",
+      "헥토파스칼킥",
+      "똥물",
+      "물타",
+      "지옥구렁",
+      "금쪽이",
+      "개도박",
+      "아작",
+      "깡패",
+      "1황",
+      "원탑",
+      "맛잘알",
+      "남바원",
+      "쎄단",
+      "가오",
+      "카푸어",
+      "빚쟁이",
+      "거지",
+      "맷값",
+      "낭낭",
+      "생생탱귤",
+      "데헷",
+      "ㅋㅋ",
+      "ㅠ",
+      ".."
+    ],
+    "local": [
+      "성심당",
+      "트램",
+      "1호선",
+      "유성온천",
+      "대전역",
+      "한밭",
+      "갑천",
+      "도안동",
+      "봉명동",
+      "유성",
+      "대전"
+    ]
+  },
+  "long_line": {
+    "exempt": [
+      "quote",
+      "info",
+      "hashtag",
+      "url",
+      "list"
+    ],
+    "max_prose_over": 15,
+    "consecutive_max": 2
+  },
+  "hashtag": {
+    "lines": 2,
+    "per_line": 7,
+    "max": 13
+  },
+  "crosslink": "👉 같은 {dong} {topic} 편: {title}",
+  "video_link": "▶ 영상으로 보기",
+  "quality": {
+    "version": "2026w48",
+    "length_chars": [
+      1800,
+      3000
+    ],
+    "length_warn": [
+      1500,
+      3500
+    ],
+    "experience_min": 3,
+    "ending_repeat_max": 0.35,
+    "ending_min_sentences": 6,
+    "menu_facets_min": 2,
+    "abstract_ban": [
+      "분위기가 느껴졌",
+      "분위기를 느낄 수 있",
+      "맛의 방향이 분명했",
+      "맛의 방향이 분명합",
+      "정갈한 맛",
+      "깊은 풍미",
+      "조화로움이 느껴졌",
+      "음식의 조화가 돋보였",
+      "정성이 느껴졌",
+      "입안 가득 퍼지는",
+      "감탄이 나왔",
+      "기대 이상이었",
+      "실망시키지 않았",
+      "여운이 남는",
+      "한 끼의 행복",
+      "특유의 감칠맛이 일품",
+      "풍미가 살아있",
+      "비주얼이 훌륭",
+      "감성 가득"
+    ],
+    "ad_words": [
+      "최고의 맛",
+      "인생 맛집",
+      "무조건 추천",
+      "강력 추천",
+      "후회 없",
+      "완벽한 맛",
+      "기대 이상",
+      "실망시키지 않",
+      "꼭 가보셔야",
+      "두 번 가세요"
+    ],
+    "menu_facets": {
+      "국물": [
+        "국물",
+        "육수",
+        "진하",
+        "걸죽",
+        "걸쭉",
+        "시원하"
+      ],
+      "식감": [
+        "식감",
+        "쫀득",
+        "바삭",
+        "쫄깃",
+        "부드",
+        "사각",
+        "두툼",
+        "얇",
+        "탱글"
+      ],
+      "맵기": [
+        "매콤",
+        "매운",
+        "얼큰",
+        "칼칼",
+        "맵기",
+        "살얼큰"
+      ],
+      "온도": [
+        "뜨끈",
+        "뜨거",
+        "따뜻",
+        "차갑",
+        "식은",
+        "얼음"
+      ],
+      "조화": [
+        "어울",
+        "조화",
+        "곁들",
+        "싸먹",
+        "올려",
+        "비벼",
+        "찍어"
+      ]
+    },
+    "shortcoming_words": [
+      "아쉬",
+      "비싸",
+      "좁",
+      "불편",
+      "시끄",
+      "웨이팅",
+      "대기",
+      "양이 적",
+      "간이 세",
+      "주차가 어려",
+      "주차 어려"
+    ],
+    "info_dup_keys": [
+      {
+        "key": "parking",
+        "words": [
+          "주차"
+        ]
+      },
+      {
+        "key": "wait",
+        "words": [
+          "웨이팅"
+        ]
+      },
+      {
+        "key": "hours",
+        "words": [
+          "영업시간",
+          "라스트오더"
+        ]
+      }
+    ]
+  }
+}

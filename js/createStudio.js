@@ -23,7 +23,7 @@ import {
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
   errorText, orderLine, titleOptions, firstPrice, FEED_CARDS,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
-} from './studioLogic.js?v=20261124';
+} from './studioLogic.js?v=20261125s1';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261125k';
 import { WATERMARK_POSITIONS } from './designModel.js?v=20261125k';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261124';
@@ -774,6 +774,37 @@ function paintBlog(actions, out, ctx, ui) {
 function paintKit(out, ctx, kit, ui, draft) {
   const { h } = ctx;
   const composed = draft ? composeBlogWithDraft(kit, draft) : null;
+
+  /* ── 🖋️ 내 스타일 본문 (2026-11-25, #50347) — 성래 님 발행글 문법으로 0토큰 조립한 본문을 맨 위에 ──
+     인용구 섹션·▲ 캡션·📌 정보카드·⭐ 총평·펀치라인 순서. 비는 자리는 ⟦⟧ 로 보이게 둔다. */
+  const style = kit.style;
+  if (style && style.text) {
+    const kindLabel = style.kind === 'place' ? '맛집·장소' : style.kind === 'story' ? '자기서사·정산' : '정보·리뷰';
+    const sBox = h('div', { class: 'panel' },
+      h('h3', null, '🖋️ 내 스타일 본문 ', h('span', { class: 'tag', text: kindLabel })),
+      h('p', { class: 'st-hint', text: '성래 님 발행글 문법(인용구 섹션 → ▲ 캡션 → 📌 정보카드 → ⭐ 총평 → 펀치라인 → 해시태그)으로 조립했습니다. 내가 쓴 문단은 그대로 옮겼습니다.' }),
+      h('p', { class: 'st-hint' + (style.lint.warns.length ? ' err' : ''), text: '목소리 점수 ' + style.lint.score + ' · ' + style.lint.summary }),
+      style.quality ? h('p', { class: 'st-hint' + (style.quality.warns.length ? ' err' : ''), text: '품질 점수 ' + style.quality.score + ' · ' + style.quality.summary + ' (' + style.quality.chars + '자, 공백 제외)' }) : null,
+      h('pre', { class: 'st-pre' }, style.text),
+      h('div', { class: 'row' },
+        copyTextBtn(h, style.text, ctx.toast, '내 스타일 본문 복사'),
+        downloadBtn(h, '내스타일본문.md', style.text, ctx.toast)),
+      h('p', { class: 'st-hint', text: '⟦⟧ 는 채울 자리입니다 — 직접 채우거나 [🤖 AI 초안]으로 판정 한 줄·캡션·펀치라인만 받으세요.' }));
+    sBox.appendChild(h('div', { class: 'gate' }, style.lint.items
+      .filter((it) => it.id !== 'slots')
+      .map((it) => h('div', { class: 'gate-row' },
+        h('span', { text: it.label + ' — ' + (it.value || '') }),
+        h('span', { class: 'gv ' + (it.state === 'pass' ? 'ok' : it.state === 'near' ? 'na' : 'no'), text: it.state === 'pass' ? '✓' : it.state === 'near' ? '△' : '✗' })))));
+    if (style.quality) {
+      sBox.appendChild(h('h3', { text: '품질 7지침 (스레드 @k.sh0000_ · 제미니 확정)' }));
+      sBox.appendChild(h('p', { class: 'st-hint', text: '경험·AI투·장단점·정보 중복·메뉴 묘사·종결 반복·분량. 이 점수는 발행을 막지 않습니다 — 고칠 것만 보세요.' }));
+      sBox.appendChild(h('div', { class: 'gate' }, style.quality.items.map((it) => h('div', { class: 'gate-row' },
+        h('span', { text: it.label + ' — ' + (it.value || '') }),
+        h('span', { class: 'gv ' + (it.state === 'pass' ? 'ok' : it.state === 'near' ? 'na' : 'no'), text: it.state === 'pass' ? '✓' : it.state === 'near' ? '△' : '✗' })))));
+    }
+    out.appendChild(sBox);
+  }
+
   const box = h('div', { class: 'panel' },
     h('h3', null, '제목 후보 3안'));
   (composed ? composed.titles : kit.titles).forEach((t, i) => {

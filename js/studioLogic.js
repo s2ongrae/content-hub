@@ -14,6 +14,7 @@
 import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261123c';
 import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261124';
 import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
+import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf } from './blogStyle.js?v=20261125a';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 
@@ -441,6 +442,13 @@ export function captionFor(photo, materials) {
   return byRole[role] || '현장 사진';
 }
 
+/** 음식 글인가 — 메뉴 묘사 린터를 음식 글에만 강제한다(차·보험·예산 글에 메뉴를 요구하지 않는다). */
+export function isFoodPost(materials) {
+  const m = normalizeMaterials(materials);
+  const s = [m.content.category, m.content.price_menu, m.concept.hint, m.place.name, m.content.memo].join(' ');
+  return /(맛집|고기|삼겹|오겹|국밥|식당|분식|카페|커피|베이커리|빵|한식|일식|중식|양식|술집|호프|포차|계란|국물|안주|먹었|시켜|메뉴)/.test(s);
+}
+
 /**
  * 블로그 붙여넣기 키트 — 제목 3안 · 원문 그대로의 본문 · 사진 위치표 · 링크카드 자리 · 붙이는 순서.
  *  AI 없이 만든다(토큰 0). AI 초안은 이 키트의 '사이 문장·캡션·마무리'만 채운다.
@@ -532,6 +540,29 @@ export function buildBlogKit(input) {
     preset: (materials.concept && materials.concept.tone) || 'plain'
   };
 
+  /* 성래 님 스타일 DNA 뼈대(2026-11-25, #50347) — 0토큰. kit.text(평문 키트)는 그대로 두고 따로 담는다.
+     화면은 이 본문을 먼저 보여 주고, 예전 평문 키트는 '접어 두기'로 남긴다. */
+  const styleOfKit = (function () {
+    try {
+      const kind = styleKindOf(materials.concept && materials.concept.kind, !!materials.place.name.trim());
+      const bp = buildStyleSkeleton({
+        materials: materials, links: links, kind: kind, photos: ps,
+        self: String(i.self || '').trim(), topic: String(i.topic || '').trim()
+      });
+      return {
+        kind: kind,
+        text: bp.text,
+        slots: bp.slots,
+        facts_missing: bp.slots.length,
+        lint: lintVoiceOf(bp.text, { kind: kind, photoCount: ps.length }),
+        quality: lintQualityOf(bp.text, { kind: kind, food: isFoodPost(materials) }),
+        version: '2026w48'
+      };
+    } catch (e) {
+      return null;
+    }
+  })();
+
   return {
     titles: titleList,
     title_seed: chosen,
@@ -546,6 +577,7 @@ export function buildBlogKit(input) {
     disclosure_body: paidFlag ? disclosure.body : '',
     text: lines.join('\n'),
     rhythm: rhythm,
+    style: styleOfKit,
     user_body_sha256: ''
   };
 }
@@ -664,7 +696,7 @@ export async function buildDraftRequest(input) {
     brand: String(i.brand || 'daejeon_youth'),
     format: i.format === 'video' ? 'video' : 'blog',
     concept: { kind: materials.concept.kind, tone: materials.concept.tone, hint: materials.concept.hint.trim() },
-    ask: Object.assign({ titles: 3, bridge: true, captions: true, outro: true }, i.ask || {}),
+    ask: Object.assign({ titles: 3, bridge: true, captions: true, outro: true, style: true }, i.ask || {}),
     memo_sha256: await sha256Hex(memo),
     media: photos,
     /* 공개 표시(2026-11-24) — 초안 AI 가 협찬 사실을 뒤집거나 '내돈내산'을 쓰지 않게 규칙을 함께 보낸다. */
