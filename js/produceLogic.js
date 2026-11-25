@@ -405,8 +405,10 @@ export function buildRenderPayload({ contentId, brand, inputs, profile, cropX, c
   if (errors.length) return { ok: false, errors };
   if (source === 'drive') {
     payload.payload_source = 'drive';
-    // 디자인·워터마크 때문에 카드로 보내는 경우(자막이 40큐 이내)에는 자막을 함께 실어 둔다 —
-    //   카드 읽기가 실패해도 노트북이 자막만으로 렌더를 끝낼 수 있게(그때는 워터마크만 빠진다).
+    // 디자인·워터마크 때문에 카드로 보내는 경우(자막이 40큐 이내)에는 자막을 함께 실어 둔다.
+    //   허브 GAS 가 payload 를 다시 만들 때 drive 면 자막을 떨어뜨리므로(고정 규칙) 실제 큐에는 안 남을 수 있다.
+    //   그래도 남겨 두는 이유: GAS 를 거치지 않는 직접/CLI 오더에서는 카드 읽기가 실패해도 자막만으로 렌더가 끝난다.
+    //   (허브 경유 오더는 카드 payload 의 production.captions 를 노트북이 읽는다 — 그것이 정상 경로다.)
     if (designOn && totalCues <= MAX_CUES_INLINE) {
       if (cap.cues.length) payload.captions = cap.cues;
       if (nar.cues.length) payload.narration = nar.cues;

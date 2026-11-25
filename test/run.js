@@ -1939,7 +1939,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const base = { contentId: 'C-DG', brand: 'daejeon_youth', inputs: ['a.mp4'], profile: 'captions', captions: [{ start: 0, end: 3, text: '가' }, [3.1, 6, '나']], template: 'daejeon_youth' };
     const noD = PL.buildRenderPayload(Object.assign({}, base));
     const withD = PL.buildRenderPayload(Object.assign({}, base, { design: dm.designForCard({ roles: { caption: { preset: 'box', box: { on: true, alpha: 70, radius: 18 } } } }) }));
-    ok('기본(워터마크)에도 카드로 보내되 자막을 함께 실어 둔다(카드 읽기 실패 대비)', noD.ok && noD.payload.payload_source === 'drive' && noD.payload.captions.length === 2 && noD.payload.design === undefined && noD.notes.design === true, noD.payload);
+    ok('기본(워터마크)이면 카드로 보내고 자막도 함께 실어 둔다(직접 오더 대비)', noD.ok && noD.payload.payload_source === 'drive' && noD.payload.captions.length === 2 && noD.payload.design === undefined && noD.notes.design === true, noD.payload);
     ok('design 있어도 payload_source:drive · 디자인 본문은 큐에 싣지 않는다', withD.ok && withD.payload.payload_source === 'drive' && withD.payload.design === undefined && withD.notes.design === true, withD.payload);
     ok('워터마크를 끄고 자막만 바꾸지 않았으면 예전처럼 인라인(회귀 0)', (() => {
       const off = PL.buildRenderPayload(Object.assign({}, base, { design: dm.normalizeDesign({ watermark: { enabled: false } }) }));
