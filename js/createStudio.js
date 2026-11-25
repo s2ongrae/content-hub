@@ -23,7 +23,7 @@ import {
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
   errorText, orderLine, titleOptions, firstPrice, FEED_CARDS,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
-} from './studioLogic.js?v=20261125s1';
+} from './studioLogic.js?v=20261125k';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261125k';
 import { WATERMARK_POSITIONS } from './designModel.js?v=20261125k';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261124';
@@ -321,6 +321,8 @@ function paintMaterials(host, ctx, format, onDirty) {
   /* ① 사진 */
   const photoGrid = h('div', { class: 'st-photos' });
   const photoNote = h('p', { class: 'st-hint', text: '' });
+  /* 사진 한 줄 메모(2026-11-25) — 사진마다 적으면 ▲ 캡션·(괄호 애드리브)가 추정 대신 이 사실로 만들어진다. */
+  const memoBox = h('div', { class: 'st-ph-memos' });
   const fileInput = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true, style: 'display:none' });
   const addBtn = h('button', { class: 'btn sm', type: 'button', text: '＋ 사진 올리기' });
   addBtn.addEventListener('click', () => fileInput.click());
@@ -340,7 +342,7 @@ function paintMaterials(host, ctx, format, onDirty) {
       const id = 'ph' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const previewUrl = (typeof URL !== 'undefined' && URL.createObjectURL) ? URL.createObjectURL(file) : '';
       mem.photos[id] = { file: file, previewUrl: previewUrl, prepared: null };
-      m.photos.push({ id: id, name: file.name, role: photoRole(file.name), caption: '', order: m.photos.length + 1, uploaded: false, bytes: file.size });
+      m.photos.push({ id: id, name: file.name, role: photoRole(file.name), caption: '', memo: '', order: m.photos.length + 1, uploaded: false, bytes: file.size });
     });
     paintGrid();
     onDirty();
@@ -375,6 +377,32 @@ function paintMaterials(host, ctx, format, onDirty) {
     if (format === 'feed') bits.push('카드 ' + FEED_CARDS + '장');
     bits.push('순서는 자동 — 직접 만진 순서는 ‹ › 로 조정');
     photoNote.textContent = bits.join(' · ');
+    paintMemoList(ordered);
+  }
+
+  /* 사진별 한 줄 메모 — 빈 칸으로 두면 예전처럼 역할 기반 캡션이 된다(하위 호환). */
+  function paintMemoList(ordered) {
+    if (!ordered.length) { memoBox.replaceChildren(); return; }
+    const rows = [h('p', { class: 'st-hint',
+      text: '사진 한 줄 메모(선택) — 적은 사진은 그 사실로 ▲ 캡션·(괄호 애드리브)를 만듭니다. 비우면 역할(외관·음식…)로 만듭니다.' })];
+    ordered.forEach((p, i) => {
+      const input = h('input', {
+        class: 'input st-memo-input', type: 'text', maxlength: '60',
+        placeholder: '예) 사장님이 직접 구워주심 / 반찬 8가지',
+        value: p.memo || '', autocomplete: 'off', 'aria-label': '사진 ' + (i + 1) + ' 메모'
+      });
+      input.addEventListener('input', () => {
+        const row = m.photos[i];           // paintGrid 가 방금 넣은 그 사진(순서 같다)
+        if (row) row.memo = input.value.slice(0, 60);
+        else p.memo = input.value.slice(0, 60);
+        onDirty();
+      });
+      rows.push(h('label', { class: 'st-memo-row' },
+        h('span', { class: 'st-memo-no', text: String(i + 1) }),
+        h('span', { class: 'st-memo-name', text: (p.role || photoRole(p.name)) + ' · ' + p.name }),
+        input));
+    });
+    memoBox.replaceChildren(...rows);
   }
 
   function movePhoto(i, d) {
@@ -402,6 +430,7 @@ function paintMaterials(host, ctx, format, onDirty) {
   host.appendChild(h('div', { class: 'row' }, addBtn, fileInput));
   host.appendChild(photoGrid);
   host.appendChild(photoNote);
+  host.appendChild(memoBox);
   paintGrid();
 
   /* ② 장소 */

@@ -1,0 +1,61 @@
+{
+  "place_review": {
+    "materials": {
+      "place": { "name": "진미오겹살" },
+      "content": {
+        "memo": "안녕하세요, 대전 청년입니다.\n\n이번엔 집게를 한 번도 안 들고 고기를 먹은 이야기입니다.\n\n📍 진미오겹살 본점\n고기를 다 구워준다고 해서 반신반의하고 갔습니다.\n사장님이 테이블마다 돌면서 구워주십니다.\n\n📍 폭탄 계란찜\n이건 밥이 아니라 술 안주입니다.\n불판 옆에서 부풀어 오르는 걸 보고 있으면 소주를 부르게 됩니다.",
+        "region_dong": "괴정동",
+        "category": "고기집",
+        "hours": "매일 15:00~24:00",
+        "price_menu": "삼겹살 180g 16,000원",
+        "parking": "건물 지하 2시간 무료",
+        "tel": "042-000-0000",
+        "address": "대전 서구 용문로 41-80"
+      },
+      "concept": { "kind": "review" },
+      "photos": [{ "name": "A.jpg", "role": "외관" }, { "name": "B.jpg", "role": "메뉴판" }, { "name": "C.jpg", "role": "음식" }]
+    },
+    "links": [{ "title": "석암 솔직후기", "url": "https://blog.naver.com/youth-daejeon/224459297302" }]
+  },
+  "place_many_photos": {
+    "materials": {
+      "place": { "name": "미미삼겹 유성점" },
+      "content": {
+        "memo": "📍 가게 앞\n냉삼 먹으러 갔습니다.\n\n📍 냉삼\n반찬이 8가지였습니다.",
+        "region_dong": "봉명동",
+        "category": "고기집",
+        "price_menu": "냉삼 15,000원",
+        "wait_time": "평일 18:40 기준 15분"
+      },
+      "concept": { "kind": "review" },
+      "photos": [
+        { "name": "1.jpg", "role": "외관" },
+        { "name": "2.jpg", "role": "메뉴판" },
+        { "name": "3.jpg", "role": "음식" },
+        { "name": "4.jpg", "role": "음식" },
+        { "name": "5.jpg", "role": "음식" },
+        { "name": "6.jpg", "role": "분위기" },
+        { "name": "7.jpg", "role": "마무리" }
+      ]
+    }
+  },
+  "info_no_place": {
+    "materials": {
+      "place": { "name": "" },
+      "content": { "memo": "묘한살림을 열었습니다.\n\n사업자등록은 30분이면 됩니다.", "category": "스마트스토어" },
+      "concept": { "kind": "info" },
+      "photos": [{ "name": "shop.jpg", "role": "" }]
+    }
+  },
+  "story": {
+    "materials": {
+      "place": { "name": "" },
+      "content": { "memo": "10월 주식 정산입니다.\n\n계좌가 파랗습니다.", "category": "주식" },
+      "concept": { "kind": "story" },
+      "photos": [{ "name": "ledger.png", "role": "" }]
+    }
+  },
+  "minimal": {
+    "materials": { "place": { "name": "가게" }, "content": { "memo": "짧은 메모입니다." }, "concept": { "kind": "review" } }
+  }
+}

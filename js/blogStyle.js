@@ -27,6 +27,13 @@
  *   const bp = buildStyleSkeleton({ materials, links, title, kind: 'place' });
  *   const text = renderStyleSkeleton(bp);      // 네이버에 붙여넣을 본문
  *   const lint = lintVoice(text, { kind: 'place', photoCount: 7 });
+ *
+ * 2026-11-25 덧붙임 (사용자 2·3번 승인)
+ *  · 제목 3안 — 옛 틀 `[동네] 종류 — 솔직 후기`를 버리고, 검색 키워드는 앞에 두되 뒷부분을
+ *    성래 님 인용형·자조 펀치라인으로 뽑는다(titleOptions). 실제 발행 제목이 그 모양이다:
+ *    `[대전 봉명동 고기집] 석암생소금구이 야장 솔직후기 : "계좌도 파랗고 소주도 파랗다"`(#7220).
+ *  · 사진 한 줄 메모 — 사진마다 `memo`(예: 사장님이 직접 구워주심)를 적으면 추정 대신 그 사실로
+ *    `▲ 캡션`을 쓰고 `(괄호 애드리브)` 자리를 연다. 메모가 없으면 예전과 똑같이 역할 기반 캡션이다.
  */
 
 export const SLOT_OPEN = '⟦';
@@ -101,12 +108,39 @@ export const STYLE_DNA = {
     }
   },
 
-  /** 사진 — ▲ 캡션 한 줄(+선택 괄호 애드리브). 역할 순서는 studioLogic.autoOrderPhotos 와 같다. */
+  /** 사진 — ▲ 캡션 한 줄(+선택 괄호 애드리브). 역할 순서는 studioLogic.autoOrderPhotos 와 같다.
+   *  memo_max: 사진 한 줄 메모 길이(넘으면 자른다) · asides_max: 글 전체 애드리브 자리 수. */
   caption: {
     head: '▲',
     max_chars: 42,
     aside_chars: 40,
+    memo_max: 60,
+    asides_max: 3,
     roles: ['외관', '메뉴판', '음식', '분위기', '마무리']
+  },
+
+  /** 제목 3안 — 검색 키워드 전진 + 인용형 자조 (2026-11-25, #50841 사용자 승인).
+   *  quotes[].needs 가 있는 줄은 그 값(가격·대기)이 확인된 글에서만 쓴다 — 없는 값을 지어내지 않는다.
+   *  ban: 제목에 쓰면 옛 틀·AI 티로 보는 말 · ban_tail: 제목 끝에 오면 옛 틀. */
+  title: {
+    version: '2026w48',
+    max_chars: 55,
+    ban: ['총정리', '완벽 정리', '완벽정리', '알아보았다', '추천합니다', '후기 정리', '꿀팁', '필독', '모든 것', '한 번에 정리'],
+    ban_tail: ['솔직 후기', '솔직후기', '후기 정리'],
+    quotes: [
+      { text: '가오는 잡았고, 통장은 잡혔습니다' },
+      { text: '통장은 얇고 마음은 두껍다' },
+      { text: '월급은 스치고 지출만 남는다' },
+      { text: '오늘도 나는 계획대로 안 됐다' },
+      { text: '{price}의 행복, 카드값은 다음 달의 나에게', needs: 'price' },
+      { text: '{wait} 기다린 값은 했습니다', needs: 'wait' },
+      { text: '고기는 죄가 없다, 내 지갑이 얇을 뿐', kind: 'place' },
+      { text: '맛은 있는데 내 통장이 얇다', kind: 'place' },
+      { text: '배는 부르고 통장은 홀쭉하다', kind: 'place' },
+      { text: '한 끼에 진심인 청년의 최후', kind: 'place' },
+      { text: '{price}, 이 정도면 밥값은 했다', kind: 'place', needs: 'price' },
+      { text: '줄은 길었고 고기는 짧았다', kind: 'place', needs: 'wait' }
+    ]
   },
 
   /** 정보 카드 6항목 — 사실이 없으면 그 줄은 만들지 않는다(지어내지 않음). */
@@ -240,6 +274,15 @@ export function kindOf(conceptKind, hasPlace) {
 
 const cp = (s) => [...String(s == null ? '' : s)].length;
 
+/** 한 줄로 줄이기 — 캡션처럼 자리가 좁은 곳. 낱말 중간에서 자르지 않는다. */
+function clipLine(text, max) {
+  const chars = [...String(text == null ? '' : text).replace(/\s+/g, ' ').trim()];
+  if (chars.length <= max) return chars.join('');
+  const head = chars.slice(0, max).join('');
+  const cut = head.replace(/\s+\S*$/, '').replace(/[.,·]$/, '');
+  return cut || head;
+}
+
 /** 빈 줄 기준 덩어리(네이버 문단). studioLogic.splitUserBlocks 와 같은 규칙이지만 여기선 자체 보유. */
 function splitBlocks(text) {
   return String(text == null ? '' : text).replace(/\r\n?/g, '\n')
@@ -283,7 +326,8 @@ function planStylePhotos(photos, sectionCount, captionOf) {
     }
     out.push({
       photo: p.name, role: role, section: section,
-      caption: captionOf ? captionOf(p) : (p.caption || '')
+      caption: captionOf ? captionOf(p) : (p.caption || ''),
+      memo: String(p.memo || '').trim().slice(0, STYLE_DNA.caption.memo_max)
     });
   });
   return out;
@@ -405,6 +449,9 @@ export function buildStyleSkeleton(input) {
   let foodN = 0;
   const plan = planStylePhotos(photos, sections.length, (p) => {
     if (String(p.caption || '').trim()) return String(p.caption).trim();
+    /* 사진 한 줄 메모(2026-11-25) — 내가 적은 사실이 역할 추정보다 먼저다. */
+    const note = String(p.memo || '').trim();
+    if (note) return clipLine(note, STYLE_DNA.caption.max_chars);
     const role = p.role || '';
     if (role === '외관') return place ? place + ' 입구' : '가게 입구';
     if (role === '메뉴판') return '메뉴판 실물';
@@ -423,12 +470,22 @@ export function buildStyleSkeleton(input) {
 
   /* 표지 — 도입·예고 바로 뒤, 섹션 앞(외관·간판). */
   const cover = plan.filter((p) => p.section < 0);
+  let asidesLeft = STYLE_DNA.caption.asides_max;
+  /* 메모가 붙은 사진은 그 사실로 애드리브 한 줄을 받는다. 메모가 없으면 예전 그대로( 첫 섹션 첫 사진 뒤). */
+  const asideLine = (p, num, isLegacySpot) => {
+    if (asidesLeft <= 0) return '';
+    if (p && p.memo) { asidesLeft--; return slot('사진 애드리브 (사진 ' + num + ')'); }
+    if (isLegacySpot) { asidesLeft--; return slot('사진 애드리브 한 줄 (선택)'); }
+    return '';
+  };
   if (cover.length) {
     const lines = [];
     cover.forEach((p, k) => {
       if (k) lines.push('');
       lines.push('[사진 ' + (plan.indexOf(p) + 1) + '] ' + p.photo);
       lines.push(STYLE_DNA.caption.head + ' ' + p.caption);
+      const aside = asideLine(p, plan.indexOf(p) + 1, false);
+      if (aside) lines.push(aside);
     });
     push({ id: 'cover', role: 'MIX', lines: lines });
   }
@@ -443,10 +500,12 @@ export function buildStyleSkeleton(input) {
     lines.push('> ' + s.punch);
     groups.forEach((g) => { lines.push(''); lines.push(g.join('\n')); });
     mine.forEach((p, k) => {
+      const num = plan.indexOf(p) + 1;
       lines.push('');
-      lines.push('[사진 ' + (plan.indexOf(p) + 1) + '] ' + p.photo);
+      lines.push('[사진 ' + num + '] ' + p.photo);
       lines.push(STYLE_DNA.caption.head + ' ' + p.caption);
-      if (n === 0 && k === 0) lines.push(slot('사진 애드리브 한 줄 (선택)'));
+      const aside = asideLine(p, num, n === 0 && k === 0);
+      if (aside) lines.push(aside);
     });
     return { id: 'section_' + (n + 1), role: 'MIX', quote: { head: s.head, punch: s.punch }, lines: lines };
   });
@@ -499,6 +558,100 @@ export function buildStyleSkeleton(input) {
     kind: kind, spec: spec, blocks: blocks, photos: plan, facts: facts,
     text: text, slots: slotsOf(text), links: links
   };
+}
+
+/* ────────────────────────── 제목 3안 (2026-11-25, #50841 사용자 승인) ────────────────────────── */
+
+const TITLE_FILL = '[채우기]';
+const TITLE_KIND_LABEL = { review: '맛집 리뷰', story: '일상 썰', info: '정보성' };
+
+/** 같은 재료면 같은 제목 — 다시 눌렀다고 문구가 흔들리면 고르기 어렵다(djb2). */
+function titleSeed(text) {
+  let h = 5381;
+  const s = String(text == null ? '' : text);
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  /* 아래 비트만 쓰면 한글 이름끼리 잘 붙는다 — 한 번 더 흔들어 섞는다(murmur3 마무리). */
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822507) >>> 0;
+  h ^= h >>> 13;
+  return h >>> 0;
+}
+
+/** 상한을 넘는 제목은 따옴표 안(펀치)부터 줄인다 — 지역·가게명(검색 키워드)은 살린다. */
+function fitTitle(text, max) {
+  const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  if (cp(t) <= max) return t;
+  const m = t.match(/^(.*?")([^"]*)(".*)$/);
+  if (m) {
+    const room = max - cp(m[1]) - cp(m[3]);
+    if (room >= 8) {
+      const q = clipLine(m[2], room);
+      if (q) return m[1] + q + m[3];
+    }
+  }
+  return clipLine(t, max - 1) + '…';
+}
+
+/**
+ * 제목 3안 — 검색 키워드(지역·가게명)는 앞에, 뒷부분은 성래 님 인용형·자조 펀치라인.
+ *   1안(검색형)  [대전 봉명동 고기집] 미미삼겹 : "고기는 죄가 없다, 내 지갑이 얇을 뿐"
+ *   2안(사실·자조) 미미삼겹, 16,000원 먹고 "가오는 잡았고, 통장은 잡혔습니다"
+ *   3안(인용 전진) "줄은 길었고 고기는 짧았다" — 봉명동 미미삼겹
+ *  · 없는 값(가격·대기)은 쓰지 않는다 — 필요한 값이 없는 인용구는 후보에서 빠진다.
+ *  · 사용자 메모도 재료다(추정하지 않기).
+ */
+export function titleOptions(materials, opts) {
+  const T = STYLE_DNA.title;
+  const m = materials && typeof materials === 'object' ? materials : {};
+  const c = (m.content && typeof m.content === 'object') ? m.content : {};
+  const o = opts || {};
+  const place = String((m.place && m.place.name) || '').trim();
+  const dong = String(c.region_dong || '').trim();
+  const cat = String(c.category || '').trim();
+  const priceM = String(c.price_menu || '').match(/([0-9][0-9,]{2,})\s*원/);
+  const price = priceM ? priceM[1] + '원' : '';
+  const wait = String(c.wait_time || '').trim();
+  const kind = String(o.kind || (m.concept && m.concept.kind) || 'review');
+  const topic = String(o.topic || '').trim();
+  /* 주제는 '가게 이름·주제' 칸(place)과 넘겨받은 topic 만 쓴다. 한 줄 지시(hint)는 제목 재료가 아니다. */
+  const subject = place || topic || TITLE_FILL;
+  const quotes = (T.quotes || [])
+    .filter((q) => (!q.kind || q.kind === kind)
+      && (!q.needs || (q.needs === 'price' && price) || (q.needs === 'wait' && wait)))
+    .map((q) => String(q.text).replace('{price}', price).replace('{wait}', wait));
+  if (!quotes.length) quotes.push('고기는 죄가 없다, 내 지갑이 얇을 뿐');
+  const seed = titleSeed([place, dong, cat, kind, o.photoCount || ''].join('|'));
+  const q = (n) => quotes[(seed + n) % quotes.length];
+  const prefix = (dong || cat)
+    ? '[' + [dong ? '대전 ' + dong : '대전', cat].filter(Boolean).join(' ') + ']'
+    : '';
+  const food = /(맛집|고기|삼겹|오겹|국밥|식당|분식|카페|커피|베이커리|한식|일식|중식|양식|술집|호프|포차|안주)/.test(cat + ' ' + place);
+  const fact = price || wait;
+  const one = (prefix ? prefix + ' ' : '') + subject + ' : "' + q(0) + '"';
+  const two = fact
+    ? subject + ', ' + fact + (food ? ' 먹고 ' : ' 쓰고 ') + '"' + q(1) + '"'
+    : subject + (food ? ' 먹고 왔습니다 — "' : ' 이야기 — "') + q(1) + '"';
+  const three = '"' + q(2) + '" — ' + (dong ? dong + ' ' : '') + subject;
+  const out = [one, two, three].map((t) => fitTitle(t, T.max_chars));
+  /* 세 안이 같은 구조면(재료가 너무 적을 때만) 종류 이름으로 자리를 바꿔 준다. */
+  const label = TITLE_KIND_LABEL[kind] || TITLE_KIND_LABEL.review;
+  if (!place && !topic) out[2] = fitTitle('"' + q(2) + '" — 대전 청년 ' + label, T.max_chars);
+  return out;
+}
+
+/** 제목 문법 프롬프트 — 허브·노트북이 같은 문구를 쓴다(허브 시험이 대조). */
+export function titlePromptLines() {
+  const T = STYLE_DNA.title;
+  return [
+    '[제목 3안 — 성래 님 제목 문법. 세 안의 각도를 다르게]',
+    '1안(검색형): [대전 봉명동 고기집] 미미삼겹 : "고기는 죄가 없다, 내 지갑이 얇을 뿐"',
+    '2안(사실·자조): 미미삼겹, 16,000원 먹고 "가오는 잡았고, 통장은 잡혔습니다"',
+    '3안(인용 전진): "줄은 길었고 고기는 짧았다" — 봉명동 미미삼겹',
+    '- 지역(동네)·가게명·주제는 앞에 둔다(검색 유입). 뒷부분은 인용구·펀치라인 한 줄.',
+    '- 확인된 사실(가격·대기·영업시간)만. 모르는 값은 제목에 넣지 않는다.',
+    '- 금지: ' + T.ban.slice(0, 5).join(' · ') + ' 같은 상투어, 느낌표 남발, 근거 없는 과장(최고·인생·무조건). 제목 끝을 ' + T.ban_tail.join('·') + '로 맺지 않는다.',
+    '- 따옴표는 큰따옴표(") 한 쌍만, 한 제목 ' + T.max_chars + '자 이내. 세 제목이 같은 문장 구조면 다시 쓴다.'
+  ];
 }
 
 /** 해시태그 — 동네·종류·가게명·대전맛집·대전청년. 사실에 있는 말만. */
@@ -689,8 +842,31 @@ export function fillStyleSlots(text, draft) {
   let pi = 0;
   out = out.replace(new RegExp(SLOT_OPEN + '판정[^' + SLOT_CLOSE + ']*' + SLOT_CLOSE, 'g'), (m) => (pi < punches.length ? punches[pi++] : m));
 
-  const aside = (Array.isArray(d.captions) ? d.captions : []).map((c) => one(c && c.aside, 120)).filter(Boolean)[0] || '';
-  if (aside) out = out.replace(new RegExp(SLOT_OPEN + '사진 애드리브[^' + SLOT_CLOSE + ']*' + SLOT_CLOSE), '(' + aside.replace(/^[(]|[)]$/g, '') + ')');
+  const asideSet = (Array.isArray(d.captions) ? d.captions : []).map((c) => (c && typeof c === 'object' ? c : {}));
+  const asideByName = {};
+  const looseAsides = [];
+  asideSet.forEach((c) => {
+    const v = one(c.aside, 120).replace(/^[(]|[)]$/g, '');
+    if (!v) return;
+    const name = String(c.name || '').trim();
+    if (name) asideByName[name] = v;
+    looseAsides.push(v);
+  });
+  if (looseAsides.length) {
+    /* 애드리브 슬롯은 사진 바로 아래에 있다 — 바로 위 [사진 N] 이름으로 그 사진의 메모·캡션을 찾아 넣는다.
+       이름이 없는 예전 결과는 순서대로 채운다(하위 호환). */
+    let photoName = '';
+    let looseAt = 0;
+    out = out.split('\n').map((line) => {
+      const mark = line.match(/^\[사진\s+\d+\]\s*(.+)$/);
+      if (mark) photoName = String(mark[1]).trim();
+      if (line.indexOf(SLOT_OPEN + '사진 애드리브') < 0) return line;
+      const aside = asideByName[photoName] || looseAsides[looseAt];
+      if (!aside) return line;
+      looseAt++;
+      return '(' + aside + ')';
+    }).join('\n');
+  }
 
   const rows = Array.isArray(d.rating) ? d.rating : [];
   STYLE_DNA.rating.rows.forEach((r) => {
@@ -820,7 +996,7 @@ export function stylePromptLines(kind) {
   return [
     '[문법 — 성래 님 발행글 그대로. 새 문장을 쓰지 말고 아래 빈 자리만 채운다]',
     '1) 인용구 섹션: `> 📍 머리` + 빈 `>` + `> 판정 한 줄(훅·놀림·단정, 40자 이내)`. 판정은 그 섹션 사진·원문에서 나온 것만.',
-    '2) ▲ 캡션: 사진 순서대로 한 줄(42자 이내, 감성·놀림). 필요하면 바로 아래 `(괄호 애드리브)` 한 줄 — 글 전체 3개 이내.',
+    '2) ▲ 캡션: 사진 순서대로 한 줄(42자 이내, 감성·놀림). 사진 메모가 있으면 그 메모가 그 사진의 사실이다 — 메모를 바탕으로 캡션을 쓰고, 필요하면 바로 아래 (괄호 애드리브) 한 줄. 메모가 없으면 역할(외관·메뉴판·음식·분위기·마무리)로만. 애드리브는 글 전체 3개 이내.',
     '3) 도입: 인사 한 줄 + 자기소개·자조 타이틀 한 줄(예: "Lv.2 빚 있는 청년 카푸어"). 원문에 있으면 그 문장을 쓴다.',
     '4) 마무리: 교훈·당부 금지. 펀치라인 한 줄(예: "나쁜건 오빠가 다 마셔서 사라지게 해줄게.").',
     '5) ⭐ 총평: 맛·가성비·서비스 3줄. 별점(★/☆ 5칸)과 괄호 한 줄. 사실에 없는 평가는 쓰지 않는다.',
@@ -834,6 +1010,6 @@ if (typeof window !== 'undefined') {
   window.BlogStyle = {
     STYLE_DNA, buildStyleSkeleton, renderStyleSkeleton, lintVoice, buildHashtags,
     stylePromptLines, quoteSections, longLines, slotsOf, kindOf, fillStyleSlots,
-    lintQuality, qualityPromptLines, charsNoSpace
+    lintQuality, qualityPromptLines, charsNoSpace, titleOptions, titlePromptLines
   };
 }

@@ -14,7 +14,7 @@
 import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261123c';
 import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261124';
 import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
-import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf } from './blogStyle.js?v=20261125a';
+import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf, titleOptions as styleTitleOptions } from './blogStyle.js?v=20261125b';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 
@@ -261,6 +261,8 @@ export function normalizePhoto(p) {
     role: String(o.role || ''),
     order: Number.isFinite(Number(o.order)) ? Number(o.order) : null,
     caption: String(o.caption || ''),
+    /* 사진 한 줄 메모(2026-11-25) — 이 사진에서 내가 본 사실. 캡션·애드리브가 추정 대신 이걸 쓴다. */
+    memo: String(o.memo || '').slice(0, 60),
     bytes: Number(o.bytes) || 0,
     width: Number(o.width) || 0,
     height: Number(o.height) || 0,
@@ -394,17 +396,11 @@ export function firstPrice(text) {
 export function titleOptions(materials, opts) {
   const m = normalizeMaterials(materials);
   const o = opts || {};
-  const place = m.place.name.trim() || FILL;
-  const dong = m.content.region_dong.trim() || FILL;
-  const kind = conceptKindLabel(m.concept.kind);
-  const price = firstPrice(m.content.price_menu);
-  const wait = m.content.wait_time.trim();
-  const n = o.photoCount || m.photos.length;
-  return [
-    '[' + dong + '] ' + place + ' ' + kind + ' — 솔직 후기',
-    price ? place + ', ' + price + ' 먹고 왔습니다' : place + ' 다녀왔습니다 — 확인한 것만 적었습니다',
-    wait ? place + ' 대기 ' + wait + ' · 실제로 겪은 것' : place + ' ' + kind + ' · 사진 ' + n + '장 정리'
-  ];
+  return styleTitleOptions(m, {
+    photoCount: o.photoCount,
+    kind: m.concept.kind,
+    topic: o.topic || ''
+  });
 }
 
 /**
@@ -424,10 +420,11 @@ export function planPhotoPositions(blocks, photos) {
   return out;
 }
 
-/** 빈 슬롯에만 15~25자 사실 묘사 캡션. 직접 쓴 캡션은 덮지 않는다. */
+/** 빈 슬롯에만 15~25자 사실 묘사 캡션. 직접 쓴 캡션·사진 메모는 덮지 않는다(그게 먼저다). */
 export function captionFor(photo, materials) {
   const p = photo || {};
   if (String(p.caption || '').trim()) return String(p.caption).trim();
+  if (String(p.memo || '').trim()) return String(p.memo).trim().slice(0, 42);
   const m = normalizeMaterials(materials);
   const role = p.role || photoRole(p.name);
   const place = m.place.name.trim();
@@ -689,7 +686,12 @@ export async function buildDraftRequest(input) {
     });
   }
   const memo = String(materials.content.memo || '');
-  const photos = autoOrderPhotos(i.photos || materials.photos).map((p) => ({ name: p.name, role: p.role }));
+  const photos = autoOrderPhotos(i.photos || materials.photos).map((p) => {
+    const o = { name: p.name, role: p.role };
+    const memo = String(p.memo || '').trim();
+    if (memo) o.memo = memo.slice(0, 60);
+    return o;
+  });
   const base = {
     type: 'content_draft',
     content_id: String(i.contentId || ''),
@@ -827,9 +829,12 @@ export function studioMaterials(materials) {
     place: { name: m.place.name.trim(), naver_url: m.place.naver_url.trim(), kakao_url: m.place.kakao_url.trim() },
     content: Object.assign({}, m.content),
     concept: Object.assign({}, m.concept),
-    media: autoOrderPhotos(m.photos).map((p) => ({
-      name: p.name, kind: 'photo', role: p.role, order: p.order, caption: p.caption
-    }))
+    media: autoOrderPhotos(m.photos).map((p) => {
+      const row = { name: p.name, kind: 'photo', role: p.role, order: p.order, caption: p.caption };
+      const memo = String(p.memo || '').trim();
+      if (memo) row.memo = memo;
+      return row;
+    })
   };
 }
 

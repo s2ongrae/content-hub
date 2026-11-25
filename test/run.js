@@ -2145,6 +2145,129 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('블로그 스타일 DNA 시험', false, (err && err.stack) || err);
   }
 
+  /* ────────────────────────── [17] 블로그 제목 3안 인용형 · 사진 한 줄 메모 (2026-11-25, #50841·#50850) ──────
+     사용자가 "2. 그런 투로 바꾸란거지 ㅇㅇ"·"3. ㅇ"로 승인한 두 가지.
+     ① 제목: 옛 틀 `[동네] 종류 — 솔직 후기` → 검색 키워드 전진 + 인용형 자조 펀치라인
+     ② 사진: 한 줄 메모를 적으면 그 사실로 ▲ 캡션 + (괄호 애드리브), 비우면 예전 그대로(하위 호환 100%) */
+  console.log('\n[17] 블로그 제목 3안 인용형 · 사진 한 줄 메모');
+  try {
+    const BS = await import('file://' + path.join(ROOT, 'js', 'blogStyle.js') + '?v=t17');
+    const SL = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=t17');
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'blog_style_dna_2026w48.json'), 'utf8'));
+
+    /* ① 하위 호환 — 사진 메모가 없으면 뼈대는 한 글자도 달라지지 않는다(변경 전 코드로 떠 둔 황금본) */
+    const cases = JSON.parse(fs.readFileSync(path.join(ROOT, 'test', 'fixtures', 'style_nomemo_cases_20261125.json'), 'utf8'));
+    const gold = JSON.parse(fs.readFileSync(path.join(ROOT, 'test', 'fixtures', 'style_golden_nomemo_20261125.json'), 'utf8'));
+    const nowOf = (c) => {
+      const bp = BS.buildStyleSkeleton({ materials: c.materials, links: c.links || [] });
+      return { kind: bp.kind, text: BS.renderStyleSkeleton(bp), blocks: bp.blocks.map((b) => b.id),
+        photos: bp.photos.map((p) => ({ photo: p.photo, section: p.section, caption: p.caption })) };
+    };
+    const goldDiffs = Object.keys(gold).filter((k) => JSON.stringify(nowOf(cases[k])) !== JSON.stringify(gold[k]));
+    ok('사진 메모가 없으면 뼈대가 예전과 한 글자도 다르지 않다(황금본 ' + Object.keys(gold).length + '건)', goldDiffs.length === 0, goldDiffs.join(',') + ' / ' + JSON.stringify(nowOf(cases[goldDiffs[0] || 'minimal'])).slice(0, 200));
+
+    /* ② 제목 3안 — 검색 키워드 전진 + 인용형 */
+    eq('제목 규칙이 시드와 같다', JSON.stringify(seed.title), JSON.stringify(BS.STYLE_DNA.title));
+    const placeMats = SL.normalizeMaterials({
+      place: { name: '미미삼겹 유성점' },
+      content: { region_dong: '봉명동', category: '고기집', price_menu: '냉삼 15,000원', wait_time: '평일 18:40 기준 15분', memo: '📍 가게 앞\n냉삼 먹으러 갔습니다.' },
+      concept: { kind: 'review' }
+    });
+    const t3 = SL.titleOptions(placeMats, { photoCount: 4 });
+    eq('제목은 3안', t3.length, 3);
+    ok('1안은 검색 키워드 전진 — [대전 봉명동 고기집] 가게명', t3[0].indexOf('[대전 봉명동 고기집] 미미삼겹 유성점') === 0, t3[0]);
+    ok('세 안 모두 인용구(큰따옴표)를 쓴다', t3.every((t) => /"[^"]+"/.test(t)), t3);
+    ok('세 안이 서로 다르고 55자 이내', new Set(t3).size === 3 && t3.every((t) => [...t].length <= 55), t3.map((t) => [...t].length));
+    ok('옛 틀(— 솔직 후기)로 끝나지 않는다', t3.every((t) => !/솔직\s*후기\s*$/.test(t)), t3);
+    ok('상투어(총정리·꿀팁·알아보았다) 없음', t3.every((t) => !seed.title.ban.some((w) => t.indexOf(w) >= 0)), t3);
+    ok('같은 재료면 같은 제목(다시 놀러도 안 흔들린다)', SL.titleOptions(placeMats, { photoCount: 4 }).join('|') === t3.join('|'));
+    ok('가격은 확인된 값만 — 15,000원이 제목에 나온다', t3.some((t) => t.indexOf('15,000원') >= 0), t3);
+    const noPrice = SL.titleOptions(SL.normalizeMaterials({ place: { name: '국밥집' }, content: { region_dong: '유성구', category: '국밥' }, concept: { kind: 'review' } }));
+    ok('가격이 없으면 금액을 지어내지 않는다', noPrice.every((t) => !/[0-9][0-9,]*원/.test(t)), noPrice);
+    const infoT = SL.titleOptions(SL.normalizeMaterials({ place: { name: '묘한살림 개설기' }, content: { category: '스마트스토어' }, concept: { kind: 'info', hint: '웃긴데 정보는 정확하게' } }));
+    ok('정보 글도 인용형 — 주제 키워드 앞, 뒤는 인용구', infoT[0].indexOf('묘한살림 개설기') > 0 && infoT[0].indexOf('"') > 0, infoT);
+    ok('한 줄 지시(hint)는 제목 재료가 아니다', infoT.every((t) => t.indexOf('웃긴데 정보는') < 0), infoT);
+    ok('정보 글에는 음식 인용구가 안 섬인다', infoT.every((t) => !/(고기|맛은|밥값|홀쭉|한 끼)/.test(t)), infoT);
+    const emptyT = SL.titleOptions(SL.normalizeMaterials({ concept: { kind: 'story' } }));
+    ok('가게·주제가 비면 [채우기]로 두고 지어내지 않는다', emptyT[0].indexOf('[채우기]') >= 0, emptyT);
+    ok('김트 제목 3안이 새 문법으로 나온다', SL.buildBlogKit({ materials: placeMats }).titles[0].indexOf('[대전 봉명동 고기집]') === 0);
+    const tp = BS.titlePromptLines().join('\n');
+    ok('제목 프롬프트가 세 각도(검색·사실·인용)를 준다', /1안\(검색형\)/.test(tp) && /2안\(사실·자조\)/.test(tp) && /3안\(인용 전진\)/.test(tp));
+    ok('제목 프롬프트가 금지어·길이를 못 박는다', /금지:/.test(tp) && /55자 이내/.test(tp) && /모르는 값은 제목에 넣지 않는다/.test(tp));
+
+    /* ③ 사진 한 줄 메모 — 적으면 사실로, 비우면 예전 그대로 */
+    const memoMats = SL.normalizeMaterials({
+      place: { name: '미미삼겹 유성점' },
+      content: { region_dong: '봉명동', category: '고기집', price_menu: '냉삼 15,000원', memo: '📍 가게 앞\n냉삼 먹으러 갔습니다.' },
+      concept: { kind: 'review' },
+      photos: [
+        { name: '1.jpg', role: '외관' },
+        { name: '2.jpg', role: '메뉴판', memo: '메뉴 12종, 냉삼 15,000원' },
+        { name: '3.jpg', role: '음식', memo: '사장님이 직접 구워주심' },
+        { name: '4.jpg', role: '음식' }
+      ]
+    });
+    eq('사진 메모는 60자까지 보존된다', SL.normalizePhoto({ name: 'x.jpg', memo: '가'.repeat(90) }).memo.length, 60);
+    const bpM = BS.buildStyleSkeleton({ materials: memoMats, photos: memoMats.photos });
+    const textM = BS.renderStyleSkeleton(bpM);
+    const capsM = textM.split('\n').filter((l) => l.indexOf('▲ ') === 0);
+    ok('메모가 있는 사진은 메모가 곰 ▲ 캡션(추정 대신 사실)', textM.indexOf('▲ 메뉴 12종, 냉삼 15,000원') >= 0 && textM.indexOf('▲ 사장님이 직접 구워주심') >= 0, capsM);
+    ok('메모가 없는 사진은 역할 기반 기본 캡션 그대로', textM.indexOf('▲ 미미삼겹 유성점 입구') >= 0 && textM.indexOf('▲ 불판 위 고기') >= 0, capsM);
+    ok('메모가 붙은 사진에만 (괄호 애드리브) 자리가 열린다', textM.indexOf('⟦사진 애드리브 (사진 2)⟧') >= 0 && textM.indexOf('⟦사진 애드리브 (사진 3)⟧') >= 0
+      && textM.indexOf('⟦사진 애드리브 (사진 1)⟧') < 0 && textM.indexOf('⟦사진 애드리브 (사진 4)⟧') < 0, textM.split('\n').filter((l) => l.indexOf('⟦사진') === 0));
+    const filledM = BS.fillStyleSlots(textM, { captions: [
+      { name: '2.jpg', text: '메뉴 12종', aside: '고민하다가 결국 냉삼' },
+      { name: '3.jpg', text: '사장님이 구워주심', aside: '집게 들 일이 없었다' }
+    ] });
+    ok('AI 애드리브가 사진 이름으로 제자리에 들어간다', filledM.indexOf('▲ 메뉴 12종, 냉삼 15,000원\n(고민하다가 결국 냉삼)') >= 0
+      && filledM.indexOf('▲ 사장님이 직접 구워주심\n(집게 들 일이 없었다)') >= 0, filledM.split('\n').filter((l) => l.indexOf('(') === 0));
+    ok('애드리브 자리는 글 전체 3곳까지', (() => {
+      const many = SL.normalizeMaterials({ place: { name: '가게' }, content: { memo: '짧은 메모' }, concept: { kind: 'review' },
+        photos: Array.from({ length: 7 }, (_, i) => ({ name: i + '.jpg', role: '음식', memo: '메모 ' + i })) });
+      const t = BS.renderStyleSkeleton(BS.buildStyleSkeleton({ materials: many }));
+      return (t.match(/⟦사진 애드리브 \(사진/g) || []).length === 3;
+    })());
+    eq('김트 평문 캡션도 메모를 쓴다', SL.buildBlogKit({ materials: memoMats }).captions.find((c) => c.name === '3.jpg').text, '사장님이 직접 구워주심');
+    const reqM = await SL.buildDraftRequest({ contentId: 'CH-MEMO', brand: 'daejeon_youth', format: 'blog', materials: memoMats });
+    ok('노트북 오더 사진 목록에 메모가 실린다(없는 사진은 키 없음)', reqM.media.find((m) => m.name === '3.jpg').memo === '사장님이 직접 구워주심'
+      && reqM.media.find((m) => m.name === '1.jpg').memo === undefined, reqM.media);
+    ok('카드에 사진 메모가 자장되고 다시 읽힌다', (() => {
+      const studio = SL.mergeMaterialsIntoStudio({}, memoMats);
+      const back = SL.materialsFromStudio(studio);
+      return studio.media.find((m) => m.name === '3.jpg').memo === '사장님이 직접 구워주심'
+        && back.photos.find((p) => p.name === '3.jpg').memo === '사장님이 직접 구워주심';
+    })());
+    const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('스튜디오 사진 칸에 한 줄 메모 입력이 있다', csSrc.indexOf('st-memo-input') >= 0 && csSrc.indexOf('예) 사장님이 직접 구워주심 / 반찬 8가지') >= 0 && csSrc.indexOf('paintMemoList') >= 0);
+    ok('사진 메모 칸 스타일(360px 한 줄 배치)', /\.st-memo-row/.test(fs.readFileSync(path.join(ROOT, 'css', 'studio.css'), 'utf8')));
+
+    /* ④ 노트북(hub-agent)과 같은 값 — 제목 규칙·프롬프트 문구·사진 메모 */
+    const DRAFT = path.join(ROOT, '..', 'hub-agent', 'notebook-agent', 'lib', 'draft.js');
+    if (fs.existsSync(DRAFT)) {
+      const D = require(DRAFT);
+      eq('노트북 제목 규칙이 시드와 같다', JSON.stringify(D.TITLE),
+        JSON.stringify(Object.keys(seed.title).filter((k) => k !== 'quotes').reduce((o, k) => { o[k] = seed.title[k]; return o; }, {})));
+      eq('노트북 제목 프롬프트가 허브와 글자까지 같다', D.titlePromptLines().join('\n'), BS.titlePromptLines().join('\n'));
+      const argsM = D.validate({ content_id: 'C1', brand: 'daejeon_youth', format: 'blog', concept: { kind: 'review', tone: 'plain' }, memo_sha256: '0'.repeat(64),
+        media: [{ name: '2.jpg', role: '메뉴판', memo: '메뉴 12종, 냉삼 15,000원' }, { name: '4.jpg', role: '음식' }] });
+      ok('노트북이 사진 메모를 받는다(없는 사진은 키 없음)', argsM.media[0].memo === '메뉴 12종, 냉삼 15,000원' && argsM.media[1].memo === undefined, argsM.media);
+      const pM = D.buildPrompt(argsM, [{ id: 'U01', text: '원문', sha256: 'x' }], { place_name: '미미삼겹' }, argsM.media);
+      ok('노트북 프롬프트가 메모를 사실로 넣는다', /1\. 2\.jpg\(메뉴판\) — 메모: 메뉴 12종/.test(pM) && /메모가 있는 사진은 그 메모가 사실/.test(pM));
+      ok('노트북 프롬프트가 제목 3안 문법을 요구한다', /제목 3안 — 성래 님 제목 문법/.test(pM) && /1안\(검색형\)/.test(pM));
+      const dBad = D.normalizeDraft(argsM, { titles: ['[대전 봉명동] 미미삼겹 — 솔직 후기', '미미삼겹 총정리', '[대전 봉명동 고기집] 미미삼겹 : "고기는 죄가 없다"'] },
+        [{ id: 'U01', text: '원문', sha256: 'x' }]);
+      ok('노트북: 옛 틀·상투어 제목은 경고로 남는다(막지 않는다)', dBad.warnings.some((w) => /인용형 문법/.test(w)) && dBad.titles.length === 3, dBad.warnings);
+      ok('노트북: 인용형 제목은 경고 없음', (() => {
+        const d = D.normalizeDraft(argsM, { titles: ['[대전 봉명동 고기집] 미미삼겹 : "고기는 죄가 없다, 내 지갑이 얇을 뿐"'] }, [{ id: 'U01', text: '원문', sha256: 'x' }]);
+        return !d.warnings.some((w) => /인용형 문법/.test(w));
+      })());
+    } else {
+      console.log('  - hub-agent 가 옆에 없어 노트북 대조는 건너뛰');
+    }
+  } catch (err) {
+    ok('제목 3안·사진 메모 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();
