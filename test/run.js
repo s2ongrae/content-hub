@@ -1962,6 +1962,33 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       const p1 = SC.cardWatermarkPoint('bottom-right');
       const p2 = SC.cardWatermarkPoint('top-left');
       ok('사진 카드(1080×1350) 워터마크 자리', p1.x === 1032 && p1.y === 1296 && p1.align === 'right' && p2.x === 48 && p2.y === 54 && p2.align === 'left', [p1, p2]);
+
+      /* 실제로 카드에 그려지는가 — 가짜 캔버스로 fillText 를 잡는다(사진 없이 글자만) */
+      const prevDoc = global.document;
+      const texts = [];
+      const ctxMock = new Proxy({}, {
+        get: (t, k) => {
+          if (k === 'measureText') return () => ({ width: 100 });
+          if (k === 'createLinearGradient') return () => ({ addColorStop() {} });
+          if (k === 'fillText') return (str, x, y) => texts.push({ str: String(str), x, y });
+          return () => {};
+        },
+        set: () => true
+      });
+      global.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ctxMock }) };
+      try {
+        SC.drawCard({ no: 1, kicker: 'k', headline: 'h', body: 'b' }, null, {});
+        const wm = texts.filter((t) => t.str === '@s2ongrae');
+        ok('카드에 @s2ongrae 가 기본으로 그려진다(오른쪽 아래)', wm.length === 1 && wm[0].x === 1032 && wm[0].y === 1296, wm);
+        texts.length = 0;
+        SC.drawCard({ no: 1, kicker: 'k', headline: 'h', body: 'b' }, null, { watermark: { enabled: false } });
+        ok('워터마크를 끄면 그리지 않는다', texts.filter((t) => t.str === '@s2ongrae').length === 0);
+        texts.length = 0;
+        SC.drawCard({ no: 1, kicker: 'k', headline: 'h', body: 'b' }, null, { watermark: { text: '@my_handle', position: 'top-left' } });
+        ok('문구·위치를 바꾸면 그대로', texts.some((t) => t.str === '@my_handle' && t.x === 48 && t.y === 54), texts.filter((t) => /@/.test(t.str)));
+      } finally {
+        global.document = prevDoc;
+      }
     }
 
     /* 노트북과 같은 값인가 — 옆 저장소(hub-agent)가 있으면 대조 */
