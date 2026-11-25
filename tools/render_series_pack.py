@@ -27,7 +27,7 @@ def brand_name(b):
 def channels(b):
     if b == "daejeon_youth":
         return "블로그 `youth-daejeon` · 유튜브 `@daejeon_daily` · 인스타 `@daejeon_daily` · 네이버 클립"
-    return "유튜브 `@s2ongrae` · 인스타 `@m2ow.mari` (블로그·클립 SKIPPED)"
+    return "유튜브 `@m2owmari` · 인스타 `@m2ow.mari` (블로그·클립 SKIPPED)"
 
 w(f"""---
 title: "콘텐츠허브 시리즈 {n_eps}편 기획안 + 키워드팩 (2026-W47~W49)"
