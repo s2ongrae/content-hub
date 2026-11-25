@@ -67,6 +67,10 @@ AI가 옛 틀 제목을 주면 `normalizeDraft` 가 경고만 남긴다(막지 �
 
 ---
 
+## 덧붙임 — 같이 고친 화면 결함
+`ffea7c1` 의 `paintKit` 이 🖋️ 내 스타일 본문 판을 만든 뒤 맨 끝에서 `out.replaceChildren(box)` 로 지워,
+화면에는 제목·키트만 보였다(브라우저에서 눌러 보다 발견). 판을 모아 한 번에 그리도록 고쳤다 — `1c4ec51`.
+
 ## 시험
-    cd content-hub && node test/run.js          # [17] 제목 3안 · 사진 메모 (34항목)
+    cd content-hub && node test/run.js          # [17] 제목 3안 · 사진 메모 (36항목)
     cd hub-agent/notebook-agent && node test/run.js   # [41] 제목 규칙·사진 메모
