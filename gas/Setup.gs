@@ -19,7 +19,9 @@ const SHEET_SCHEMAS = {
     // 인스타 표면 분리 — 릴스(reels_*)와 피드 카드뉴스(ig_feed_*)는 노출 엔진·지표가 다르다
     'ig_feed_status', 'ig_feed_url', 'ig_carousel_count',
     // 당근 스토리 — 대전 청년 5번째 채널(2026-11-18). 기존 35칸 순서·이름 불변, 뒤에만 덧붙임
-    'daangn_status', 'daangn_url'
+    'daangn_status', 'daangn_url',
+    // 사진 카드 클립 — 실제 Contents 시트 1행 헤더(40칸)와 일치시킨다(2026-11-25). 앞 37칸 순서·이름 불변
+    'photo_clip_status', 'photo_clip_url', 'photo_clip_uploaded_at'
   ],
   Channel_Logs: [
     'log_id', 'brand', 'content_id', 'channel', 'task_type', 'idempotency_key', 'client_id',
