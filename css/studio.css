@@ -71,7 +71,8 @@
 
 /* 사진 한 줄 메모 — 폰 360px 에서 번호·이름 옆에 얇은 입력칸 */
 .st-ph-memos { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-.st-memo-row { display: grid; grid-template-columns: 20px minmax(0, 96px) 1fr; align-items: center; gap: 6px; }
+.st-memo-row { display: grid; grid-template-columns: 20px minmax(0, 112px) 1fr; align-items: center; gap: 6px; }
+@media (min-width: 640px) { .st-memo-row { grid-template-columns: 24px minmax(0, 220px) 1fr; } }
 .st-memo-no { font-size: 11px; color: var(--tx-3); text-align: right; }
 .st-memo-name { font-size: 11px; color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-memo-input { min-height: 32px; padding: 4px 8px; font-size: 13px; }
