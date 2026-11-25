@@ -807,6 +807,7 @@ function paintKit(out, ctx, kit, ui, draft) {
   /* ── 🖋️ 내 스타일 본문 (2026-11-25, #50347) — 성래 님 발행글 문법으로 0토큰 조립한 본문을 맨 위에 ──
      인용구 섹션·▲ 캡션·📌 정보카드·⭐ 총평·펀치라인 순서. 비는 자리는 ⟦⟧ 로 보이게 둔다. */
   const style = kit.style;
+  const panels = [];   // 🖋️ 내 스타일 본문 등 — 마지막에 box 와 함께 한 번에 그린다
   if (style && style.text) {
     const kindLabel = style.kind === 'place' ? '맛집·장소' : style.kind === 'story' ? '자기서사·정산' : '정보·리뷰';
     const sBox = h('div', { class: 'panel' },
@@ -831,7 +832,7 @@ function paintKit(out, ctx, kit, ui, draft) {
         h('span', { text: it.label + ' — ' + (it.value || '') }),
         h('span', { class: 'gv ' + (it.state === 'pass' ? 'ok' : it.state === 'near' ? 'na' : 'no'), text: it.state === 'pass' ? '✓' : it.state === 'near' ? '△' : '✗' })))));
     }
-    out.appendChild(sBox);
+    panels.push(sBox);
   }
 
   const box = h('div', { class: 'panel' },
@@ -942,7 +943,8 @@ function paintKit(out, ctx, kit, ui, draft) {
 
   box.appendChild(h('h3', { text: '네이버에 붙이는 순서' }));
   box.appendChild(h('ol', { class: 'st-steps' }, kit.paste_steps.map((s) => h('li', { text: s }))));
-  out.replaceChildren(box);
+  /* (2026-11-25 결함 수정) 예전에는 여기서 out.replaceChildren(box) 만 해서 위의 🖋️ 내 스타일 본문 판이 지워졌다. */
+  out.replaceChildren(...panels.concat([box]));
 }
 
 function copyTextBtn(h, text, toast, label) {

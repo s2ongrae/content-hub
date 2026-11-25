@@ -2239,6 +2239,9 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     })());
     const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
     ok('스튜디오 사진 칸에 한 줄 메모 입력이 있다', csSrc.indexOf('st-memo-input') >= 0 && csSrc.indexOf('예) 사장님이 직접 구워주심 / 반찬 8가지') >= 0 && csSrc.indexOf('paintMemoList') >= 0);
+    /* 2026-11-25 화면 결함: 맨 끝 out.replaceChildren(box) 이 🖋️ 내 스타일 본문 판을 지우고 있었다 */
+    ok('🖋️ 내 스타일 본문 판을 지우지 않고 같이 그린다(브라우저 확인 중 발견)', csSrc.indexOf('내 스타일 본문') >= 0
+      && /panels\.push\(sBox\)/.test(csSrc) && /out\.replaceChildren\(\.\.\.panels\.concat\(\[box\]\)\)/.test(csSrc));
     ok('사진 메모 칸 스타일(360px 한 줄 배치)', /\.st-memo-row/.test(fs.readFileSync(path.join(ROOT, 'css', 'studio.css'), 'utf8')));
 
     /* ④ 노트북(hub-agent)과 같은 값 — 제목 규칙·프롬프트 문구·사진 메모 */
