@@ -1,6 +1,6 @@
 ---
 name: daejeon-content
-description: 대전 청년(@daejeon_daily) 블로그·쇼츠·릴스·클립 및 삐약 김메리(@s2ongrae/@m2ow.mari) 콘텐츠 제작·자막·오디오·톤앤매너 전용 기준
+description: 대전 청년(@daejeon_daily) 블로그·쇼츠·릴스·클립 및 삐약 김메리(@m2owmari/@m2ow.mari) 콘텐츠 제작·자막·오디오·톤앤매너 전용 기준
 ---
 
 # 대전 청년 · 삐약 김메리 콘텐츠 제작 기준
@@ -14,7 +14,7 @@ description: 대전 청년(@daejeon_daily) 블로그·쇼츠·릴스·클립 및
 | 트랙 | 채널 | 특징 |
 |---|---|---|
 | 🍺 대전 청년 `daejeon_youth` | 블로그(`youth-daejeon`) · 쇼츠(`@daejeon_daily`) · 릴스(`@daejeon_daily`) · 클립 | 맛집·술집·대전 일상만. 2단계 순환(숏폼 3종 → 블로그 → 고정댓글에 블로그 URL) |
-| 🐱 삐약 김메리 `ppiyak_kimmary` | 쇼츠(`@s2ongrae`) · 릴스(`@m2ow.mari`) · 클립 | 메리 소재만. 블로그 `SKIPPED`, 업로드 즉시 `LINKED` |
+| 🐱 삐약 김메리 `ppiyak_kimmary` | 쇼츠(`@m2owmari`) · 릴스(`@m2ow.mari`) · 클립 | 메리 소재만. 블로그 `SKIPPED`, 업로드 즉시 `LINKED` |
 
 메리 소재는 메리 트랙에만, 대전 맛집·일상은 대전 청년 트랙에만. 인스타는 대전 청년 계정이 **맛집 전용**이다.
 인스타는 릴스와 피드 카드뉴스를 따로 센다(피드는 블로그 발행 뒤 D+1~D+2).
@@ -71,7 +71,7 @@ description: 대전 청년(@daejeon_daily) 블로그·쇼츠·릴스·클립 및
 **TTS는 무료만**(Gemini Flash TTS → Edge-TTS), **속도 +0~8%** — +20% 배속은 억양을 눌러 평탄해진다. 문장을 줄여서 맞춘다.
 **ASR이 인식한 글자는 자막으로 쓰지 않는다.** 자동 CC 트랙은 업로드 후 삭제.
 
-## 3. 삐약 김메리 (`@s2ongrae` / `@m2ow.mari`)
+## 3. 삐약 김메리 (`@m2owmari` / `@m2ow.mari`)
 
 - **1인칭 '메리 어록' 시점.** 메리가 집사를 하인 취급하는 뻔뻔한 단정형 대사("거기 서. 앞발 내놔."). 집사는 을.
 - 15~22초. 3포맷: 취조형(티키타카 3~4턴) / 속마음형(독백 3~4문장) / 먹방+한마디(츄르).
