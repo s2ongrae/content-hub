@@ -12,9 +12,10 @@
  */
 
 import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261123c';
-import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261124';
+import { rhythmStats, lintRhythm, splitLongBlock } from './blogTone.js?v=20261124';
 import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
 import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf, titleOptions as styleTitleOptions, clipChars, clipLine, STYLE_DNA } from './blogStyle.js?v=20261126a';
+import { shortErrorText } from './uiState.js?v=20261126a';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 
@@ -870,12 +871,9 @@ export function materialsFromStudio(studio) {
 
 /* ────────────────────────── 화면 문구 ────────────────────────── */
 
-/** 실패 문구 3종(설계 §6). 코드가 모르는 값이면 일반 안내. */
+/** 실패 문구 3종(설계 §6) — 문장은 js/uiState.js 한 곳에 있다(다른 화면과 같은 말을 쓰기 위해). */
 export function errorText(code) {
-  const c = String(code || '').toUpperCase();
-  if (c === 'ERR_TIMEOUT' || c === 'TIMEOUT' || c === 'ERR_QUEUE_TIMEOUT') return '⏳ 시간 초과 — 입력값은 안전하니 [다시 시도]를 눌러주세요';
-  if (c === 'ERR_VERSION_CONFLICT') return '🔄 동시 수정이 감지돼 최신본과 병합 후 재저장합니다';
-  return '⚠️ 연결 또는 형식 오류 — [관리 탭] 상태를 확인해 주세요';
+  return shortErrorText(code);
 }
 
 /** 오더 상태 → 화면 한 줄. 종료 상태면 false(폴링 그만). */

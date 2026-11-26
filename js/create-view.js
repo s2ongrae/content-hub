@@ -8,7 +8,7 @@
  * 원칙: textContent/createElement만(h() 사용). 폰 360px 가로 스크롤 0.
  */
 
-import { buildSlotGuide, parseMediaPaste, normalizeMedia, sha256Hex } from './slot-engine.js?v=20261123c';
+import { buildSlotGuide, parseMediaPaste, normalizeMedia } from './slot-engine.js?v=20261123c';
 import { composeBlog } from './assembler.js?v=20261123c';
 import { composeShorts, composeClip, composeDaangn, composeInstagram } from './assembler-channels.js?v=20261123c';
 

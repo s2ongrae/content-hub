@@ -17,10 +17,11 @@
  *  · 리프레시: D+14 검색유입이 D+7의 70% 이하로 떨어짐.
  */
 
-import { renderAnalyticsPanel } from './analyticsView.js?v=20261123c';
+import { renderAnalyticsPanel } from './analyticsView.js?v=20261126c';
 import { renderChannelView } from './channelView.js?v=20261123c';
 import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261123c';
 import { trackChannelsOf } from './trackChannels.js?v=20261123c';
+import { friendlyError, isDeployGap, withBusy } from './uiState.js?v=20261126a';
 
 const PERF_CHANNELS = ['blog', 'shorts', 'reels', 'clip', 'daangn'];
 const CH_LABEL = { blog: '블로그', shorts: '쇼츠', reels: '릴스', clip: '클립', daangn: '당근' };
@@ -261,9 +262,9 @@ export function renderPerfView(main, ctx) {
 
   const status = state.metricsError;
   if (status && status !== 'ERR_NO_CONFIG') {
-    const msg = (status === 'ERR_NOT_IMPLEMENTED' || status === 'ERR_UNKNOWN_ACTION' || status === 'ERR_NOT_FOUND')
+    const msg = isDeployGap(status)
       ? '성과 기록 API가 아직 서버에 없습니다 — GAS를 재배포하면 이 화면에서 숫자를 저장할 수 있습니다. 지금은 화면만 보입니다.'
-      : '성과 숫자를 읽지 못했습니다(' + status + '). 잠시 뒤 새로고침해 보세요.';
+      : friendlyError(status);
     const b = banner ? banner('info', 'ⓘ', '성과 기록 준비 중', msg) : h('div', { class: 'panel' }, h('p', { class: 'hint', text: msg }));
     main.appendChild(b);
   }
@@ -429,20 +430,18 @@ function metricRow(h, cfg) {
     });
     if (bad) { toast(bad + ' 값이 올바르지 않습니다', 'err'); return; }
     if (!filled) { toast('숫자를 하나 이상 넣어 주세요', 'err'); return; }
-    btn.disabled = true;
-    btn.textContent = '저장 중…';
     try {
-      await cfg.api.recordMetrics({
-        items: [Object.assign({
-          content_id: contentId, channel, snapshot, measured_at: kstToday()
-        }, values)]
+      await withBusy(btn, '저장 중…', async () => {
+        await cfg.api.recordMetrics({
+          items: [Object.assign({
+            content_id: contentId, channel, snapshot, measured_at: kstToday()
+          }, values)]
+        });
+        toast('저장 완료 · ' + (CH_LABEL[channel] || channel) + ' ' + snapshot, 'ok');
+        if (onSaved) onSaved();
       });
-      toast('저장 완료 · ' + (CH_LABEL[channel] || channel) + ' ' + snapshot, 'ok');
-      if (onSaved) onSaved();
     } catch (err) {
       toast(friendlyError(err), 'err');
-      btn.disabled = false;
-      btn.textContent = '저장';
     }
   });
   row.appendChild(btn);

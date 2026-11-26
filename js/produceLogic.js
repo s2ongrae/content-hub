@@ -10,9 +10,10 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261125k';
-import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261125k';
-import { hasDesign, normalizeDesign, defaultDesign } from './designModel.js?v=20261125k';
+import { tcToSec } from './yt/edl.js?v=20261126c';
+import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261126c';
+import { hasDesign, normalizeDesign, defaultDesign } from './designModel.js?v=20261126c';
+import { isDeployGap } from './uiState.js?v=20261126a';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)
 export const FILE_RE = /^[A-Za-z0-9가-힣._ -]{1,80}$/;
@@ -614,9 +615,9 @@ export function isTerminalStatus(code) {
   return ORDER_TERMINAL.indexOf(String(code || '').toUpperCase()) >= 0;
 }
 
-/** 서버(GAS)가 이 액션을 아직 모르는 코드들 — 빨간 에러 대신 중립 안내(기존 화면들과 같은 기준). */
+/** 서버(GAS)가 이 액션을 아직 모르는 코드들 — 판정 목록은 js/uiState.js 한 곳에 있다. */
 export function isNotDeployedCode(code) {
-  return ['ERR_UNKNOWN_ACTION', 'ERR_NOT_IMPLEMENTED', 'ERR_ACTION_NOT_ALLOWED', 'ERR_INVALID_ACTION'].indexOf(String(code || '')) >= 0;
+  return isDeployGap(code);
 }
 
 /** 승인 기한까지 남은 시간 → '12분 03초' / 지났으면 null. 기한을 모르면 null. */

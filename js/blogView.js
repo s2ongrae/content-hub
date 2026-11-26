@@ -16,6 +16,7 @@
 import { lintBlog, loadLintRules } from './blogLint.js?v=20261124b';
 import { normalizeKeywords, trendRows, budgetText, rangeText } from './blogTrend.js?v=20261123c';
 import { axisShort, trendChip, trendTone, rankChip, docChip, splitRows, makeSeoSeed, putSeoSeed, titleLen } from './blogSeo.js?v=20261123c';
+import { loadingPanel, friendlyError, isDeployGap } from './uiState.js?v=20261126a';
 
 const STATE_LABEL = { pass: '통과', near: '주의', warn: '고칠 것' };
 
@@ -126,7 +127,7 @@ export function renderBlogView(main, ctx) {
         toast('글 ' + d.posts + '개' + (d.new_posts ? ' (새 글 ' + d.new_posts + ')' : '') + ' · 방문자 ' + d.visitor_days + '일치를 가져왔어요', 'ok');
         await loadBlogStats(state, api);
       } catch (err) {
-        toast(blogErrorText(err.code, err.message) || friendlyError(err), 'err');
+        toast(friendlyError(err), 'err');
       }
       ctx.renderRoute();
     }
@@ -154,17 +155,21 @@ export function renderBlogView(main, ctx) {
   }
 
   if (state.blogBrand !== state.brand || (!state.blog && !state.blogError)) {
-    main.appendChild(h('div', { class: 'empty', text: '블로그 숫자를 읽는 중…' }));
+    main.appendChild(loadingPanel(h, '블로그 숫자를 읽는 중이에요…'));
     loadBlogStats(state, api).then(() => { if (state.route === 'blog') ctx.renderRoute(); });
     return;
   }
 
   if (state.blogError) {
-    const notDeployed = ['ERR_NOT_IMPLEMENTED', 'ERR_UNKNOWN_ACTION', 'ERR_ACTION_NOT_ALLOWED', 'ERR_NOT_FOUND'].includes(state.blogError);
+    const notDeployed = isDeployGap(state.blogError);
     main.appendChild(banner('info', 'ⓘ', notDeployed ? '서버 업데이트가 필요해요' : '블로그 숫자를 못 읽었어요',
       notDeployed
         ? 'Apps Script에 gas/Blog.gs를 붙여넣고 새 버전으로 배포하면 이 화면이 켜집니다.'
-        : blogErrorText(state.blogError, state.blogErrorMsg)));
+        : friendlyError(state.blogError),
+      notDeployed ? null : h('button', {
+        class: 'ghost-btn sm', type: 'button', text: '다시 시도',
+        onclick: () => { state.blog = null; state.blogError = null; loadBlogStats(state, api).then(() => ctx.renderRoute()); }
+      })));
     return;
   }
 
@@ -261,7 +266,7 @@ function seoPanel(h, ctx) {
     panel.appendChild(h('p', { class: 'hint' + (notDeployed ? '' : ' err'),
       text: notDeployed
         ? '서버에 이 기능(gas/BlogSeo.gs)이 아직 안 올라갔어요. 새 버전으로 배포하면 여기에 매일 아침 제목 10개가 뜹니다.'
-        : (saved.msg || blogErrorText(saved.error, saved.msg) || '제목을 가져오지 못했어요.') }));
+        : (friendlyError(saved.error) || saved.msg || '제목을 가져오지 못했어요.') }));
     panel.appendChild(h('div', { class: 'row', style: 'margin-top:8px' },
       h('button', {
         class: 'btn sm', type: 'button', text: '↻ 다시 시도',
@@ -349,15 +354,6 @@ function relTimeSafe(ctx, iso) {
   try { return ctx.relTime ? ctx.relTime(iso) : String(iso).slice(0, 16).replace('T', ' '); }
   catch (e) { return String(iso).slice(0, 16).replace('T', ' '); }
 }
-function blogErrorText(code, msg) {
-  switch (code) {
-    case 'ERR_BLOG_UNREACHABLE': return '네이버가 잠깐 응답하지 않았어요. 조금 뒤 다시 눌러 주세요.';
-    case 'ERR_BLOG_FORMAT': return msg || '네이버 화면 형식이 바뀐 것 같아요. 개발 쪽 확인이 필요합니다.';
-    case 'ERR_BLOG_SKIPPED': return '이 브랜드는 블로그를 쓰지 않아요.';
-    case 'ERR_NO_NAVER_KEY': return msg || '네이버 검색 API 키가 필요해요.';
-    default: return msg ? (code + ' · ' + msg) : '';
-  }
-}
 
 function kpi(h, label, value, sub) {
   return h('div', { class: 'kpi' },
@@ -420,7 +416,7 @@ function postList(h, ctx, blog) {
 }
 
 function postRow(h, ctx, p) {
-  const { state, api, toast, friendlyError } = ctx;
+  const { state, api, toast } = ctx;
   const delta = (n) => (n == null || n === 0) ? null : h('em', { class: 'delta' + (n > 0 ? ' up' : ''), text: signed(n) });
   const result = h('div', { class: 'blog-lint' });
   const cached = (state.blogLint || {})[p.log_no];
@@ -440,7 +436,7 @@ function postRow(h, ctx, p) {
         fillLint(h, result, r);
         btn.textContent = '다시 점검';
       } catch (err) {
-        toast(blogErrorText(err.code, err.message) || friendlyError(err), 'err');
+        toast(friendlyError(err), 'err');
         btn.textContent = '글 점검';
       }
       btn.disabled = false;
@@ -501,7 +497,7 @@ function categoryPanel(h, posts) {
 }
 
 function rankPanel(h, ctx, blog) {
-  const { state, api, toast, friendlyError } = ctx;
+  const { state, api, toast } = ctx;
   const panel = h('div', { class: 'panel' }, h('h3', null, '검색 순위', h('span', { class: 'tag', text: '네이버 블로그 탭 · 상위 100' })));
 
   if (blog.ranks && blog.ranks.length) {
@@ -557,7 +553,7 @@ function rankPanel(h, ctx, blog) {
         await loadBlogStats(state, api);
         ctx.renderRoute();
       } catch (err) {
-        toast(blogErrorText(err.code, err.message) || friendlyError(err), 'err');
+        toast(friendlyError(err), 'err');
         btn.disabled = false; btn.textContent = '순위 확인';
       }
     }
@@ -592,7 +588,7 @@ function trendRow(h, r) {
 }
 
 function trendPanel(h, ctx, blog) {
-  const { state, api, toast, friendlyError } = ctx;
+  const { state, api, toast } = ctx;
   const panel = h('div', { class: 'panel' },
     h('h3', null, '키워드 트렌드', h('span', { class: 'tag', text: '네이버 데이터랩 · 12개월 주간' })));
 
@@ -635,7 +631,7 @@ function trendPanel(h, ctx, blog) {
         state.blogTrendKeywords = input.value;
       } catch (err) {
         const own = (err && (err.code === 'ERR_INSIGHT_BUDGET' || String(err.code || '').indexOf('ERR_NAVER') === 0 || err.code === 'ERR_NO_NAVER_KEY'));
-        state.blogTrend = { error: own ? (err.message || friendlyError(err)) : (blogErrorText(err.code, err.message) || friendlyError(err)) };
+        state.blogTrend = { error: own ? (friendlyError(err) || err.message) : friendlyError(err) };
       }
       ctx.renderRoute();
     }

@@ -11,7 +11,7 @@
  * 외부 썸네일은 CSP(img-src 'self' data:)가 막아서 그리지 않는다 — 제목·숫자만.
  */
 
-import { getAnalytics } from './analyticsView.js?v=20261123c';
+import { getAnalytics } from './analyticsView.js?v=20261126c';
 import { trackChannelsOf, CHANNEL_LABEL } from './trackChannels.js?v=20261123c';
 import { renderInstagramAudit, autoFactsFromRows } from './igAudit.js?v=20261123c';
 

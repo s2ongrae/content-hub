@@ -10,8 +10,10 @@
  */
 
 import { api } from './api.js';
-import { renderStudio } from './studioView.js';
+import { renderStudio } from './studioView.js?v=20261126c';
 import { loadFormulas, scoreHook } from './yt/hookscore.js';
+import { loadingPanel, errorPanel } from './uiState.js?v=20261126a';
+import { copyText } from './clipboard.js?v=20261126a';
 
 const PACK_URL = 'seeds/series_pack_2026w47.json';
 const AB_KEY = 'contenthub.hook_ab.v1';
@@ -54,23 +56,6 @@ function writeAB(obj) {
   try { localStorage.setItem(AB_KEY, JSON.stringify(obj)); } catch (e) { /* 용량 초과 무시 */ }
 }
 
-function copyText(text, toast, label) {
-  const done = () => toast((label || '복사') + ' 완료', 'ok');
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done).catch(() => fallback());
-  } else fallback();
-  function fallback() {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); done(); } catch (e) { toast('복사에 실패했습니다 — 길게 눌러 선택하세요', 'err'); }
-    ta.remove();
-  }
-}
 
 function scriptToText(series, ep) {
   const head = [
@@ -91,7 +76,7 @@ function scriptToText(series, ep) {
 }
 
 export function renderSeriesView(main, ctx) {
-  const { h, state, toast, friendlyError } = ctx;
+  const { h, state, toast } = ctx;
   const brand = state.brand;
 
   main.replaceChildren();
@@ -113,9 +98,9 @@ export function renderSeriesView(main, ctx) {
   });
   main.appendChild(seg);
 
-  const host = h('div', { id: 'series-host' },
-    h('div', { class: 'panel' }, h('p', { class: 'hint', text: '기획 파일 불러오는 중…' })));
+  const host = h('div', { id: 'series-host' });
   main.appendChild(host);
+  host.appendChild(loadingPanel(h, '기획 파일을 불러오는 중이에요…'));
 
   ctx.main = main;
   loadPack().then((pack) => {
@@ -125,10 +110,12 @@ export function renderSeriesView(main, ctx) {
     else if (subTab === 'keywords') renderKeywords(host, pack, brand, ctx);
     else renderHooks(host, pack, brand, ctx);
   }).catch((err) => {
-    host.replaceChildren(h('div', { class: 'panel' },
-      h('h3', null, '기획 파일을 불러오지 못했습니다'),
-      h('p', { class: 'hint', text: friendlyError(err) || String(err) }),
-      h('p', { class: 'hint', text: '주소가 https://s2ongrae.github.io/content-hub/ 인지, seeds/series_pack_2026w47.json 이 함께 배포됐는지 확인하세요.' })));
+    host.replaceChildren(errorPanel(h, err, {
+      title: '기획 파일을 불러오지 못했어요',
+      hint: '주소가 https://s2ongrae.github.io/content-hub/ 인지, seeds/series_pack_2026w47.json 이 함께 배포됐는지 확인하세요.',
+      onRetry: () => { if (ctx.renderRoute) ctx.renderRoute(); else location.reload(); },
+      forceRetry: true
+    }));
   });
 }
 

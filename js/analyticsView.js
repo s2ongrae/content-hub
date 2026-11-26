@@ -15,6 +15,7 @@
  */
 
 import { isTrackRow } from './trackChannels.js?v=20261123c';
+import { friendlyError, isDeployGap } from './uiState.js?v=20261126a';
 
 const CH_LABEL = { shorts: '쇼츠', longform: '롱폼', channel: '채널', reels: '릴스', feed: '피드' };
 const SOURCE_LABEL = { youtube: '유튜브', instagram: '인스타' };
@@ -257,10 +258,9 @@ export function renderAnalyticsPanel(main, ctx) {
 
   const err = cache.error;
   if (err && err !== 'ERR_NO_CONFIG') {
-    const missing = err === 'ERR_INVALID_ACTION' || err === 'ERR_NOT_IMPLEMENTED' || err === 'ERR_UNKNOWN_ACTION' || err === 'ERR_SERVER_CONFIG';
-    const msg = missing
+    const msg = isDeployGap(err)
       ? '자동 수집 저장소가 아직 서버에 없습니다 — Apps Script에 gas/Analytics.gs 를 올리고 재배포하면 이 구역이 살아납니다.'
-      : '자동 수집분을 읽지 못했습니다(' + err + '). 잠시 뒤 새로고침해 보세요.';
+      : friendlyError(err);
     panel.appendChild(banner ? banner('info', 'ⓘ', '자동 수집 준비 중', msg) : h('p', { class: 'hint', text: msg }));
     panel.appendChild(guidePanel(h));
     main.appendChild(panel);

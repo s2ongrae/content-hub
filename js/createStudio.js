@@ -14,29 +14,29 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261125v1';
-import { uploadPhoto, listUploads, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261123c';
+import { produceSection } from './produceView.js?v=20261126v8';
+import { uploadPhoto, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261126c';
 import {
-  FORMATS, FORMAT_IDS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS, TTS_OF_TONE,
-  normalizeMaterials, emptyMaterials, materialSummary, hasMaterial, factsOf, autoOrderPhotos, photoRole,
+  FORMATS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS,
+  normalizeMaterials, materialSummary, hasMaterial, autoOrderPhotos, photoRole,
   photoPlanFor, buildBlogKit, signKit, buildFeedCards, feedCaption, hashtagsOf, buildDraftRequest,
-  composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio, materialsFromStudio, studioMaterials,
-  errorText, orderLine, titleOptions, firstPrice, FEED_CARDS,
-  MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_EXT_RE, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
-} from './studioLogic.js?v=20261126a';
+  composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio,
+  errorText, orderLine, FEED_CARDS,
+  MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
+} from './studioLogic.js?v=20261126c';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261125k';
-import { WATERMARK_POSITIONS } from './designModel.js?v=20261125k';
+import { WATERMARK_POSITIONS } from './designModel.js?v=20261126c';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261124';
 import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
 import { lintAiTone } from './blogAiTone.js?v=20261123c';
 import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261123c';
 import { paintAiClip } from './aiClip.js?v=20261123c';
+import { copyText } from './clipboard.js?v=20261126a';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';
 const LS_RECENT = 'contenthub.studio.recent.v1';
 const POLL_MS = 15000;
-const POLL_MAX = 40;
 
 const mem = {
   brand: '',
@@ -59,23 +59,6 @@ const mem = {
 
 function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* 저장소가 막혀도 화면은 산다 */ } }
-
-function copyText(h, text, toast, label) {
-  const done = () => toast((label || '복사') + ' 완료', 'ok');
-  const fallback = () => {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); done(); } catch (e) { toast('복사에 실패했습니다 — 길게 눌러 선택하세요', 'err'); }
-    ta.remove();
-  };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
-  else fallback();
-}
 
 /* ────────────────────────── 재료 저장(브랜드별) ────────────────────────── */
 
@@ -108,8 +91,6 @@ function pushRecent(item) {
   list.unshift(Object.assign({ at: new Date().toISOString() }, item));
   lsSet(LS_RECENT, JSON.stringify(list.slice(0, 8)));
 }
-
-function photoCount(m) { return (m && m.photos ? m.photos : []).length; }
 
 function pendingPhotos() {
   return (mem.materials.photos || []).filter((p) => !p.uploaded && mem.photos[p.id] && mem.photos[p.id].file);
@@ -948,7 +929,7 @@ function paintKit(out, ctx, kit, ui, draft) {
 }
 
 function copyTextBtn(h, text, toast, label) {
-  return h('button', { class: 'ghost-btn sm', type: 'button', text: '⧉ ' + (label || '복사'), onclick: () => copyText(h, text, toast, label) });
+  return h('button', { class: 'ghost-btn sm', type: 'button', text: '⧉ ' + (label || '복사'), onclick: () => copyText(text, toast, label) });
 }
 
 function downloadBtn(h, filename, text, toast) {

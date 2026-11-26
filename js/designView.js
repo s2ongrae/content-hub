@@ -11,11 +11,11 @@
  * 렌더링은 createElement/textContent 만 — innerHTML 을 쓰지 않는다(공개 저장소 CSP 규칙).
  */
 import {
-  PRESETS, COLOR_SWATCHES, ROLE_LABELS, MAX_SEGMENTS, MAX_SEG_TITLE, MAX_SEG_BADGE, DEFAULT_BOX_RADIUS,
+  PRESETS, COLOR_SWATCHES, ROLE_LABELS, MAX_SEGMENTS, MAX_SEG_TITLE, MAX_SEG_BADGE,
   normalizeDesign, defaultDesign, applyPreset, applyTimeline, designWarnings, captionLayout, designSummary,
   snapSegmentToCues, SAFE_TOP, SAFE_BOTTOM, SAFE_SIDE, CAPTION_DEFAULT_Y, W, H,
   WATERMARK_POSITIONS, watermarkPoint
-} from './designModel.js?v=20261125k';
+} from './designModel.js?v=20261126c';
 import { wrapText } from './wrapKo.js?v=20261125k';
 
 const FONT_STACK = '"Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif';

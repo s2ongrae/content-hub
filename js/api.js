@@ -5,6 +5,8 @@
  *  - 모든 데이터 호출은 POST + Content-Type: text/plain;charset=utf-8 (CORS preflight 회피)
  *  - 토큰은 URL이 아니라 JSON body 의 auth_token 으로만 보낸다
  *  - 요청 1건 30초 타임아웃(AbortController) / 429·5xx·ERR_BUSY 만 3회 재시도(0.8→1.6→3.2s)
+ *  - 서버가 details.retry_after_ms 를 주면 그만큼 기다린다(최대 8초) — 락·쿼터가 알려 준 간격을 무시하지 않는다
+ *  - 오프라인이면 fetch 를 보내기 전에 ERR_OFFLINE 으로 멈춘다(30초를 기다리지 않는다)
  *  - 멱등키는 "동작 1건당 1개" 고정 → 중복 클릭·재시도에도 같은 키. 성공하면 폐기.
  *  - GAS URL/토큰이 없으면 ERR_NO_CONFIG 로 멈춘다(가짜 데이터로 대신하지 않는다).
  */
@@ -122,7 +124,7 @@ export class ContentHubApi {
         lastErr = err;
         const retryable = (err instanceof ApiError) ? err.retryable : true;
         if (!retryable || attempt === RETRY_DELAYS.length) break;
-        await sleep(RETRY_DELAYS[attempt]);
+        await sleep(retryDelayMs(err, attempt));
       }
     }
     throw lastErr;
@@ -135,6 +137,10 @@ export class ContentHubApi {
   }
 
   async _fetchOnce(body, timeoutMs) {
+    // 오프라인은 보내 봐야 30초를 기다린다 — 바로 알린다(재시도 가치는 있다: 연결이 돌아오면 성공한다).
+    if (typeof navigator !== 'undefined' && navigator && navigator.onLine === false) {
+      throw new ApiError('ERR_OFFLINE', '지금은 오프라인이에요. 인터넷이 붙으면 다시 시도해 주세요.');
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs || this.timeoutMs);
     try {
@@ -283,6 +289,13 @@ export class ContentHubApi {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 재시도 간격 — 서버가 알려 준 retry_after_ms 를 먼저 존중하고, 없으면 0.8→1.6→3.2초. */
+function retryDelayMs(err, attempt) {
+  const asked = Number(err && err.details && err.details.retry_after_ms);
+  if (Number.isFinite(asked) && asked > 0) return Math.min(asked, 8000);
+  return RETRY_DELAYS[attempt];
 }
 
 export const api = new ContentHubApi();
