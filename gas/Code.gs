@@ -511,6 +511,7 @@ function handleUpdateContent_(ss, payload, ctx) {
     'clip_status', 'clip_url', 'allow_partial_shortform', 'growth_tag', 'receipt_verified',
     'series_id', 'episode_no', 'hook_variant',
     'ig_feed_status', 'ig_feed_url', 'ig_carousel_count',
+    'photo_clip_status', 'photo_clip_url', 'photo_clip_count',
     'daangn_status', 'daangn_url'];
 
   /* 4채널 발행 가드레일 (2026-11-26) — '전 채널 발행 완료(LINKED)'는 기록이 다 찬 카드에만.
