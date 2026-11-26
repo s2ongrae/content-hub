@@ -14,7 +14,7 @@
 import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261123c';
 import { rhythmStats, lintRhythm, splitLongBlock, applyBlogRhythm, RHYTHM, PRESETS as BLOG_TONE_PRESETS } from './blogTone.js?v=20261124';
 import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
-import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf, titleOptions as styleTitleOptions } from './blogStyle.js?v=20261125b';
+import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf, titleOptions as styleTitleOptions, clipChars, clipLine, STYLE_DNA } from './blogStyle.js?v=20261126a';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
 
@@ -261,8 +261,9 @@ export function normalizePhoto(p) {
     role: String(o.role || ''),
     order: Number.isFinite(Number(o.order)) ? Number(o.order) : null,
     caption: String(o.caption || ''),
-    /* 사진 한 줄 메모(2026-11-25) — 이 사진에서 내가 본 사실. 캡션·애드리브가 추정 대신 이걸 쓴다. */
-    memo: String(o.memo || '').slice(0, 60),
+    /* 사진 한 줄 메모(2026-11-25) — 이 사진에서 내가 본 사실. 캡션·애드리브가 추정 대신 이걸 쓴다.
+       60자 상한은 코드포인트 기준(이모지 경계에서 글자가 깨지지 않게, cue2 QA). */
+    memo: clipChars(String(o.memo || ''), STYLE_DNA.caption.memo_max),
     bytes: Number(o.bytes) || 0,
     width: Number(o.width) || 0,
     height: Number(o.height) || 0,
@@ -420,11 +421,13 @@ export function planPhotoPositions(blocks, photos) {
   return out;
 }
 
-/** 빈 슬롯에만 15~25자 사실 묘사 캡션. 직접 쓴 캡션·사진 메모는 덮지 않는다(그게 먼저다). */
+/** 빈 슬롯에만 15~25자 사실 묘사 캡션.
+ *  우선순위(2026-11-26, cue2 QA — 문서 BLOG_TITLE_PHOTO_MEMO_v1 과 통일):
+ *  사진 한 줄 메모(내가 본 사실) → 직접 쓴 캡션 → 역할 추정. */
 export function captionFor(photo, materials) {
   const p = photo || {};
+  if (String(p.memo || '').trim()) return clipLine(String(p.memo).trim(), STYLE_DNA.caption.max_chars);
   if (String(p.caption || '').trim()) return String(p.caption).trim();
-  if (String(p.memo || '').trim()) return String(p.memo).trim().slice(0, 42);
   const m = normalizeMaterials(materials);
   const role = p.role || photoRole(p.name);
   const place = m.place.name.trim();
@@ -459,7 +462,8 @@ export function buildBlogKit(input) {
   const plan = planPhotoPositions(blocks, ps);
   const captions = plan.map((x) => {
     const p = ps.find((q) => q.name === x.photo) || {};
-    return { name: x.photo, role: x.role, text: captionFor(p, materials), auto: !String(p.caption || '').trim() };
+    /* auto = 허브가 지어낸 캡션(사진 메모·직접 쓴 캡션이 없을 때만). 메모는 내가 쓴 사실이라 AI 가 못 덮는다. */
+    return { name: x.photo, role: x.role, text: captionFor(p, materials), auto: !String(p.memo || '').trim() && !String(p.caption || '').trim() };
   });
   const titles = titleOptions(materials, { photoCount: ps.length });
   // 추천 제목(SEO)에서 넘어왔으면 그 제목을 1안으로 둔다 — 내가 고른 제목을 다시 뽑지 않는다.
@@ -689,7 +693,7 @@ export async function buildDraftRequest(input) {
   const photos = autoOrderPhotos(i.photos || materials.photos).map((p) => {
     const o = { name: p.name, role: p.role };
     const memo = String(p.memo || '').trim();
-    if (memo) o.memo = memo.slice(0, 60);
+    if (memo) o.memo = clipChars(memo, STYLE_DNA.caption.memo_max);
     return o;
   });
   const base = {
