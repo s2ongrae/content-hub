@@ -3378,7 +3378,7 @@ console.log('\n[IG] 인스타 카드뉴스 초안 (gas/IgCardDraft.gs) — 선�
 
 {
   console.log('\n[Code.gs] editable 배열 photo_clip_* 포함 확인');
-  const codeSrc = fs.readFileSync(path.join(GAS_DIR, 'Code.gs'), 'utf8');
+  const codeSrc = fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8');
   const m = codeSrc.match(/const\s+editable\s*=\s*\[([\s\S]*?)\];/);
   ok('editable 배열 정의가 있다', !!m);
   if (m) {
