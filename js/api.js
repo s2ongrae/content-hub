@@ -285,6 +285,30 @@ export class ContentHubApi {
       }
     }, newIdempotencyKey('reject'), { timeoutMs: opts.timeoutMs || this.timeoutMs });
   }
+
+  /* ---------------- 인스타 피드 카드뉴스 초안 (gas/IgCardDraft.gs) ---------------- */
+
+  /** 야간 초안을 지금 한 번 돌려 본다(사람이 화면에서 부를 때만). 한 번에 최대 3장. */
+  igCardDraftRun(data = {}) {
+    return this.post('ig_card_draft_run', data, null, { timeoutMs: 180000 });
+  }
+
+  /** 초안 승인(human_approved) / 반려(queued) — 서버가 '초안이 준비된 카드'만 받는다. */
+  igCardReview(contentId, decision, opts = {}) {
+    return this.post('ig_card_review', {
+      content_id: String(contentId || ''),
+      decision: decision,
+      reason: opts.reason || ''
+    }, newIdempotencyKey('igreview'));
+  }
+
+  igCardApprove(contentId) {
+    return this.igCardReview(contentId, 'approve');
+  }
+
+  igCardReject(contentId, reason) {
+    return this.igCardReview(contentId, 'reject', { reason: reason });
+  }
 }
 
 function sleep(ms) {

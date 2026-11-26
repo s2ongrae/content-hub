@@ -384,6 +384,20 @@ main {
 .qa-actions.busy { opacity: .6; pointer-events: none; }
 .qa-kbd { font-size: 11.5px; color: var(--tx-3); text-align: center; }
 
+/* 인스타 카드뉴스 초안 카드 (2026-11-26) — 🖼️ N장 · 요약 · 드라이브 링크 · 3:4/4:5 미리보기 */
+.qa-card-ig { gap: 11px; }
+.qa-line.qa-warn { color: var(--warn, #b45309); }
+.qa-ig-links { flex-wrap: wrap; gap: 8px; align-items: center; }
+.qa-link { font-size: 12.5px; font-weight: 700; color: var(--accent-2); text-decoration: none; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.qa-link:hover { text-decoration: underline; }
+.qa-ig-preview { display: grid; gap: 8px; }
+.qa-ig-head { justify-content: space-between; align-items: center; gap: 8px; }
+.qa-ig-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.qa-ig-card { display: grid; gap: 4px; }
+.qa-ig-card canvas { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }
+.qa-ig-card-fallback { font-size: 11.5px; color: var(--tx-3); padding: 24px 8px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; }
+.qa-ig-cap { font-size: 10.5px; color: var(--tx-3); line-height: 1.35; }
+
 /* ───────────── 폼 ───────────── */
 .field { display: block; margin-bottom: 10px; }
 .field-label { display: block; font-size: 12px; font-weight: 700; color: var(--tx-2); margin-bottom: 5px; }
