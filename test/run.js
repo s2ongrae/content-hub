@@ -2790,9 +2790,299 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v9/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v10/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     [19] 상품 이미지 수집 실패 대비 5단계 · 운영 트랙 A/B (2026-11-26)
+     - 뷔투 이관: Q-20261126-133128-yitv(폴백 5단계) · Q-20261126-140119-duwn(트랙 A/B 전환)
+     - 실패해도 막다른 길이 아니게: 사유 한 줄 · 사진 올리기 · 특징 3개 · 다른 링크 · 기본 틀
+     - 실패한 링크는 다시 시도 목록에 남고, 적던 값은 새로고침해도 남는다
+     - 트랙을 바꿔도 상품명·사진·특징 3개는 그대로, 채널·비율·문구만 바뀐다
+     ═══════════════════════════════════════════════════════════════ */
+  console.log('\n[19] 상품 실패 대비 5단계 · 운영 트랙 A/B');
+  try {
+    const PT = await import('file://' + path.join(ROOT, 'js', 'productTracks.js'));
+    const PF = await import('file://' + path.join(ROOT, 'js', 'productFallback.js'));
+    const PS = await import('file://' + path.join(ROOT, 'js', 'productShorts.js'));
+    const TC = await import('file://' + path.join(ROOT, 'js', 'trackChannels.js'));
+    const pvSrc = fs.readFileSync(path.join(ROOT, 'js', 'productView.js'), 'utf8');
+    const idxSrc = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const deep = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+    /* ① 운영 트랙 A/B — 저장소 공통 표기와 같고, 첫 사용은 A */
+    ok('트랙: A=대전 청년 · B=삐약 김메리(card brand 도 같다)',
+      PT.brandOfTrack('A') === 'daejeon_youth' && PT.brandOfTrack('B') === 'ppiyak_kimmary');
+    eq('트랙: 모르는 값은 첫 사용 기본 A', PT.normalizeBrandTrack('zzz'), 'A');
+    eq('트랙: 소문자 b 도 B', PT.normalizeBrandTrack('b'), 'B');
+    eq('트랙: 카드 brand → 트랙(메리는 B)', PT.trackOfBrand('ppiyak_kimmary'), 'B');
+    eq('트랙: 카드 brand → 트랙(모르는 브랜드는 A)', PT.trackOfBrand('what'), 'A');
+    eq('트랙 A 채널 5개', PT.channelsOfTrack('A').join(','), 'blog,shorts,reels,feed,clip');
+    eq('트랙 B 채널 3개', PT.channelsOfTrack('B').join(','), 'shorts,reels,clip');
+    ok('트랙: 상품 흐름은 당근을 만들지 않는다(운영 채널 계약은 그대로)',
+      PT.channelsOfTrack('A').indexOf('daangn') < 0 && TC.trackChannelsOf('daejeon_youth').indexOf('daangn') >= 0);
+    eq('첫 사용(저장 없음)은 A', PT.readBrandTrack(null), 'A');
+    {
+      const mem = new Map();
+      const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)) };
+      PT.writeBrandTrack(store, 'B');
+      eq('마지막 쓴 트랙을 기억한다', PT.readBrandTrack(store), 'B');
+      const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+      ok('저장이 막혀도 화면은 A 로 산다(던지지 않는다)', PT.readBrandTrack(broken) === 'A' && PT.writeBrandTrack(broken, 'B') === false);
+    }
+
+    /* ② 전환 — 입력값 보존이 계약이다 */
+    const factsA = { name: '14k 목걸이', images: ['1.jpg', '2.jpg'], key_points: ['가벼움', '변색 없음', '선물용'] };
+    const planAB = PT.trackSwitchPlan('A', 'B', factsA);
+    ok('전환: 브랜드·채널이 B 로 바뀐다', planAB.brand === 'ppiyak_kimmary' && planAB.channels.join(',') === 'shorts,reels,clip' && planAB.changed === true);
+    ok('전환: 상품명·사진·핵심 특징 3개는 그대로',
+      deep(planAB.kept, { name: '14k 목걸이', images: ['1.jpg', '2.jpg'], key_points: ['가벼움', '변색 없음', '선물용'] }), planAB.kept);
+    ok('전환: B 에 없는 블로그·피드는 해제하고 이유를 말한다', planAB.dropped.join(',') === 'blog,feed' && /3채널만/.test(planAB.note) && /블로그·피드/.test(planAB.note), planAB.note);
+    const planBA = PT.trackSwitchPlan('B', 'A', factsA);
+    ok('전환: B→A 는 해제할 채널이 없고 입력값은 그대로', planBA.dropped.length === 0 && deep(planBA.kept, planAB.kept));
+    ok('전환: 같은 트랙을 다시 누르면 바뀐 것이 없다', PT.trackSwitchPlan('A', 'A', factsA).changed === false);
+
+    /* ③ 채널별 문구·비율 — 트랙이 바뀌면 문구만 바뀐다 */
+    const cFeed = PT.channelCopy('A', 'feed', factsA);
+    const cShort = PT.channelCopy('A', 'shorts', factsA);
+    const cShortB = PT.channelCopy('B', 'shorts', factsA);
+    ok('채널: 피드는 4:5, 쇼츠는 9:16', cFeed.ratio === '4:5' && cShort.ratio === '9:16');
+    ok('채널: 같은 쇼츠라도 트랙이 다르면 문구가 다르다', cShort.hook !== cShortB.hook && cShort.hashtags.join(' ') !== cShortB.hashtags.join(' '));
+    ok('채널 A: 대전 청년 태그', cShort.hashtags.indexOf('#대전청년') >= 0, cShort.hashtags);
+    ok('채널 B: 삐약 김메리 태그, 대전 청년 태그 없음', cShortB.hashtags.indexOf('#삐약김메리') >= 0 && cShortB.hashtags.indexOf('#대전청년') < 0, cShortB.hashtags);
+    ok('채널: 미리보기는 고른 채널만 나온다', PT.channelPlan('A', factsA, ['shorts', 'clip']).map((c) => c.channel).join(',') === 'shorts,clip');
+    ok('채널: B 는 블로그·피드 미리보기가 없다', PT.channelPlan('B', factsA).map((c) => c.channel).join(',') === 'shorts,reels,clip');
+    ok('설명란 해시태그가 트랙 색을 따른다(B 는 #삐약김메리, A 태그 없음)',
+      PT.trackTagLine('B', factsA).indexOf('#삐약김메리') === 0 && PT.trackTagLine('B', factsA).indexOf('#대전청년') < 0 && PT.trackTagList('B', factsA).length <= 5, PT.trackTagLine('B', factsA));
+    {
+      const d = PS.descriptionBlocks(factsA, { track: 'commerce', tags: PT.trackTagList('B', factsA) });
+      ok('설명란(tags)에 B 태그가 그대로 들어간다', d.text.indexOf('#삐약김메리') >= 0 && d.text.indexOf('#대전청년') < 0);
+    }
+
+    /* ④ 실패 사유 한 줄 — 코드가 아니라 사람 말 */
+    const fBlocked = PF.failureReason({ code: 'ERR_PRODUCT_BLOCKED' });
+    ok('실패: 막힌 몰은 사진 올리기를 권한다', /사진을 직접/.test(fBlocked.reason) && fBlocked.reason.indexOf('ERR_') < 0, fBlocked.reason);
+    ok('실패: 막힌 몰은 다시 시도 목록에 담는다', fBlocked.queueable === true);
+    const fNoName = PF.failureReason(new Error('상품명을 찾지 못했습니다'));
+    ok('실패: 코드 없는 상품명 실패도 같은 안내를 받는다', fNoName.code === 'ERR_PRODUCT_NO_NAME' && fNoName.queueable === true && /상품명/.test(fNoName.reason), fNoName);
+    ok('실패: 중복은 다시 시도 목록에 담지 않는다', PF.failureReason({ code: 'ERR_PRODUCT_DUPLICATE' }).queueable === false);
+    ok('실패: 모르는 코드도 코드가 아니라 문장으로', PF.failureReason({ code: 'ERR_WHAT' }).reason.indexOf('ERR_') < 0 && PF.failureReason({ code: 'ERR_WHAT' }).reason.length > 8);
+
+    /* ⑤ 핵심 특징 3칸 · 기본 틀 */
+    ok('특징: 모자란 칸은 빈 값으로 3칸을 채운다', deep(PF.keyPointSlots({ key_points: ['하나'] }, 3), ['하나', '', '']));
+    ok('특징: 3칸을 고쳐도 4·5번째는 잃지 않는다', deep(PF.mergeKeyPoints(['가', '나', '다', '라', '마'], ['가', '나', '다!']), ['가', '나', '다!', '라', '마']));
+    ok('특징: 빈 칸은 목록에서 뺀다', deep(PF.mergeKeyPoints([], ['x', ' ', 'y']), ['x', 'y']));
+    ok('기본 틀: 상품명이 없으면 만들 수 없다고 말한다', PF.basicTemplateGate({}).ok === false && /상품명/.test(PF.basicTemplateGate({}).reason));
+    ok('기본 틀: 상품명만 있으면 사진 없이 만든다(렌더 조건은 숨기지 않는다)', PF.basicTemplateGate({ name: '목걸이' }).ok === true && /사진 5장/.test(PF.basicTemplateGate({ name: '목걸이' }).note));
+
+    /* ⑥ 초안 저장 — 새로고침해도 적던 값 */
+    {
+      const mem = new Map();
+      const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+      const at = '2026-11-26T05:00:00.000Z';
+      const d = PF.draftOf({ name: '목걸이', price: '12,000', key_points: ['가', '나', '다', '라'], images: ['1.jpg'] },
+        { url: 'https://smartstore.naver.com/a/products/1', brand_track: 'B', clip_track: 'challenge', channels: ['shorts', 'clip'], uploaded: ['1.jpg'], card_id: 'CH-1', at: at });
+      PF.saveDraft(store, d);
+      const back = PF.loadDraft(store, Date.parse('2026-11-26T06:00:00.000Z'));
+      ok('초안: 적던 값·트랙·채널·올린 사진이 그대로 돌아온다',
+        back && back.facts.name === '목걸이' && back.facts.price === 12000 && back.facts.key_points.join(',') === '가,나,다,라'
+        && back.brand_track === 'B' && back.clip_track === 'challenge' && back.channels.join(',') === 'shorts,clip'
+        && back.uploaded.join(',') === '1.jpg' && back.card_id === 'CH-1', back);
+      ok('초안: 일주일이 지나면 버린다', PF.normalizeDraft(d, Date.parse('2026-12-05T00:00:00.000Z')) === null);
+      ok('초안: 형식이 다르거나 깨졌으면 쓰지 않는다', PF.normalizeDraft({ v: 99, facts: {} }, Date.now()) === null && PF.normalizeDraft('nope', Date.now()) === null);
+      ok('초안: 안내 문장에 저장 시각이 들어간다', /불러왔/.test(PF.draftNotice(back)) && /11월 26일/.test(PF.draftNotice(back)), PF.draftNotice(back));
+      const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => { throw new Error('blocked'); } };
+      ok('초안: 저장이 막혀도 던지지 않는다', PF.saveDraft(broken, d).ok === false && PF.loadDraft(broken, Date.now()) === null);
+      mem.set(PF.DRAFT_KEY, '{broken');
+      ok('초안: 깨진 JSON 은 없는 것으로 본다', PF.loadDraft(store, Date.now()) === null);
+    }
+
+    /* ⑦ 다시 시도할 링크 — 같은 상품은 한 줄, 지우기 전까지 남는다 */
+    {
+      const url = 'https://smartstore.naver.com/a/products/1';
+      let q = PF.enqueueRetry([], { url: url, brand: 'daejeon_youth', reason: '막힘', brand_track: 'A' });
+      eq('재시도: 실패한 링크를 담는다', q.length, 1);
+      q = PF.enqueueRetry(q, { url: url, brand: 'daejeon_youth', reason: '또 막힘' });
+      ok('재시도: 같은 상품은 새 줄을 만들지 않고 사유만 새로', q.length === 1 && q[0].reason === '또 막힘', q);
+      q = PF.markRetry(q, q[0].id, { status: 'FAILED', bump: true, at: '2026-11-26T06:00:00.000Z' });
+      ok('재시도: 다시 해 본 횟수와 상태를 남긴다', q[0].status === 'FAILED' && q[0].attempts === 1);
+      const sum = PF.retryQueueSummary(q);
+      ok('재시도: 목록 요약에 또 실패가 보인다', /또 실패 1건/.test(sum.text), sum.text);
+      eq('재시도: 빼면 목록에서 사라진다', PF.dequeueRetry(q, q[0].id).length, 0);
+      let many = [];
+      for (let i = 0; i < 12; i++) many = PF.enqueueRetry(many, { url: 'https://smartstore.naver.com/a/products/' + i, brand: 'daejeon_youth' });
+      eq('재시도: 목록은 10건까지만', many.length, PF.RETRY_MAX);
+      const mem = new Map();
+      const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)) };
+      PF.saveRetryQueue(store, many);
+      eq('재시도: 저장했다가 그대로 읽는다', PF.loadRetryQueue(store).length, 10);
+      ok('재시도: 깨진 저장은 빈 목록', PF.loadRetryQueue({ getItem: () => '{bad', setItem: () => {} }).length === 0);
+    }
+
+    /* ⑧ 화면 조각 — 가짜 DOM 으로 실제 노드를 만든다 */
+    class N {
+      constructor(tag) {
+        this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.className = ''; this._text = '';
+        this.value = ''; this.disabled = false; this.isConnected = true; this.style = {};
+      }
+      set textContent(v) { this._text = String(v); this.children = []; }
+      get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+      setAttribute(k, v) { this.attrs[k] = String(v); }
+      removeAttribute(k) { delete this.attrs[k]; }
+      getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+      addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+      append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { textContent: String(k), tag: '#text', children: [] }; this.children.push(n); }); }
+      appendChild(k) { this.append(k); return k; }
+      replaceChildren(...kids) { this.children = []; this.append(...kids); }
+      focus() {}
+      click() { (this.listeners.click || []).forEach((f) => f({ target: this, currentTarget: this })); }
+    }
+    const hh = (tag, attrs, ...kids) => {
+      const n = new N(tag);
+      if (attrs) for (const [k, v] of Object.entries(attrs)) {
+        if (v == null || v === false) continue;
+        if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v;
+        else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v);
+        else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+      }
+      n.append(...kids.flat(4).filter((k) => k != null && k !== false)); return n;
+    };
+    const findBtn = (node, label) => { let hit = null; (function w(n) { if (hit) return; if (n.tag === 'button' && String(n.textContent).indexOf(label) >= 0) { hit = n; return; } (n.children || []).forEach((c) => c && c.tag && w(c)); })(node); return hit; };
+
+    let clicked = '';
+    const failNode = PF.fallbackPanel(hh, PF.failureReason({ code: 'ERR_PRODUCT_BLOCKED' }), {
+      facts: { name: '목걸이' },
+      onUpload: () => { clicked = 'upload'; }, onFeatures: () => { clicked = 'features'; },
+      onOtherLink: () => { clicked = 'other'; }, onBasic: () => { clicked = 'basic'; }
+    });
+    const failText = String(failNode.textContent);
+    ok('실패 화면: 사유 한 줄 · 사진 올리기 · 특징 3개 · 다른 링크 · 기본 틀',
+      /사진을 직접/.test(failText) && /사진 직접 올리기/.test(failText) && /핵심 특징 3개/.test(failText)
+      && /다른 링크로 다시/.test(failText) && /기본 틀 만들기/.test(failText) && failText.indexOf('ERR_') < 0, failText);
+    ok('실패 화면: 기본 틀 안내가 렌더 조건(사진 5장)을 숨기지 않는다', /사진 5장/.test(failText));
+    ok('실패 화면: 새로고침해도 남는다고 말한다', /새로고침해도/.test(failText));
+    findBtn(failNode, '사진 직접 올리기').click();
+    eq('실패 화면: 사진 올리기 버튼이 실제로 연결된다', clicked, 'upload');
+    findBtn(failNode, '기본 틀 만들기').click();
+    eq('실패 화면: 기본 틀 버튼도 연결된다', clicked, 'basic');
+    ok('실패 화면: 코드는 툴팁에만', /ERR_PRODUCT_BLOCKED/.test(String((failNode.children[0] || {}).attrs && failNode.children[0].attrs.title)));
+
+    ok('다시 시도 목록: 비어 있으면 그리지 않는다', PF.retryQueuePanel(hh, [], {}) === null);
+    {
+      let retried = '';
+      let removed = '';
+      const q = PF.enqueueRetry([], { url: 'https://smartstore.naver.com/a/products/7', brand: 'daejeon_youth', reason: '막힘' });
+      const rq = PF.retryQueuePanel(hh, q, {
+        onRetry: (it) => { retried = it.id; }, onRemove: (it) => { removed = it.id; }
+      });
+      ok('다시 시도 목록: 주소·사유·[다시 시도]·[빼기]', /다시 시도할 링크/.test(String(rq.textContent)) && /smartstore\.naver\.com/.test(String(rq.textContent)) && /막힘/.test(String(rq.textContent)));
+      findBtn(rq, '다시 시도').click();
+      eq('다시 시도 목록: 누르면 그 줄을 넘긴다', retried, q[0].id);
+      findBtn(rq, '빼기').click();
+      eq('다시 시도 목록: 빼기도 그 줄을 넘긴다', removed, q[0].id);
+    }
+    ok('주소 한 줄: 긴 경로는 뒤를 줄인다', PF.shortUrl('https://smartstore.naver.com/store/products/123456789012345678').indexOf('smartstore.naver.com') === 0 && PF.shortUrl('https://smartstore.naver.com/store/products/123456789012345678').length < 60);
+
+    /* ⑨ 화면 연결(정적) — 실패 5단계와 트랙 전환이 실제로 붙었나 */
+    ok('화면: 실패 5단계 4버튼(사진·특징·다른 링크·기본 틀)', /onUpload: \(\) => imageInput\.click\(\)/.test(pvSrc) && /onFeatures:/.test(pvSrc) && /onOtherLink:/.test(pvSrc) && /onBasic: \(\) => makeScript\(\{ basic: true \}\)/.test(pvSrc));
+    ok('화면: 실패한 링크는 다시 시도 목록에 남는다', /enqueueRetry\(/.test(pvSrc) && /retryQueuePanel\(h, retryQueue/.test(pvSrc) && /function retryAll/.test(pvSrc));
+    ok('화면: 적던 값·트랙·채널을 자동 저장하고 들어오면 불러온다', /loadDraft\(safeStorage\(\)/.test(pvSrc) && /function saveDraftNow/.test(pvSrc) && /scheduleDraftSave/.test(pvSrc) && /draftNotice/.test(pvSrc));
+    ok('화면: 사진 직접 올리기는 카드에 올리고 카드에 이름을 남긴다', /uploadPhoto\(\{ api: api/.test(pvSrc) && /image_files: uploadedNames\.slice\(\)/.test(pvSrc) && /function saveUploadedToCard/.test(pvSrc));
+    ok('화면: 운영 트랙 A/B 탭 · 마지막 트랙 기억 · 채널 미리보기', /BRAND_TRACKS/.test(pvSrc) && /writeBrandTrack\(safeStorage\(\)/.test(pvSrc) && /channelPlan\(brandTrack, collect\(\), selectedChannels\)/.test(pvSrc));
+    ok('화면: 트랙 전환은 입력값을 그대로 두고 계획만 세운다', /trackSwitchPlan\(brandTrack, next, collect\(\)\)/.test(pvSrc) && /const plan = trackSwitchPlan/.test(pvSrc));
+    ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
+    ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
+    ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js v10 · studio.css b)', /js\/app\.js\?v=20261126v10/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
+
+    /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
+    {
+      class D {
+        constructor(tag) {
+          this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.className = ''; this._text = '';
+          this.value = ''; this.disabled = false; this.isConnected = true; this.style = {}; this.dataset = {}; this.files = [];
+          const set = new Set();
+          this.classList = { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c), toggle: (c) => (set.has(c) ? (set.delete(c), false) : (set.add(c), true)) };
+        }
+        set textContent(v) { this._text = String(v); this.children = []; }
+        get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+        setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'value') this.value = String(v); }
+        removeAttribute(k) { delete this.attrs[k]; }
+        getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+        addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+        append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { textContent: String(k), tag: '#text', children: [] }; this.children.push(n); }); }
+        appendChild(k) { this.append(k); return k; }
+        replaceChildren(...kids) { this.children = []; this.append(...kids); }
+        focus() {}
+        scrollIntoView() {}
+        click() { if (this.disabled) return; (this.listeners.click || []).forEach((f) => f({ target: this, currentTarget: this })); }
+      }
+      const dh = (tag, attrs, ...kids) => {
+        const n = new D(tag);
+        if (attrs) for (const [k, v] of Object.entries(attrs)) {
+          if (v == null || v === false) continue;
+          if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'value') n.value = String(v);
+          else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v);
+          else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+        }
+        n.append(...kids.flat(5).filter((k) => k != null && k !== false)); return n;
+      };
+      const walk = (n, fn) => { if (!n || !n.tag) return; fn(n); (n.children || []).forEach((c) => walk(c, fn)); };
+      const find = (n, pred) => { let hit = null; walk(n, (x) => { if (!hit && pred(x)) hit = x; }); return hit; };
+      const toasts = [];
+      const calls = [];
+      const apiStub = {
+        configured: true,
+        post: (action) => { calls.push(action); return Promise.reject(Object.assign(new Error('테스트'), { code: 'ERR_PRODUCT_FETCH' })); },
+        createContent: () => Promise.reject(new Error('안 부름')),
+        getContentDetail: () => Promise.reject(new Error('안 부름')),
+        updateContent: () => Promise.reject(new Error('안 부름')),
+        hubOrderStatus: () => Promise.reject(new Error('안 부름'))
+      };
+      const PV = await import('file://' + path.join(ROOT, 'js', 'productView.js'));
+      const main = dh('div');
+      const ctx = {
+        h: dh, state: { brand: 'daejeon_youth' }, api: apiStub,
+        pageHead: (title, sub) => dh('div', { class: 'page-head' }, dh('h1', { text: title }), dh('p', { text: sub || '' })),
+        toast: (m, kind) => { toasts.push(String(m)); },
+        friendlyError: (e) => String((e && e.message) || e), banner: () => null
+      };
+      let threw = null;
+      try { PV.renderProductView(main, ctx); } catch (e) { threw = e; }
+      ok('그리기: 상품 화면이 브라우저 없이도 끝까지 그려진다', threw === null, threw && threw.stack);
+
+      const nameInput = find(main, (n) => n.tag === 'input' && n.attrs.placeholder === '상품명');
+      ok('그리기: 상품명 칸 · 핵심 특징 3칸 · 운영 트랙 탭이 있다', !!nameInput
+        && [1, 2, 3].every((i) => !!find(main, (n) => n.tag === 'input' && n.attrs['aria-label'] === '핵심 특징 ' + i))
+        && !!find(main, (n) => n.tag === 'button' && n.textContent === '트랙 A · 대전 청년')
+        && !!find(main, (n) => n.tag === 'button' && n.textContent === '트랙 B · 삐약 김메리'));
+
+      nameInput.value = '테스트 목걸이';
+      const kp1 = find(main, (n) => n.tag === 'input' && n.attrs['aria-label'] === '핵심 특징 1');
+      kp1.value = '가벼움';
+      const cardCount = () => { let c = 0; walk(main, (n) => { if ((n.className || '').split(/\s+/).indexOf('st-cue') >= 0) c++; }); return c; };
+      ok('그리기: A 트랙은 채널 카드 5장(블로그·피드 포함)', cardCount() === 5, cardCount());
+
+      find(main, (n) => n.tag === 'button' && n.textContent === '트랙 B · 삐약 김메리').click();
+      ok('전환: 탭을 바꿔도 적던 상품명·특징이 그대로', nameInput.value === '테스트 목걸이' && kp1.value === '가벼움');
+      ok('전환: B 는 채널 카드 3장이고 블로그·피드가 사라진다', cardCount() === 3 && !find(main, (n) => n.tag === 'button' && n.textContent === '블로그'), cardCount());
+      ok('전환: 왜 줄었는지 한 줄로 알린다', /3채널만/.test(String(find(main, (n) => (n.className || '').split(/\s+/).indexOf('st-hint') >= 0 && /3채널만/.test(n.textContent)).textContent)));
+      find(main, (n) => n.tag === 'button' && n.textContent === '트랙 A · 대전 청년').click();
+      ok('전환: A 로 돌아오면 채널 카드 5장', cardCount() === 5 && nameInput.value === '테스트 목걸이');
+
+      const urlInput = find(main, (n) => n.tag === 'input' && n.attrs.placeholder && n.attrs.placeholder.indexOf('smartstore') >= 0);
+      urlInput.value = 'https://smartstore.naver.com/a/products/9';
+      find(main, (n) => n.tag === 'button' && n.textContent === '🔎 상품 불러오기').click();
+      await new Promise((r) => setTimeout(r, 30));
+      const bodyText = String(main.textContent);
+      ok('실패: 화면에 5단계 안내가 뜨고 코드는 보이지 않는다', /상품을 자동으로 못 읽었어요/.test(bodyText) && /사진 직접 올리기/.test(bodyText) && bodyText.indexOf('ERR_') < 0);
+      ok('실패: 그 링크가 [다시 시도할 링크]에 담긴다', /다시 시도할 링크/.test(bodyText) && /smartstore\.naver\.com/.test(bodyText));
+      ok('실패: 상품 수집을 실제로 시도했다', calls.indexOf('product_fetch') >= 0, calls);
+    }
+  } catch (err) {
+    ok('상품 실패 대비·트랙 A/B 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

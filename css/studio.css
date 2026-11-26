@@ -92,6 +92,12 @@
 }
 .st-chip.on { background: var(--accent); border-color: transparent; color: var(--accent-ink); font-weight: 700; }
 
+/* ── 트랙(브랜드)·핵심 특징 3칸 (2026-11-26) — 폰에서도 가로 스크롤 없이 ── */
+.st-track-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; min-width: 0; }
+.st-track-row > .st-dim { display: inline; min-width: 52px; }
+.st-kp { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+@media (max-width: 520px) { .st-kp { grid-template-columns: 1fr; } .st-track-row { align-items: flex-start; } }
+
 /* ── 만들기 버튼·결과 ── */
 .st-actions { margin-bottom: 12px; }
 .st-cardline { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
@@ -165,6 +171,7 @@
    · 누르는 것 44px · 입력 16px(iOS 자동 확대 방지) · 375px 이하 한 줄에 하나
    ========================================================================== */
 @media (max-width: 699px) {
+  .st-track-row .st-chip { min-height: 44px; }
   .st-chip, .st-format, .st-recent, .st-mat-toggle, .st-op, .st-wm-on { min-height: 44px; }
   .st-chip { padding: 0 14px; font-size: 13px; }
   .st-memo-input, .st-wm-text, .st-wm-pos { font-size: 16px; min-height: 44px; }
