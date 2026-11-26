@@ -26,7 +26,7 @@ import { produceSection } from './produceView.js?v=20261126v8';
 import {
   LINK_CHANNELS, LINK_LABEL, parseLinkText, identifyChannel, matchesChannel,
   auditLinks, auditSummary, linkPatch, publishGuard
-} from './channelLinks.js?v=20261126a';
+} from './channelLinks.js?v=20261126b';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -1710,8 +1710,8 @@ function daangnLinkRow(ctx, r) {
 const LINK_PLACEHOLDER = {
   blog: 'https://blog.naver.com/아이디/123456789',
   shorts: 'https://youtube.com/shorts/…',
-  reels: 'https://www.instagram.com/reel/…',
-  clip: 'https://clip.naver.com/…'
+  reels: 'https://www.instagram.com/reel/… (계정/reel/… 도 됩니다)',
+  clip: 'https://naver.me/… 또는 https://clip.naver.com/…'
 };
 
 /** 저장 뒤 화면을 그 카드의 성과 탭으로 다시 연다(숫자 입력과 같은 방식). */
@@ -1772,7 +1772,7 @@ function channelLinkRow(ctx, r) {
 function linkPastePanel(ctx) {
   const { d, contentId, dlg, toast } = ctx;
   const area = h('textarea', { class: 'textarea', rows: '3',
-    placeholder: '올린 주소를 한 번에 붙여넣으세요 — 줄마다 채널을 알아서 고릅니다\nhttps://clip.naver.com/… / https://youtube.com/shorts/… / https://instagram.com/reel/… / https://blog.naver.com/…',
+    placeholder: '올린 주소를 한 번에 붙여넣으세요 — 줄마다 채널을 알아서 고릅니다\nhttps://naver.me/… / https://youtube.com/shorts/… / https://instagram.com/reel/… / https://blog.naver.com/…',
     'aria-label': '4채널 발행 주소 여러 개 붙여넣기' });
   const btn = h('button', { class: 'btn sm primary', type: 'button', text: '링크 넣기' });
   const note = h('p', { class: 'st-hint', hidden: true });

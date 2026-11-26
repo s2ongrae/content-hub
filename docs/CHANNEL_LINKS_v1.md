@@ -1,4 +1,4 @@
-# 4채널 발행 링크 — 기록·가드레일·시트 규칙 v1 (2026-11-26)
+# 4채널 발행 링크 — 기록·가드레일·시트 규칙 v1.1 (2026-11-26)
 
 keyring 보고(Q-20261126-133433-06n9) 중 **4채널 기록·무결성** 항목의 구현 설명.
 클립·유튜브(쇼츠)·인스타(릴스)·블로그에 올린 뒤 **주소를 시트에 적는 일**이 사람 손에 남아 있어,
@@ -11,12 +11,19 @@ keyring 보고(Q-20261126-133433-06n9) 중 **4채널 기록·무결성** 항목�
 |---|---|---|---|
 | 블로그 | `blog_url` | `blog_status` | `blog.naver.com/<아이디>/<글번호>`, `blog.naver.com/PostView.naver…`, `m.blog.naver.com` |
 | 쇼츠 | `shorts_url` | `shorts_status` | `youtube.com/shorts/<id>`, `youtu.be/<id>`, `youtube.com/watch?v=<id>`, `m.youtube.com` |
-| 릴스 | `reels_url` | `reels_status` | `instagram.com/reel/<code>`, `instagram.com/reels/<code>` |
-| 클립 | `clip_url` | `clip_status` | `clip.naver.com/…` (발급 주소가 `/info`·`/shorts` 등으로 갈려 호스트만 본다) |
+| 릴스 | `reels_url` | `reels_status` | `instagram.com/reel/<code>`, `instagram.com/reels/<code>`, 계정이 앞에 붙은 `instagram.com/<계정>/reel/<code>`·`instagram.com/<계정>/reels/<code>` |
+| 클립 | `clip_url` | `clip_status` | `clip.naver.com/…` (발급 주소가 `/info`·`/shorts` 등으로 갈려 호스트만 본다), `naver.me/<8자>` 단축주소 |
 
 * 프론트 `LINK_RULES`(js)와 GAS `CONTENT_LINK_RULES`(gas)는 **같은 호스트·같은 정규식**이다.
   `test/run.js [13]` 이 두 구현을 주소 표로 대조한다 — 한쪽만 고치면 시험이 깨진다.
 * 인스타 `instagram.com/p/…` 는 피드(카드뉴스) 주소로 본다. 인스타는 트랙 A 만 운영한다.
+  계정이 앞에 붙은 `instagram.com/<계정>/p/…` 도 피드다 — `/reel/`(릴스)과 `/p/`(피드) 구분은 그대로다.
+* 클립은 네이버가 발급하는 **`naver.me` 단축주소도 같은 채널**로 본다. 실 시트(`Contents`)에 적힌
+  클립 주소 9건이 모두 `https://naver.me/…` 였고, `clip.naver.com` 만 허용하던 규칙이
+  `ERR_LINK_INCOMPLETE`(‘클립 주소 확인’)로 막고 있었다(2026-11-26 핫픽스, PR #24).
+  * `naver.me` 는 네이버 공통 단축주소라 **블로그 글을 줄인 주소도 클립으로 읽힌다.**
+    블로그 주소는 줄이지 말고 `blog.naver.com/<아이디>/<글번호>` 그대로 적는다.
+  * `clip.naver.com` 주소는 그대로 통과한다(둘 다 허용).
 * 주소를 적는 대상은 **트랙 채널 중 `SKIPPED` 를 뺀 것**이다(김메리는 3채널).
 
 ## 2. 화면에서 하는 일
@@ -62,6 +69,14 @@ keyring 보고(Q-20261126-133433-06n9) 중 **4채널 기록·무결성** 항목�
 ## 5. 시험
 
 * `test/run.js [13]` — 채널 감지·여러 줄 파싱·중복·저장 patch·기록 점검·가드·GAS 대조·유효성 규칙 정의·
-  상태 승격(dryRun)·화면 정적 확인.
+  상태 승격(dryRun)·화면 정적 확인. **핫픽스 회귀**: `naver.me` 단축주소(스킴 없음·`www.` 포함)·클립 9건 형태·
+  계정이 앞에 붙은 릴스(단수·복수)·계정이 붙은 피드·`/{계정}/stories/` 거절, 그리고 그 형태로 채운 카드가
+  `complete` 가 되는지.
 * `gas/test/run.js [8m]` — 실제 핸들러로 `LINKED` 가드레일(거절 → `confirm_incomplete` 통과 →
-  4채널이 찬 카드 통과 → 같은 요청에 주소를 실어 보내면 통과).
+  4채널이 찬 카드 통과 → 같은 요청에 주소를 실어 보내면 통과 → `naver.me` 클립·계정 붙은 릴스 카드 통과).
+
+## 6. 변경 이력
+
+* **v1.1 (2026-11-26, PR #24 핫픽스)** — 클립 `naver.me` 단축주소 허용, 계정이 앞에 붙은 릴스/피드 허용.
+  프론트 `js/channelLinks.js`(HOST_ALIAS·path 정규식)와 GAS `gas/Setup.gs`(`CONTENT_LINK_RULES.pattern`)를
+  같이 고쳤다. 시트 유효성 규칙은 `ContentHub OS` → **5. 4채널 링크 규칙 적용**을 한 번 실행해야 새 정규식으로 바뀐다.

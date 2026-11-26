@@ -2944,6 +2944,12 @@ console.log('\n[8m] 4채널 링크 가드레일 — 기록 없는 LINKED 는 서
       content_id: 'DY-2', shorts_status: 'LINKED', shorts_url: 'https://youtube.com/shorts/AbCdEf12345',
       reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/Cxyz123/',
       clip_status: 'UPLOADED', clip_url: 'https://clip.naver.com/info/abc123'
+    })),
+    /* 2026-11-26 핫픽스 — 실 시트에 적힌 형태(클립 naver.me 단축주소 · 계정이 붙은 릴스) */
+    rowOf(Object.assign({}, base, {
+      content_id: 'DY-3', shorts_status: 'UPLOADED', shorts_url: 'https://youtube.com/shorts/AbCdEf12345',
+      reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/m2ow.mari/reel/DcVyJUjzQUG/',
+      clip_status: 'UPLOADED', clip_url: 'https://naver.me/AbCd1234'
     }))
   ];
   const sheet = {
@@ -2971,6 +2977,10 @@ console.log('\n[8m] 4채널 링크 가드레일 — 기록 없는 LINKED 는 서
 
   const r3 = callHandler(G.ctx, 'handleUpdateContent_', ss, { content_id: 'DY-2', expected_version: 1, status: 'LINKED' }, { clientId: 't' });
   ok('네 채널 주소가 다 찬 카드는 바로 넘어간다', r3.ok && r3.data.status === 'LINKED' && r3.data.link_audit.complete === true, r3);
+
+  /* 실 시트 형태 — 클립이 naver.me 단축주소, 릴스에 계정이 붙어 있어도 기록이 찬 것으로 본다 */
+  const r3b = callHandler(G.ctx, 'handleUpdateContent_', ss, { content_id: 'DY-3', expected_version: 1, status: 'LINKED' }, { clientId: 't' });
+  ok('naver.me 클립·계정 붙은 릴스가 적힌 카드도 ERR_LINK_INCOMPLETE 로 막히지 않는다', r3b.ok && r3b.data.status === 'LINKED' && r3b.data.link_audit.complete === true, r3b);
 
   /* 주소를 같이 보내면 그 자리에서 채워지고 통과한다(링크 저장과 발행 완료가 한 번에) */
   const r4 = callHandler(G.ctx, 'handleUpdateContent_', ss, {

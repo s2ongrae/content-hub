@@ -2419,6 +2419,31 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('채널별 주소 대조: 릴스 칸에 쇼츠 주소면 false', CL.matchesChannel('reels', 'https://youtu.be/AbCdEf12345') === false
       && CL.matchesChannel('clip', 'https://clip.naver.com/info/abc') === true);
 
+    /* ①-2 2026-11-26 핫픽스 — 실제 시트에 적힌 형태(클립 9건이 naver.me 단축주소, 릴스 1건이 계정 포함) */
+    eq('클립 단축주소(naver.me)도 clip', I('https://naver.me/AbCd1234').channel, 'clip');
+    eq('스킴 없는 naver.me 도 clip', I('naver.me/AbCd1234').channel, 'clip');
+    eq('www 가 붙은 naver.me 도 clip', I('https://www.naver.me/AbCd1234').channel, 'clip');
+    ok('naver.me 는 클립으로만 본다(블로그 칸은 거절)', CL.matchesChannel('clip', 'https://naver.me/AbCd1234') === true
+      && CL.matchesChannel('blog', 'https://naver.me/AbCd1234') === false);
+    eq('계정이 앞에 붙은 릴스(/{계정}/reel/)도 reels', I('https://www.instagram.com/m2ow.mari/reel/DcVyJUjzQUG/').channel, 'reels');
+    eq('계정이 앞에 붙은 릴스 복수형(/{계정}/reels/)도 reels', I('https://www.instagram.com/some.user/reels/AbC123/').channel, 'reels');
+    eq('계정이 앞에 붙은 피드(/{계정}/p/)는 feed 그대로', I('https://www.instagram.com/some.user/p/AbC123/').channel, 'feed');
+    ok('계정이 붙어도 스토리는 채널로 안 본다', I('https://www.instagram.com/some.user/stories/123/').ok === false);
+    const sheetClip = ['https://naver.me/AbCd1234', 'https://naver.me/XyZ98765', 'https://naver.me/Qq11Ww22',
+      'https://naver.me/Ee33Rr44', 'https://naver.me/Tt55Yy66', 'https://naver.me/Uu77Ii88',
+      'https://naver.me/Oo99Pp00', 'https://naver.me/Aa11Ss22', 'https://naver.me/Dd33Ff44'];
+    ok('실 시트 클립 9건 형태가 모두 통과한다', sheetClip.every((u) => CL.matchesChannel('clip', u) === true), sheetClip.filter((u) => !CL.matchesChannel('clip', u)));
+    const liveCard = {
+      brand: 'daejeon_youth', status: 'PUBLISHED',
+      blog_status: 'PUBLISHED', blog_url: 'https://blog.naver.com/youth-daejeon/224480755004',
+      shorts_status: 'UPLOADED', shorts_url: 'https://youtube.com/shorts/AbCdEf12345',
+      reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/m2ow.mari/reel/DcVyJUjzQUG/',
+      clip_status: 'UPLOADED', clip_url: 'https://naver.me/AbCd1234',
+      ig_feed_status: 'SKIPPED', daangn_status: 'SKIPPED'
+    };
+    ok('실 시트 형태 카드는 기록이 다 차 complete(핫픽스 전에는 bad-url 이었다)', CL.auditLinks(liveCard).complete === true
+      && CL.publishGuard(liveCard).ok === true, CL.auditLinks(liveCard));
+
     /* ② 여러 줄 한 번에 — 같은 채널은 첫 줄만, 못 읽은 줄은 따로 */
     const pasted = CL.parseLinkText([
       'https://clip.naver.com/info/abc123',
@@ -2470,14 +2495,29 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     vm2.runInContext(fs.readFileSync(path.join(ROOT, 'gas', 'Setup.gs'), 'utf8'), gctx, { filename: 'Setup.gs' });
     const gRules = JSON.parse(JSON.stringify(vm2.runInContext('CONTENT_LINK_RULES', gctx)));
     ok('GAS 규칙의 채널·호스트가 프론트와 같다', ['blog', 'shorts', 'reels', 'clip'].every((c) => gRules[c] && gRules[c].host === CL.LINK_RULES[c].host && gRules[c].url === CL.URL_COLUMN[c] && gRules[c].status === ['blog_status', 'shorts_status', 'reels_status', 'clip_status'][['blog', 'shorts', 'reels', 'clip'].indexOf(c)]), gRules);
+    ok('GAS 규칙의 보조 호스트(클립 naver.me)가 프론트와 같다', String(gRules.clip.alias_hosts || '') === 'naver.me'
+      && String((CL.LINK_RULES.clip.aliasHosts || []).join(',')) === 'naver.me', { gas: gRules.clip.alias_hosts, front: CL.LINK_RULES.clip.aliasHosts });
+    ok('GAS 시트 유효성 정규식이 단축주소·계정 포함 릴스를 통과시킨다', vm2.runInContext('linkUrlMatches_', gctx)('clip', 'https://naver.me/AbCd1234') === true
+      && vm2.runInContext('linkUrlMatches_', gctx)('reels', 'https://www.instagram.com/m2ow.mari/reel/DcVyJUjzQUG/') === true
+      && vm2.runInContext('linkUrlMatches_', gctx)('reels', 'https://www.instagram.com/some.user/reels/AbC123/') === true);
+    ok('시트 유효성 정규식이 두 클립 호스트·계정 포함 릴스를 담는다', gRules.clip.pattern.indexOf('clip\\.naver\\.com') > 0
+      && gRules.clip.pattern.indexOf('naver\\.me') > 0 && gRules.reels.pattern.indexOf('instagram\\.com/([A-Za-z0-9_.]+/)?reels?/') > 0,
+      { clip: gRules.clip.pattern, reels: gRules.reels.pattern });
     const urlTable = [
       ['clip', 'https://clip.naver.com/info/abc123', true],
+      ['clip', 'https://naver.me/AbCd1234', true],
+      ['clip', 'https://www.naver.me/AbCd1234', true],
       ['clip', 'https://blog.naver.com/a/1', false],
       ['shorts', 'https://youtube.com/shorts/AbCdEf12345', true],
       ['shorts', 'https://youtu.be/AbCdEf12345', true],
       ['shorts', 'https://www.instagram.com/reel/x/', false],
       ['reels', 'https://www.instagram.com/reel/Cxyz123/', true],
       ['reels', 'https://www.instagram.com/reels/Cxyz123/', true],
+      ['reels', 'https://www.instagram.com/m2ow.mari/reel/DcVyJUjzQUG/', true],
+      ['reels', 'https://www.instagram.com/some.user/reels/AbC123/', true],
+      ['reels', 'https://www.instagram.com/stories/some.user/123/', false],
+      ['reels', 'https://www.instagram.com/some.user/p/AbC123/', false],
+      ['blog', 'https://naver.me/AbCd1234', false],
       ['blog', 'https://blog.naver.com/youth-daejeon/224480755004', true],
       ['blog', 'https://m.blog.naver.com/youth-daejeon/224480755004', true],
       ['blog', 'https://clip.naver.com/x', false]
@@ -2750,7 +2790,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v8/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v9/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }

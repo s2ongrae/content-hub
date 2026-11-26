@@ -438,12 +438,14 @@ const CONTENT_LINK_RULES = {
   reels: {
     label: '릴스', status: 'reels_status', url: 'reels_url',
     host: 'instagram.com',
-    pattern: '^https?://(www\\.)?instagram\\.com/reels?/'
+    /* 계정이 앞에 붙은 형태(instagram.com/{계정}/reel/…, …/{계정}/reels/…)도 받는다 */
+    pattern: '^https?://(www\\.)?instagram\\.com/([A-Za-z0-9_.]+/)?reels?/'
   },
   clip: {
     label: '클립', status: 'clip_status', url: 'clip_url',
-    host: 'clip.naver.com',
-    pattern: '^https?://clip\\.naver\\.com/'
+    host: 'clip.naver.com', alias_hosts: ['naver.me'],
+    /* 발급 주소가 naver.me 단축주소로 적혀 있어도 같은 채널(2026-11-26 실 시트 9건) */
+    pattern: '^https?://(www\\.)?(clip\\.naver\\.com|naver\\.me)/'
   }
 };
 
@@ -553,7 +555,7 @@ function contentLinkValidationSpec_(headers) {
       columnIndex: idx + 1,
       pattern: rule.pattern,
       formula: '=OR(ISBLANK(' + letter + '2),REGEXMATCH(TO_TEXT(' + letter + '2),"' + rule.pattern + '"))',
-      help: rule.label + ' 주소를 넣으세요 (예: ' + rule.host + '/…). 비워 두면 아직 안 올린 채널입니다.'
+      help: rule.label + ' 주소를 넣으세요 (예: ' + [rule.host].concat(rule.alias_hosts || []).join('/… 또는 ') + '/…). 비워 두면 아직 안 올린 채널입니다.'
     });
   });
   return spec;
