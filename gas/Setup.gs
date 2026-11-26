@@ -130,6 +130,8 @@ function onOpen() {
     .addItem('2. API 토큰 확인 (로그 미기록)', 'showTokenOnceInDialog')
     .addItem('3. 지금 수동 백업 실행', 'runManualBackupFromMenu')
     .addItem('4. 지금 무결성 점검 실행', 'runIntegrityCheckFromMenu')
+    .addItem('5. 4채널 링크 규칙 적용 (유효성·조건부 서식)', 'applyContentLinkRulesFromMenu')
+    .addItem('6. 4채널 링크 점검 → 일부 발행을 발행으로', 'syncPublishStatusFromMenu')
     .addToUi();
 }
 
@@ -410,3 +412,242 @@ function installSystemTriggers_() {
 }
 
 /* formatKstIso_ / sha256Hex_ / generateSecureToken_ 은 Auth.gs 에 정의되어 있다 (중복 정의 방지) */
+
+/* ================================================================== *
+ * 4채널 발행 링크 — 시트 유효성 규칙 · 기록 점검 (2026-11-26)
+ *
+ * keyring Q-20261126-133433-06n9: 클립·쇼츠·릴스·블로그에 올린 주소가 시트에
+ *   비어 있으면 자동 수집기가 그 영상을 찾지 못하고, '발행 완료'로 넘겨도 채널 칸이 빈다.
+ *   프론트(js/channelLinks.js)와 같은 호스트·정규식으로 시트에서도 판정한다.
+ *   · 링크가 4채널 모두 찼을 때만 상태를 'PUBLISHED'(일부 발행)로 올린다 — 내리는 일은 없다.
+ *   · 메뉴에서 사람이 누를 때만 시트를 바꾼다(트리거 없음).
+ * ================================================================== */
+
+/** 채널 → 상태 열 · 주소 열 · 주소 규칙. js/channelLinks.js LINK_RULES 와 같아야 한다. */
+const CONTENT_LINK_RULES = {
+  blog: {
+    label: '블로그', status: 'blog_status', url: 'blog_url',
+    host: 'blog.naver.com',
+    pattern: '^https?://(m\\.)?blog\\.naver\\.com/(PostView\\.naver|[A-Za-z0-9_.-]+/[0-9]+)'
+  },
+  shorts: {
+    label: '쇼츠', status: 'shorts_status', url: 'shorts_url',
+    host: 'youtube.com',
+    pattern: '^https?://((www|m)\\.)?(youtube\\.com/(shorts/|watch)|youtu\\.be/)'
+  },
+  reels: {
+    label: '릴스', status: 'reels_status', url: 'reels_url',
+    host: 'instagram.com',
+    pattern: '^https?://(www\\.)?instagram\\.com/reels?/'
+  },
+  clip: {
+    label: '클립', status: 'clip_status', url: 'clip_url',
+    host: 'clip.naver.com',
+    pattern: '^https?://clip\\.naver\\.com/'
+  }
+};
+
+/** 주소를 적는 4채널 — 이 순서로 유효성 규칙을 건다 */
+const CONTENT_LINK_CHANNELS = ['blog', 'shorts', 'reels', 'clip'];
+
+/** 올라간 것으로 치는 상태(js/trackChannels.js DONE_STATES 와 같다) */
+const CONTENT_DONE_STATES = ['UPLOADED', 'DONE', 'PUBLISHED', 'LINKED'];
+
+const CONTENT_ALL_STATUS_COL = {
+  blog: 'blog_status', shorts: 'shorts_status', reels: 'reels_status',
+  feed: 'ig_feed_status', clip: 'clip_status', daangn: 'daangn_status'
+};
+const CONTENT_ALL_URL_COL = {
+  blog: 'blog_url', shorts: 'shorts_url', reels: 'reels_url',
+  feed: 'ig_feed_url', clip: 'clip_url', daangn: 'daangn_url'
+};
+
+/** 그 채널의 주소가 규칙에 맞는가 — 빈 값은 false */
+function linkUrlMatches_(channel, url) {
+  const rule = CONTENT_LINK_RULES[channel];
+  if (!rule) return true;
+  const t = String(url == null ? '' : url).trim();
+  if (!t) return false;
+  try { return new RegExp(rule.pattern, 'i').test(t); } catch (e) { return false; }
+}
+
+/**
+ * 카드 1장의 채널 기록 점검 — js/channelLinks.js auditLinks 와 같은 판정.
+ * @param {Object} row Contents 한 행(열 이름 → 값)
+ * @return {{complete:boolean, total:number, recorded:number, missing:Array, no_url:Array, bad_url:Array, items:Array}}
+ */
+function channelLinkAudit_(row) {
+  const r = row || {};
+  const brand = r.brand || 'daejeon_youth';
+  const track = (typeof TRACK_CHANNELS !== 'undefined' && TRACK_CHANNELS[brand]) || ['blog', 'shorts', 'reels', 'feed', 'clip', 'daangn'];
+  const items = [];
+  let missing = 0;
+  for (let i = 0; i < track.length; i++) {
+    const ch = track[i];
+    const statusCol = CONTENT_ALL_STATUS_COL[ch];
+    const urlCol = CONTENT_ALL_URL_COL[ch];
+    const status = String(r[statusCol] || '');
+    if (status === 'SKIPPED') continue;
+    const url = String(r[urlCol] || '').trim();
+    const done = CONTENT_DONE_STATES.indexOf(status) >= 0;
+    const needsUrl = CONTENT_LINK_CHANNELS.indexOf(ch) >= 0;
+    let state = 'ok';
+    let note = '';
+    if (!done) { state = 'no_status'; note = '기록 없음'; }
+    else if (needsUrl && !url) { state = 'no_url'; note = '주소 없음'; }
+    else if (needsUrl && url && !linkUrlMatches_(ch, url)) { state = 'bad_url'; note = '주소 확인'; }
+    if (state !== 'ok') missing++;
+    items.push({ channel: ch, label: (CONTENT_LINK_RULES[ch] || {}).label || ch, status: status, url: url, state: state, note: note });
+  }
+  const pick = function (st) {
+    return items.filter(function (it) { return it.state === st; }).map(function (it) { return it.channel; });
+  };
+  return {
+    complete: items.length > 0 && missing === 0,
+    total: items.length,
+    recorded: items.length - missing,
+    missing: pick('no_status'),
+    no_url: pick('no_url'),
+    bad_url: pick('bad_url'),
+    items: items
+  };
+}
+
+/** 감사 결과 → '클립(주소 없음) · 릴스(기록 없음)' */
+function channelLinkAuditText_(audit) {
+  return ((audit && audit.items) || [])
+    .filter(function (it) { return it.state !== 'ok'; })
+    .map(function (it) { return it.label + '(' + (it.note || '확인') + ')'; })
+    .join(' · ');
+}
+
+/** 1 → 'A', 27 → 'AA' */
+function columnLetter_(n) {
+  let v = Number(n) || 0;
+  let out = '';
+  while (v > 0) {
+    const rem = (v - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    v = Math.floor((v - 1) / 26);
+  }
+  return out || 'A';
+}
+
+/**
+ * Contents 의 4채널 주소 열에 걸 데이터 유효성 규칙 정의.
+ *  · 빈 칸은 통과(아직 안 올린 채널), 값이 있으면 그 채널 주소 규칙에 맞아야 한다.
+ *  · allowInvalid=true 라 기존에 잘못 적힌 값도 지우지 않고 경고만 남긴다.
+ */
+function contentLinkValidationSpec_(headers) {
+  const hs = (headers || SHEET_SCHEMAS.Contents || []).map(String);
+  const spec = [];
+  CONTENT_LINK_CHANNELS.forEach(function (ch) {
+    const rule = CONTENT_LINK_RULES[ch];
+    const idx = hs.indexOf(rule.url);
+    if (idx < 0) return;
+    const letter = columnLetter_(idx + 1);
+    spec.push({
+      channel: ch,
+      label: rule.label,
+      column: rule.url,
+      columnIndex: idx + 1,
+      pattern: rule.pattern,
+      formula: '=OR(ISBLANK(' + letter + '2),REGEXMATCH(TO_TEXT(' + letter + '2),"' + rule.pattern + '"))',
+      help: rule.label + ' 주소를 넣으세요 (예: ' + rule.host + '/…). 비워 두면 아직 안 올린 채널입니다.'
+    });
+  });
+  return spec;
+}
+
+/**
+ * 4채널 주소 열에 유효성 규칙 + 조건부 서식을 건다(멱등: 같은 규칙을 다시 걸어도 결과가 같다).
+ * 시트를 실제로 바꾸는 함수라 메뉴에서 사람이 누를 때만 돈다.
+ */
+function applyContentLinkRules_(ss) {
+  const book = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = book.getSheetByName('Contents');
+  if (!sheet) throw new Error('Contents 시트가 없습니다. 먼저 초기 설치를 실행하세요.');
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  const spec = contentLinkValidationSpec_(headers);
+  const lastRow = Math.max(sheet.getMaxRows(), 2);
+  spec.forEach(function (s) {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireFormulaSatisfied(s.formula)
+      .setAllowInvalid(true)
+      .setHelpText(s.help)
+      .build();
+    sheet.getRange(2, s.columnIndex, lastRow - 1, 1).setDataValidation(rule);
+  });
+
+  /* 조건부 서식 — '일부 발행·발행 완료'인데 4채널 주소가 비어 있는 행을 노랗게 */
+  const statusIdx = headers.indexOf('status') + 1;
+  const urlIdx = CONTENT_LINK_CHANNELS.map(function (ch) { return headers.indexOf(CONTENT_LINK_RULES[ch].url) + 1; })
+    .filter(function (n) { return n > 0; });
+  if (statusIdx > 0 && urlIdx.length) {
+    const st = columnLetter_(statusIdx);
+    const blanks = urlIdx.map(function (n) { return columnLetter_(n) + '2=""'; }).join(',');
+    const formula = '=AND(OR($' + st + '2="PUBLISHED",$' + st + '2="LINKED"),OR(' + blanks + '))';
+    const rule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(formula)
+      .setBackground('#FFF4CE')
+      .setRanges([sheet.getRange(2, 1, lastRow - 1, headers.length)])
+      .build();
+    /* 같은 규칙은 한 번만 — 예전에 같은 모양의 규칙이 있으면 지우고 새로 건다 */
+    const keep = sheet.getConditionalFormatRules().filter(function (r) {
+      try { return r.getBooleanCondition().getCriteriaValues().join('') !== formula; } catch (e) { return true; }
+    });
+    sheet.setConditionalFormatRules(keep.concat([rule]));
+  }
+  return { ok: true, columns: spec.map(function (s) { return s.column; }), rows: lastRow - 1 };
+}
+
+function applyContentLinkRulesFromMenu() {
+  const res = applyContentLinkRules_();
+  SpreadsheetApp.getUi().alert('4채널 주소 규칙을 적용했습니다: ' + (res.columns || []).join(', ') + ' (' + res.rows + '행)\n· 빈 칸은 그대로 두고, 값이 있으면 그 채널 주소만 통과시킵니다(경고만, 입력은 막지 않음).\n· 발행 상태인데 주소가 빈 행은 노랗게 보입니다.');
+}
+
+/**
+ * 4채널 주소가 모두 찬 카드만 'PUBLISHING'(일부 발행) → 'PUBLISHED'(일부 발행 완료)로 올린다.
+ * 내리는 일은 하지 않는다(DRAFT·REVIEW·LINKED 는 건드리지 않는다).
+ * @param {Object} ss 스프레드시트 | @param {Object} opts {dryRun:boolean}
+ */
+function syncPublishStatus_(ss, opts) {
+  const o = opts || {};
+  const book = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = book.getSheetByName('Contents');
+  if (!sheet) return { ok: false, error: 'Contents 시트가 없습니다.' };
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  const lastRow = sheet.getLastRow();
+  const statusAt = headers.indexOf('status');
+  if (statusAt < 0 || lastRow < 2) return { ok: true, checked: 0, changed: 0, incomplete: 0, items: [] };
+
+  const all = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  const items = [];
+  let changed = 0;
+  let incomplete = 0;
+  for (let i = 0; i < all.length; i++) {
+    const row = {};
+    for (let j = 0; j < headers.length; j++) row[headers[j]] = all[i][j];
+    const status = String(row.status || '');
+    if (status !== 'PUBLISHING' && status !== 'PUBLISHED' && status !== 'LINKED') continue;
+    const audit = channelLinkAudit_(row);
+    if (!audit.complete) {
+      incomplete++;
+      items.push({ content_id: row.content_id, status: status, note: channelLinkAuditText_(audit) });
+      continue;
+    }
+    if (status !== 'PUBLISHING') continue;
+    changed++;
+    items.push({ content_id: row.content_id, from: status, to: 'PUBLISHED' });
+    if (o.dryRun !== true) all[i][statusAt] = 'PUBLISHED';
+  }
+  if (o.dryRun !== true && changed > 0) {
+    sheet.getRange(2, 1, all.length, headers.length).setValues(all);
+  }
+  return { ok: true, checked: all.length, changed: changed, incomplete: incomplete, items: items };
+}
+
+function syncPublishStatusFromMenu() {
+  const res = syncPublishStatus_();
+  SpreadsheetApp.getUi().alert('4채널 링크 점검\n· 일부 발행 → 발행으로 올린 카드: ' + res.changed + '건\n· 기록이 모자란 카드: ' + res.incomplete + '건');
+}

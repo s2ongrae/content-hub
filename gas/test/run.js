@@ -2928,5 +2928,63 @@ console.log('\n[BS] 오늘의 블로그 제목 10 (gas/BlogSeo.gs)');
   }
 })();
 
+console.log('\n[8m] 4채널 링크 가드레일 — 기록 없는 LINKED 는 서버도 막는다 (2026-11-26)');
+{
+  const G = loadGas();
+  const header = ev(G.ctx, 'SHEET_SCHEMAS').Contents;
+  const rowOf = (o) => header.map((k) => (o[k] === undefined ? '' : o[k]));
+  const base = {
+    brand: 'daejeon_youth', version: 1, status: 'PUBLISHED',
+    blog_status: 'PUBLISHED', blog_url: 'https://blog.naver.com/youth-daejeon/224480755004',
+    ig_feed_status: 'SKIPPED', daangn_status: 'SKIPPED', payload_file_id: 'fid'
+  };
+  const values = [header,
+    rowOf(Object.assign({}, base, { content_id: 'DY-1', shorts_status: 'LINKED', reels_status: 'UPLOADED', clip_status: 'UPLOADED' })),
+    rowOf(Object.assign({}, base, {
+      content_id: 'DY-2', shorts_status: 'LINKED', shorts_url: 'https://youtube.com/shorts/AbCdEf12345',
+      reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/Cxyz123/',
+      clip_status: 'UPLOADED', clip_url: 'https://clip.naver.com/info/abc123'
+    }))
+  ];
+  const sheet = {
+    getLastColumn: () => header.length,
+    getLastRow: () => values.length,
+    getMaxRows: () => 20,
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => (r === 1 ? [header.slice()] : values.slice(r - 1, r - 1 + nr).map((row) => row.slice(c - 1, c - 1 + nc))),
+      setValues: (v) => { v.forEach((row, i) => { values[r - 1 + i] = row.slice(); }); }
+    })
+  };
+  const ss = { getSheetByName: (n) => (n === 'Contents' ? sheet : null) };
+  G.ctx.DriveApp = Object.assign({}, G.ctx.DriveApp, {
+    getFileById: () => ({ setContent: () => {}, getBlob: () => ({ getDataAsString: () => '{}' }) })
+  });
+
+  const r1 = callHandler(G.ctx, 'handleUpdateContent_', ss, { content_id: 'DY-1', expected_version: 1, status: 'LINKED' }, { clientId: 't' });
+  eq('기록이 빈 카드의 LINKED 는 ERR_LINK_INCOMPLETE', r1.code, 'ERR_LINK_INCOMPLETE');
+  ok('거절 이유가 어느 채널인지 말해 준다', /쇼츠\(주소 없음\)/.test(r1.message || '') && /릴스|클립/.test(r1.message || ''), r1.message);
+  eq('거절된 요청은 시트 상태를 바꾸지 않는다', String(values[1][header.indexOf('status')]), 'PUBLISHED');
+
+  const r2 = callHandler(G.ctx, 'handleUpdateContent_', ss, { content_id: 'DY-1', expected_version: 1, status: 'LINKED', confirm_incomplete: true }, { clientId: 't' });
+  ok('confirm_incomplete 면 사람이 알고 넘기는 선택으로 통과', r2.ok && r2.data.status === 'LINKED', r2);
+  ok('응답에 같은 판정(link_audit)이 실려 온다', r2.ok && r2.data.link_audit && r2.data.link_audit.complete === false && r2.data.link_audit.no_url.indexOf('shorts') >= 0, r2.data && r2.data.link_audit);
+
+  const r3 = callHandler(G.ctx, 'handleUpdateContent_', ss, { content_id: 'DY-2', expected_version: 1, status: 'LINKED' }, { clientId: 't' });
+  ok('네 채널 주소가 다 찬 카드는 바로 넘어간다', r3.ok && r3.data.status === 'LINKED' && r3.data.link_audit.complete === true, r3);
+
+  /* 주소를 같이 보내면 그 자리에서 채워지고 통과한다(링크 저장과 발행 완료가 한 번에) */
+  const r4 = callHandler(G.ctx, 'handleUpdateContent_', ss, {
+    content_id: 'DY-1', expected_version: 2, status: 'LINKED',
+    shorts_status: 'UPLOADED', shorts_url: 'https://youtu.be/AbCdEf12345',
+    reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/Cxyz123/',
+    clip_status: 'UPLOADED', clip_url: 'https://clip.naver.com/info/abc123'
+  }, { clientId: 't' });
+  ok('주소를 같이 보내면 가드레일을 통과한다', r4.ok && r4.data.link_audit.complete === true, r4);
+
+  const audit = ev(G.ctx, 'channelLinkAudit_')({});
+  ok('점검 규칙은 4채널 주소 열을 본다', ev(G.ctx, 'contentLinkValidationSpec_')(header).map((s) => s.column).join(',') === 'blog_url,shorts_url,reels_url,clip_url');
+  ok('김메리 트랙은 세 채널만 본다', ev(G.ctx, 'channelLinkAudit_')({ brand: 'ppiyak_kimmary', shorts_status: 'SKIPPED', reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/x/', clip_status: 'SKIPPED' }).total === 1, audit.total);
+}
+
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));
 process.exit(failed ? 1 : 0);

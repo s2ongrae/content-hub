@@ -2397,6 +2397,158 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('cue2 QA 회귀 시험', false, (err && err.stack) || err);
   }
 
+  /* [13] 4채널 링크 파서·발행 가드레일 (2026-11-26, keyring Q-20261126-133433-06n9)
+     주소만 붙여넣으면 채널을 고르고, '전 채널 발행 완료'는 빈 채널을 먼저 알린다.
+     프론트 규칙과 GAS(시트 유효성) 규칙이 같은지도 여기서 대조한다. */
+  console.log('\n[13] 4채널 링크 · 발행 가드레일');
+  try {
+    const CL = await import('file://' + path.join(ROOT, 'js', 'channelLinks.js'));
+    const I = (s) => CL.identifyChannel(s);
+
+    /* ① 도메인만 보고 채널을 고른다 */
+    eq('클립 주소 → clip', I('https://clip.naver.com/info/abc123').channel, 'clip');
+    eq('유튜브 쇼츠 → shorts', I('https://www.youtube.com/shorts/AbCdEf12345').channel, 'shorts');
+    eq('youtu.be 짧은 주소도 shorts', I('https://youtu.be/AbCdEf12345').channel, 'shorts');
+    eq('인스타 릴스 → reels', I('https://www.instagram.com/reel/Cxyz123/').channel, 'reels');
+    eq('인스타 피드(/p/) → feed', I('https://www.instagram.com/p/Cxyz123/').channel, 'feed');
+    eq('블로그 글 → blog', I('https://blog.naver.com/youth-daejeon/224480755004').channel, 'blog');
+    eq('스킴 없이 붙여넣어도 받는다', I('clip.naver.com/info/abc123').channel, 'clip');
+    ok('모르는 주소는 이유와 함께 거절', I('https://example.com/x').ok === false && /아는 채널/.test(I('https://example.com/x').reason));
+    ok('글자는 주소가 아니라고 말한다', I('안녕하세요').ok === false);
+    ok('인스타 스토리는 채널로 안 본다(/reel/ 이 아님)', I('https://www.instagram.com/stories/x/1/').ok === false);
+    ok('채널별 주소 대조: 릴스 칸에 쇼츠 주소면 false', CL.matchesChannel('reels', 'https://youtu.be/AbCdEf12345') === false
+      && CL.matchesChannel('clip', 'https://clip.naver.com/info/abc') === true);
+
+    /* ② 여러 줄 한 번에 — 같은 채널은 첫 줄만, 못 읽은 줄은 따로 */
+    const pasted = CL.parseLinkText([
+      'https://clip.naver.com/info/abc123',
+      'https://youtube.com/shorts/AbCdEf12345',
+      'https://www.instagram.com/reel/Cxyz123/',
+      'https://blog.naver.com/youth-daejeon/224480755004',
+      '메모입니다',
+      'https://youtu.be/Other99999'
+    ].join('\n'));
+    ok('네 채널을 한 번에 고른다', pasted.links.length === 4 && ['blog', 'shorts', 'reels', 'clip'].every((c) => pasted.links.some((l) => l.channel === c)), pasted.links);
+    ok('못 읽은 줄은 unknown 으로 남긴다(저장하지 않는다)', pasted.unknown.length === 1 && /메모/.test(pasted.unknown[0].text));
+    ok('같은 채널 두 번째 줄은 duplicates(덮어쓰지 않음)', pasted.duplicates.length === 1 && pasted.duplicates[0].channel === 'shorts');
+
+    /* ③ 저장 patch — 주소 + 비어 있던 상태만 '올림' */
+    const p1 = CL.linkPatch([{ channel: 'clip', label: '클립', url: 'https://clip.naver.com/info/abc123' }], { clip_status: '' });
+    ok('빈 상태면 clip_status=UPLOADED 를 같이 쓴다', p1.patch.clip_url === 'https://clip.naver.com/info/abc123' && p1.patch.clip_status === 'UPLOADED', p1.patch);
+    const p2 = CL.linkPatch([{ channel: 'clip', label: '클립', url: 'https://clip.naver.com/info/abc' }], { clip_status: 'PUBLISHED' });
+    ok('이미 올린 상태는 내리지 않는다', p2.patch.clip_status === undefined);
+
+    /* ④ 기록 점검 — 상태·주소를 같은 규칙으로 */
+    const cardA = {
+      brand: 'daejeon_youth', status: 'PUBLISHED',
+      blog_status: 'PUBLISHED', blog_url: 'https://blog.naver.com/youth-daejeon/224480755004',
+      shorts_status: 'LINKED', shorts_url: '',
+      reels_status: '', reels_url: '',
+      clip_status: 'UPLOADED', clip_url: 'https://clip.naver.com/info/abc123',
+      ig_feed_status: 'SKIPPED', daangn_status: 'SKIPPED'
+    };
+    const aAudit = CL.auditLinks(cardA, 'daejeon_youth');
+    eq('건너뛴 채널은 분모에서 뺀다(4채널)', aAudit.total, 4);
+    ok('쇼츠=주소 없음 · 릴스=기록 없음', aAudit.noUrl.indexOf('shorts') >= 0 && aAudit.missing.indexOf('reels') >= 0 && !aAudit.complete, aAudit);
+    ok('맞는 채널 주소만 통과(blog·clip 은 ok)', aAudit.items.filter((it) => it.state === 'ok').map((it) => it.channel).join(',') === 'blog,clip');
+    const badCard = Object.assign({}, cardA, { shorts_status: 'LINKED', shorts_url: 'https://www.instagram.com/reel/x/' });
+    ok('쇼츠 칸에 릴스 주소면 bad-url', CL.auditLinks(badCard).badUrl.indexOf('shorts') >= 0);
+    const fullCard = Object.assign({}, cardA, {
+      shorts_status: 'LINKED', shorts_url: 'https://youtube.com/shorts/AbCdEf12345',
+      reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/Cxyz123/'
+    });
+    ok('네 채널이 다 차면 complete', CL.auditLinks(fullCard).complete === true);
+    ok('트랙 B(김메리)는 3채널만 본다', CL.auditLinks({ brand: 'ppiyak_kimmary', shorts_status: 'UPLOADED', shorts_url: 'https://youtu.be/AbCdEf12345', reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/x/', clip_status: 'SKIPPED' }).total === 2);
+    const guard = CL.publishGuard(cardA, 'daejeon_youth');
+    ok('가드: 비어 있으면 막고 어느 채널인지 말한다', guard.ok === false && /쇼츠\(주소 없음\)/.test(guard.headline) && /릴스\(기록 없음\)/.test(guard.headline), guard.headline);
+    ok('가드: 다 차면 통과', CL.publishGuard(fullCard, 'daejeon_youth').ok === true);
+
+    /* ⑤ 프론트 규칙 = GAS 시트 유효성 규칙 (같은 호스트·같은 판정) */
+    const vm2 = require('vm');
+    const gctx = vm2.createContext({});
+    vm2.runInContext(fs.readFileSync(path.join(ROOT, 'gas', 'PostDetail.gs'), 'utf8'), gctx, { filename: 'PostDetail.gs' });
+    vm2.runInContext(fs.readFileSync(path.join(ROOT, 'gas', 'Setup.gs'), 'utf8'), gctx, { filename: 'Setup.gs' });
+    const gRules = JSON.parse(JSON.stringify(vm2.runInContext('CONTENT_LINK_RULES', gctx)));
+    ok('GAS 규칙의 채널·호스트가 프론트와 같다', ['blog', 'shorts', 'reels', 'clip'].every((c) => gRules[c] && gRules[c].host === CL.LINK_RULES[c].host && gRules[c].url === CL.URL_COLUMN[c] && gRules[c].status === ['blog_status', 'shorts_status', 'reels_status', 'clip_status'][['blog', 'shorts', 'reels', 'clip'].indexOf(c)]), gRules);
+    const urlTable = [
+      ['clip', 'https://clip.naver.com/info/abc123', true],
+      ['clip', 'https://blog.naver.com/a/1', false],
+      ['shorts', 'https://youtube.com/shorts/AbCdEf12345', true],
+      ['shorts', 'https://youtu.be/AbCdEf12345', true],
+      ['shorts', 'https://www.instagram.com/reel/x/', false],
+      ['reels', 'https://www.instagram.com/reel/Cxyz123/', true],
+      ['reels', 'https://www.instagram.com/reels/Cxyz123/', true],
+      ['blog', 'https://blog.naver.com/youth-daejeon/224480755004', true],
+      ['blog', 'https://m.blog.naver.com/youth-daejeon/224480755004', true],
+      ['blog', 'https://clip.naver.com/x', false]
+    ];
+    ok('주소 표에서 프론트·GAS 판정이 같다', urlTable.every(([ch, url, want]) => CL.matchesChannel(ch, url) === want && vm2.runInContext('linkUrlMatches_', gctx)(ch, url) === want), urlTable.filter(([ch, url, want]) => CL.matchesChannel(ch, url) !== want || vm2.runInContext('linkUrlMatches_', gctx)(ch, url) !== want));
+    ok('빈 주소는 GAS 도 false', vm2.runInContext('linkUrlMatches_', gctx)('clip', '') === false && vm2.runInContext('linkUrlMatches_', gctx)('clip', null) === false);
+
+    const gAudit = vm2.runInContext('channelLinkAudit_', gctx)(cardA);
+    ok('GAS 기록 점검이 프론트와 같은 칸을 짚는다', gAudit.total === aAudit.total && gAudit.complete === false && gAudit.no_url.indexOf('shorts') >= 0 && gAudit.missing.indexOf('reels') >= 0, gAudit);
+    ok('GAS 도 네 채널이 차면 complete', vm2.runInContext('channelLinkAudit_', gctx)(fullCard).complete === true);
+
+    /* ⑥ 시트 유효성 규칙 정의 — 4열 · 빈 칸 허용 · 그 채널 정규식 */
+    const spec = vm2.runInContext('contentLinkValidationSpec_', gctx)(null);
+    ok('유효성 규칙은 4채널 주소 열에 건다', spec.length === 4 && spec.map((s) => s.column).join(',') === 'blog_url,shorts_url,reels_url,clip_url', spec.map((s) => s.column));
+    ok('규칙은 빈 칸을 통과시키고(아직 안 올린 채널) 정규식으로 본다', spec.every((s) => /ISBLANK\(/.test(s.formula) && /REGEXMATCH\(/.test(s.formula) && s.formula.indexOf(s.pattern) > 0), spec[0] && spec[0].formula);
+    ok('열 문자는 헤더 위치에서 계산한다(AA 이후도)', vm2.runInContext('columnLetter_', gctx)(28) === 'AB' && vm2.runInContext('columnLetter_', gctx)(1) === 'A' && vm2.runInContext('columnLetter_', gctx)(27) === 'AA');
+
+    /* ⑦ 4채널이 다 차야 '일부 발행 → 발행' 으로 올린다(내리는 일 없음) */
+    const header = vm2.runInContext('SHEET_SCHEMAS', gctx).Contents;
+    const mkSheet = (rowsArr) => ({
+      getSheetByName: (n) => (n === 'Contents' ? {
+        getRange: (r, c, nr, nc) => ({
+          getValues: () => (r === 1 ? [header.slice(c - 1, c - 1 + (nc || header.length))] : rowsArr.map((x) => x.slice(c - 1))),
+          setValues: () => {}
+        }),
+        getLastColumn: () => header.length,
+        getLastRow: () => rowsArr.length + 1,
+        getMaxRows: () => rowsArr.length + 1
+      } : null)
+    });
+    const rowOf = (obj) => header.map((k) => (obj[k] === undefined ? '' : obj[k]));
+    const sheetRows = [
+      rowOf(Object.assign({}, fullCard, { content_id: 'DY-1', brand: 'daejeon_youth', status: 'PUBLISHING' })),
+      rowOf(Object.assign({}, cardA, { content_id: 'DY-2', brand: 'daejeon_youth', status: 'PUBLISHING' })),
+      rowOf({ content_id: 'DY-3', brand: 'daejeon_youth', status: 'DRAFT' })
+    ];
+    const sync = vm2.runInContext('syncPublishStatus_', gctx);
+    const sres = sync(mkSheet(sheetRows), { dryRun: true });
+    ok('4채널이 다 찬 PUBLISHING 한 건만 발행으로 올린다', sres.changed === 1 && sres.incomplete === 1 && sres.items.some((it) => it.content_id === 'DY-1' && it.to === 'PUBLISHED'), sres);
+    ok('기록이 모자란 카드는 상태를 바꾸지 않고 이유를 남긴다', sres.items.some((it) => it.content_id === 'DY-2' && /쇼츠|릴스/.test(it.note || '')), sres.items);
+    ok('DRAFT 는 아예 보지 않는다', !sres.items.some((it) => it.content_id === 'DY-3'));
+
+    /* ⑧ 화면·서버 가드레일이 실제로 붙어 있다(정적) */
+    const appSrc = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+    const codeSrc = fs.readFileSync(path.join(ROOT, 'gas', 'Code.gs'), 'utf8');
+    ok('app.js 가 channelLinks 를 불러 쓴다', /from '\.\/channelLinks\.js\?v=\d+[a-z]'/.test(appSrc));
+    ok('상세의 발행 완료 버튼이 가드레일을 거친다', /if \(d\.status === 'PUBLISHED'\)[\s\S]{0,400}moveToLinked\(/.test(appSrc));
+    ok('다음 할 일의 [정리하기]도 같은 가드레일', /a\.action === 'link'[\s\S]{0,300}moveToLinked\(/.test(appSrc));
+    ok('경고 모달에 [그래도 넘기기]가 있다(사람이 알고 넘기는 선택)', /그래도 넘기기/.test(appSrc));
+    ok('카드에 [기록 미완료] 배지', /기록 미완료/.test(appSrc) && /function cardLinkBadge/.test(appSrc));
+    ok('GAS 가 기록 없는 LINKED 를 서버에서 막는다', /ERR_LINK_INCOMPLETE/.test(codeSrc) && /confirm_incomplete/.test(codeSrc) && /channelLinkAudit_\(probe\)/.test(codeSrc));
+    ok('목록 응답이 4채널 주소를 함께 준다(보드 배지가 판정할 수 있게)', /blog_url: r\.blog_url, shorts_url: r\.shorts_url, reels_url: r\.reels_url, clip_url: r\.clip_url/.test(codeSrc));
+    ok('GAS 메뉴·setup 에서 시트 규칙을 걸 수 있다', /applyContentLinkRulesFromMenu/.test(fs.readFileSync(path.join(ROOT, 'gas', 'Setup.gs'), 'utf8')));
+
+    /* ⑨ 모바일 터치·입력·1열 (keyring2 Q-20261126-133755-ly8k) */
+    const css = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
+    const studioCss = fs.readFileSync(path.join(ROOT, 'css', 'studio.css'), 'utf8');
+    const mobile = (s) => (s.match(/@media \(max-width: 699px\) \{[\s\S]*?\n\}/g) || []).join('\n');
+    ok('모바일 블록에서 입력칸 글자를 16px 로 올린다(iOS 자동 확대 방지)', /input\[type="text"\][\s\S]{0,400}font-size: 16px;/.test(css));
+    ok('모바일 블록에서 입력칸 높이 44px', /select, \.input \{ min-height: 44px; \}/.test(css));
+    ok('누르는 것(버튼·칩·탭) 최소 44px', /\.btn, \.btn\.sm[\s\S]{0,200}min-height: 44px;/.test(css) && /\.st-chip, \.st-format[\.\s\S]{0,120}min-height: 44px;/.test(studioCss));
+    ok('좁은 아이콘 버튼은 히트 영역만 넓힌다', /\.icon-btn::after \{ content: ''; position: absolute; inset: -2px; \}/.test(css));
+    ok('사진 정리 버튼도 히트 영역 44px(썸네일을 다 덮지 않게)', /\.st-op::after \{ content: ''; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px; \}/.test(css));
+    ok('375px 이하 1열: 소구점·폼·스튜디오 두 칸', /@media \(max-width: 420px\) \{[\s\S]{0,400}\.prop-grid \{ grid-template-columns: 1fr; \}/.test(css) && /@media \(max-width: 420px\) \{[\s\S]{0,300}\.st-two, \.st-cards \{ grid-template-columns: 1fr; \}/.test(studioCss));
+    ok('성과분석 숫자 줄은 폰에서 1열', /@media \(max-width: 420px\) \{[\s\S]{0,600}\.mrow \{ flex-direction: column/.test(css));
+    ok('영상 모드 버튼은 폰에서 세로 배치', /st-field-row \{ flex-direction: column; align-items: stretch; \}/.test(studioCss) && /st-mode-row/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8')));
+    ok('모바일 블록이 실제로 파일에 있다(빈 규칙 아님)', mobile(css).length > 200 && mobile(studioCss).length > 100);
+  } catch (err) {
+    ok('4채널 링크·가드레일 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();
