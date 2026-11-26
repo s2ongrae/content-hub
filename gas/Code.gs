@@ -339,6 +339,8 @@ function handleListContents_(ss, payload, ctx) {
         place_name: r.place_name, blog_title: r.blog_title, quality_score: r.quality_score,
         blog_status: r.blog_status, shorts_status: r.shorts_status,
         reels_status: r.reels_status, clip_status: r.clip_status,
+        /* 4채널 주소·기록 점검을 목록에서도 할 수 있게 주소도 함께 준다(2026-11-26 — 추가 필드) */
+        blog_url: r.blog_url, shorts_url: r.shorts_url, reels_url: r.reels_url, clip_url: r.clip_url,
         growth_tag: r.growth_tag, updated_at: r.updated_at,
         target_keywords: r.target_keywords,
         series_id: r.series_id, episode_no: r.episode_no, hook_variant: r.hook_variant,
@@ -499,6 +501,32 @@ function handleUpdateContent_(ss, payload, ctx) {
   const brand = all[rowIndex][headers.indexOf('brand')];
   const fileId = all[rowIndex][headers.indexOf('payload_file_id')];
 
+  /* 넘어온 필드만 시트에 쓴다 — 가드레일과 실제 쓰기가 같은 목록을 보게 여기서 한 번만 정의한다. */
+  const editable = ['status', 'blog_title', 'quality_score', 'target_keywords', 'cluster_id',
+    'region_dong', 'category', 'place_name', 'naver_place_url', 'media_drive_url',
+    'blog_status', 'blog_url', 'shorts_status', 'shorts_url', 'reels_status', 'reels_url',
+    'clip_status', 'clip_url', 'allow_partial_shortform', 'growth_tag', 'receipt_verified',
+    'series_id', 'episode_no', 'hook_variant',
+    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count',
+    'daangn_status', 'daangn_url'];
+
+  /* 4채널 발행 가드레일 (2026-11-26) — '전 채널 발행 완료(LINKED)'는 기록이 다 찬 카드에만.
+     화면도 같은 판정을 먼저 보여 주지만, 노트북·스크립트가 직접 부를 수 있으므로 서버에서도 막는다.
+     사용자가 빈 채널을 알고도 넘기려면 confirm_incomplete:true 를 같이 보낸다(화면의 '그래도 넘기기'). */
+  if (payload.status === 'LINKED' && payload.confirm_incomplete !== true) {
+    const probe = {};
+    for (let j = 0; j < headers.length; j++) probe[headers[j]] = all[rowIndex][j];
+    editable.forEach(function (k) {
+      if (payload[k] !== undefined && headers.indexOf(k) >= 0) probe[k] = payload[k];
+    });
+    const audit = channelLinkAudit_(probe);
+    if (!audit.complete) {
+      throw createAppError_('ERR_LINK_INCOMPLETE',
+        '아직 기록이 없는 채널이 있습니다: ' + channelLinkAuditText_(audit),
+        { content_id: contentId, missing: audit.missing, no_url: audit.no_url, bad_url: audit.bad_url });
+    }
+  }
+
   // READY 승격 게이트: 사람 검수 + 80점 이상 (네이버 약관 가드)
   if (payload.status === 'READY') {
     assertReadyGate_(ss, contentId, payload.target_channel || 'naver_blog');
@@ -530,13 +558,6 @@ function handleUpdateContent_(ss, payload, ctx) {
   }
 
   // 시트 갱신 (넘어온 필드만)
-  const editable = ['status', 'blog_title', 'quality_score', 'target_keywords', 'cluster_id',
-    'region_dong', 'category', 'place_name', 'naver_place_url', 'media_drive_url',
-    'blog_status', 'blog_url', 'shorts_status', 'shorts_url', 'reels_status', 'reels_url',
-    'clip_status', 'clip_url', 'allow_partial_shortform', 'growth_tag', 'receipt_verified',
-    'series_id', 'episode_no', 'hook_variant',
-    'ig_feed_status', 'ig_feed_url', 'ig_carousel_count',
-    'daangn_status', 'daangn_url'];
   editable.forEach(function (k) {
     if (payload[k] !== undefined && headers.indexOf(k) >= 0) {
       all[rowIndex][headers.indexOf(k)] = payload[k];
@@ -548,11 +569,15 @@ function handleUpdateContent_(ss, payload, ctx) {
 
   sheet.getRange(2, 1, all.length, headers.length).setValues(all);
 
+  const finalRow = {};
+  for (let j = 0; j < headers.length; j++) finalRow[headers[j]] = all[rowIndex][j];
   return {
     content_id: contentId,
     version: currentVersion + 1,
     status: all[rowIndex][headers.indexOf('status')],
-    payload_file_id: all[rowIndex][headers.indexOf('payload_file_id')]
+    payload_file_id: all[rowIndex][headers.indexOf('payload_file_id')],
+    // 화면이 채널 타일·'기록 미완료' 배지를 다시 그리지 않아도 되게 같은 판정을 돌려준다(추가 필드 — 기존 호출자 무해)
+    link_audit: channelLinkAudit_(finalRow)
   };
 }
 

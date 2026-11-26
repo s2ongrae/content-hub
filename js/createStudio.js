@@ -1018,7 +1018,7 @@ function paintVideoBody(host, out, ctx, ui) {
     b.addEventListener('click', fn);
     return b;
   };
-  host.appendChild(h('div', { class: 'st-field-row' },
+  host.appendChild(h('div', { class: 'st-field-row st-mode-row' },
     h('span', { class: 'field-label', text: '모드' }),
     h('div', { class: 'st-chips' },
       chip('일반 영상', !mv.on, () => setMv(false)),

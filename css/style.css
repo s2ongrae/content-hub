@@ -577,7 +577,8 @@ dialog.sheet::backdrop { background: rgba(2, 6, 14, .66); backdrop-filter: blur(
   .appbar { gap: 6px; padding-left: 8px; padding-right: 8px; }
   .brand-chip .bc-chan { display: none; }
   .brand-chip { gap: 4px; padding: 4px 6px; font-size: 12.5px; }
-  .icon-btn { width: 34px; height: 34px; border-radius: 10px; }
+  /* 34px 는 손가락으로 누르기 작다(2026-11-26) — 38px + 히트 영역 확장으로 44px 확보(아래 모바일 블록) */
+  .icon-btn { width: 38px; height: 38px; border-radius: 10px; }
   .pill { height: 32px; padding: 0 8px; gap: 4px; font-size: 11.5px; }
   .pill .pill-label { display: none; }
   .appbar-tools { gap: 4px; }
@@ -1630,3 +1631,84 @@ a.cmp-card:hover { border-color: var(--accent); }
   .dg-seg-body { grid-template-columns: 1fr; }
   .dg-grid2 { grid-template-columns: 1fr 1fr; }
 }
+
+/* ==========================================================================
+   모바일 터치·가독성 (2026-11-26, keyring2 Q-20261126-133755-ly8k)
+   왜: 폰에서 34~40px 버튼과 14px 입력칸은 손가락으로 누르기 작고,
+       16px 미만 입력칸은 iOS 가 포커스 때 화면을 확대해 레이아웃을 밀어 버린다.
+   규칙
+     · 누르는 것: 최소 44px (W3C 2.5.5 / Apple HIG). 좁은 곳은 ::after 로 히트 영역만 넓힌다.
+     · 입력칸 글자: 16px 이상(iOS 자동 확대 방지) · 높이 44px 이상.
+     · 375px 이하: 두 칸짜리 배치는 한 줄에 하나.
+   ========================================================================== */
+@media (max-width: 699px) {
+  /* ① 입력 — 16px + 44px */
+  input[type="text"], input[type="url"], input[type="password"], input[type="search"],
+  input[type="date"], input[type="number"], input[type="email"], input[type="tel"],
+  select, textarea, .input, .textarea {
+    font-size: 16px;
+  }
+  input[type="text"], input[type="url"], input[type="password"], input[type="search"],
+  input[type="date"], input[type="number"], input[type="email"], input[type="tel"],
+  select, .input { min-height: 44px; }
+  textarea, .textarea { min-height: 88px; }
+
+  /* ② 누르는 것 — 44px */
+  .btn, .btn.sm, .btn.xs, .ghost-btn, .ghost-btn.sm, .seg-btn, .subtab, .chip-link,
+  .more-item, .side-item, .brand-chip, .qa-btn,
+  .mfield .btn, .mrow .btn, .cht-in .btn { min-height: 44px; }
+
+  /* 상단 바 아이콘: 보이는 크기는 40px, 히트 영역은 44px (바가 넘치지 않게) */
+  .icon-btn { width: 40px; height: 40px; }
+  .icon-btn::after { content: ''; position: absolute; inset: -2px; }
+  .icon-btn { position: relative; }
+
+  /* ③ 375px 이하 — 두 칸을 한 줄로 */
+  .form-grid.two, .form-grid.three, .st-two, .dg-grid2, .dg-seg-body { grid-template-columns: 1fr; }
+  .pf-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 420px) {
+  /* 소구점·속성 격자(prop-grid) — 375px 에서는 한 줄에 하나 */
+  .prop-grid { grid-template-columns: 1fr; }
+  /* 제작 스튜디오 사진 정리 버튼 — 보이는 높이는 36px, 위아래 히트 영역을 넓혀 44px */
+  .st-op { min-height: 36px; position: relative; }
+  .st-op::after { content: ''; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px; }
+  /* 성과분석 숫자 입력 — 채널 한 줄에 필드 하나(1열) */
+  .mrow { flex-direction: column; align-items: stretch; }
+  .mrow .mch { flex: 0 0 auto; padding-bottom: 0; }
+  .mfield { flex: 1 1 auto; min-width: 0; }
+  .mrow .btn { width: 100%; }
+  /* 영상 모드·길이 칩 줄 — 버튼을 세로로 쌓아 손가락이 미끄러지지 않게 */
+  .st-mode-row { flex-direction: column; align-items: stretch; }
+  .st-mode-row .st-chips { flex-direction: column; }
+  .st-mode-row .st-chip { width: 100%; text-align: center; }
+}
+
+/* ==========================================================================
+   4채널 링크 · 기록 미완료 배지 (2026-11-26, keyring Q-20261126-133433-06n9)
+   ========================================================================== */
+.tag.miss {
+  font-size: 10.5px; font-weight: 800; color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border-radius: 999px; padding: 1px 7px;
+}
+.cc-miss {
+  margin-top: 6px; font-size: 11px; font-weight: 700; line-height: 1.4;
+  color: var(--warn); overflow-wrap: anywhere;
+}
+.linkbox {
+  margin-top: 10px; border: 1px solid var(--line-soft); border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  padding: 4px 10px;
+}
+.linkbox > summary {
+  cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--tx-2);
+  padding: 9px 2px; min-height: 44px; display: flex; align-items: center; gap: 6px;
+}
+.linkbox[open] > summary { border-bottom: 1px solid var(--line-soft); margin-bottom: 8px; }
+.link-paste { padding: 0 2px 8px; }
+.link-paste .textarea { margin: 6px 0; }
+.cht-note { margin: 4px 0 0; font-size: 11px; line-height: 1.4; color: var(--tx-3); overflow-wrap: anywhere; }
+.cht-note.err { color: var(--danger); }
+.guard-sheet .gate { margin-top: 8px; }

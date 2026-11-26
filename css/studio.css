@@ -158,3 +158,25 @@
 .dg-wmrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
 .dg-wmop { grid-column: 1 / -1; }
 @media (max-width: 520px) { .dg-wmrow { grid-template-columns: 1fr; } }
+
+/* ==========================================================================
+   폰 터치·입력 (2026-11-26, keyring2 Q-20261126-133755-ly8k)
+   이 파일은 style.css 뒤에 실린다 — 같은 선택자면 여기 값이 이긴다.
+   · 누르는 것 44px · 입력 16px(iOS 자동 확대 방지) · 375px 이하 한 줄에 하나
+   ========================================================================== */
+@media (max-width: 699px) {
+  .st-chip, .st-format, .st-recent, .st-mat-toggle, .st-op, .st-wm-on { min-height: 44px; }
+  .st-chip { padding: 0 14px; font-size: 13px; }
+  .st-memo-input, .st-wm-text, .st-wm-pos { font-size: 16px; min-height: 44px; }
+  .st-memo-row { grid-template-columns: 20px 1fr; row-gap: 4px; }
+  .st-memo-name { grid-column: 2; }
+  .st-memo-input { grid-column: 1 / -1; }
+  /* 사진 정리(‹ › ×)는 썸네일 안이라 보이는 높이만 36px, 히트 영역은 위아래로 넓힌다 */
+  .st-op { min-height: 36px; font-size: 16px; }
+  .st-photos { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+}
+@media (max-width: 420px) {
+  .st-two, .st-cards { grid-template-columns: 1fr; }
+  .st-field-row { flex-direction: column; align-items: stretch; }
+  .st-field-row > .field-label { margin: 0 0 2px; }
+}

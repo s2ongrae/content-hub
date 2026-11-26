@@ -22,6 +22,10 @@ import { renderProductView } from './productView.js?v=20261124v4';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123k';
 import { draftSection, draftPreview } from './draftView.js?v=20261123k';
 import { produceSection } from './produceView.js?v=20261126v1';
+import {
+  LINK_CHANNELS, LINK_LABEL, parseLinkText, identifyChannel, matchesChannel,
+  auditLinks, auditSummary, linkPatch, publishGuard
+} from './channelLinks.js?v=20261126a';
 
 /* ────────────────────────── 상수 ────────────────────────── */
 
@@ -508,6 +512,7 @@ function friendlyError(err) {
       case 'ERR_NETWORK': return '네트워크에 연결되지 않았거나 GAS 주소가 잘못됐습니다.';
       case 'ERR_TIMEOUT': return '서버 응답이 너무 느립니다. 잠시 후 다시 시도하세요.';
       case 'ERR_QUOTA_EXCEEDED': return '구글 사용량 한도를 넘었어요 — 60초 뒤 다시 시도해 주세요.';
+      case 'ERR_LINK_INCOMPLETE': return '아직 기록이 없는 채널이 있습니다 — 링크를 넣거나 [그래도 넘기기]를 눌러 주세요.';
       default: return `${err.code || 'ERR'} · ${err.message || ''}`;
     }
   }
@@ -704,6 +709,7 @@ function contentCard(item) {
     h('div', { class: 'cc-title', text: item.blog_title || item.place_name || '(제목 없음)' }),
     draftLine(item),
     renderChannelRow(item),
+    cardLinkBadge(item),
     perfBadge(item),
     h('div', { class: 'cc-meta3' },
       item.region_dong ? h('span', { text: item.region_dong }) : null,
@@ -712,8 +718,21 @@ function contentCard(item) {
       h('span', { text: '수정 ' + relTime(item.updated_at) })));
 }
 
-/** 블로그 글별 통계(글 번호·조회·공감·댓글) — #/blog 로더가 채운 state.blog 를 그대로 쓴다 */
-function blogPostsOf() {
+/**
+ * 보드 카드의 '기록 미완료' 배지 (2026-11-26) — 발행된 카드인데 4채널 주소·기록이 비어 있으면 한 줄로 알린다.
+ * 판정은 상세 화면·GAS 와 같은 js/channelLinks.js 를 쓴다(list_contents 가 4채널 url 도 돌려준다).
+ */
+function cardLinkBadge(item) {
+  const status = String(item.status || '');
+  if (['PUBLISHED', 'LINKED', 'PARTIAL_FAIL'].indexOf(status) < 0) return null;
+  let audit;
+  try { audit = auditLinks(item, item.brand || state.brand); } catch (e) { return null; }
+  if (audit.complete) return null;
+  return h('div', { class: 'cc-miss', title: '시트에 기록이 비어 있는 채널: ' + auditSummary(audit),
+    text: '기록 미완료 · ' + auditSummary(audit) });
+}
+
+/** 블로그 글별 통계(글 번호·조회·공감·댓글) — #/blog 로더가 채운 state.blog 를 그대로 쓴다 */function blogPostsOf() {
   if (state.blog && state.blogBrand === state.brand && Array.isArray(state.blog.posts)) return state.blog.posts;
   return state.blogPosts || [];
 }
@@ -1411,12 +1430,21 @@ function analysisSection(contentId, d, m, payload, dlg) {
 
   /* ② 채널 타일 — 상태·링크·성과를 한 칸으로 합쳤다(기존 '채널별 현황' 목록은 삭제) */
   const tileCtx = { d, m, contentId, dlg, toast, rows, published };
+  const linkAudit = auditLinks(m, brand);
   const tileBox = h('section', { class: 'perf-sec' },
     h('div', { class: 'ana-h' }, h('span', { text: '채널별 성과' }),
+      linkAudit.complete ? null : h('span', { class: 'tag miss', text: '기록 미완료 ' + linkAudit.incomplete.length }),
       h('span', { class: 'n', text: totals.done + '/' + totals.total })));
   const grid = h('div', { class: 'cht-grid' });
   rows.forEach((r) => grid.appendChild(channelTile(r, tileCtx)));
   tileBox.appendChild(grid);
+
+  /* 4채널 링크 — 붙여넣으면 채널을 알아서 고른다(2026-11-26, keyring). 기록이 다 차면 접어 둔다. */
+  tileBox.appendChild(h('details', { class: 'linkbox', open: linkAudit.complete ? null : 'open' },
+    h('summary', { text: linkAudit.complete
+      ? '4채널 링크 — 모두 기록됨'
+      : '4채널 링크 넣기 — ' + auditSummary(linkAudit) }),
+    linkPastePanel({ d, m, contentId, dlg, toast })));
   if (showPerf) {
     const isB = trackChannelsOf(brand).indexOf('daangn') < 0;
     tileBox.appendChild(h('p', { class: 'perf-note', text: isB
@@ -1433,24 +1461,8 @@ function analysisSection(contentId, d, m, payload, dlg) {
     if (a.action === 'link') {
       row.appendChild(h('button', {
         class: 'go', type: 'button', text: a.cta || '정리하기',
-        onclick: async (e) => {
-          const btn = e.currentTarget;
-          btn.disabled = true;
-          const label = btn.textContent;
-          btn.textContent = '정리 중…';
-          try {
-            await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED' },
-              api.createAction('link'));
-            toast('발행 완료로 옮겼어요', 'ok');
-            dlg.close();
-            await refresh();
-            renderRoute();
-          } catch (err) {
-            toast(friendlyError(err), 'err');
-            btn.disabled = false;
-            btn.textContent = label;
-          }
-        }
+        /* 2026-11-26 — 기록이 빈 채널을 먼저 보여 주고, 그래도 넘기는 선택은 남긴다 */
+        onclick: (e) => { moveToLinked({ dlg, toast }, contentId, d, e.currentTarget); }
       }));
     } else if (a.tab === 'src') {
       row.appendChild(h('button', {
@@ -1575,6 +1587,10 @@ function channelTile(r, ctx) {
   }
 
   /* 수동 입력이 필요한 채널 — 블로그(조회·검색유입) · 클립(조회) · 당근(유효시청·좋아요·보상 + 링크) */
+  /* 4채널은 주소를 여기서 기록한다 — 상태가 비어 있으면 저장할 때 '올림'으로 남긴다(2026-11-26) */
+  if (LINK_CHANNELS.indexOf(r.channel) >= 0 && st !== 'skip') {
+    tile.appendChild(channelLinkRow(ctx, r));
+  }
   if (r.channel === 'blog' && done) {
     tile.appendChild(numInputRow(ctx, r, [{ key: 'views', label: '조회' }, { key: 'search_inflow_pct', label: '검색유입 %' }]));
   }
@@ -1689,6 +1705,182 @@ function daangnLinkRow(ctx, r) {
     }
   });
   return row;
+}
+
+/* ────────────────────────── 4채널 링크 · 발행 완료 가드레일 (2026-11-26) ──────────────────────────
+   keyring Q-20261126-133433-06n9 중 ①②:
+   · 붙여넣은 주소의 도메인만 보고 블로그·쇼츠·릴스·클립을 알아서 고른다(한 번에 여러 줄도).
+   · '전 채널 발행 완료'를 누를 때 비어 있는 채널을 먼저 세어 보여 주고, 그래도 넘기는 선택은 남긴다.
+   판정 규칙은 js/channelLinks.js 한 곳에 있고 GAS(gas/Setup.gs)도 같은 규칙이다. */
+
+const LINK_PLACEHOLDER = {
+  blog: 'https://blog.naver.com/아이디/123456789',
+  shorts: 'https://youtube.com/shorts/…',
+  reels: 'https://www.instagram.com/reel/…',
+  clip: 'https://clip.naver.com/…'
+};
+
+/** 저장 뒤 화면을 그 카드의 성과 탭으로 다시 연다(숫자 입력과 같은 방식). */
+async function afterLinkSave(contentId, dlg, message) {
+  toast(message, 'ok');
+  if (dlg && dlg.open) dlg.close();
+  await refresh();
+  renderRoute();
+  openDetail(contentId, 'ana');
+}
+
+/** 채널 하나의 주소 입력줄 — 타일 안에 들어간다. */
+function channelLinkRow(ctx, r) {
+  const { d, contentId, dlg, toast } = ctx;
+  const input = h('input', { type: 'text', inputmode: 'url', autocomplete: 'off', spellcheck: 'false',
+    placeholder: LINK_PLACEHOLDER[r.channel] || '주소 붙여넣기',
+    value: r.url || '', 'aria-label': (r.label || r.channel) + ' 발행 주소' });
+  const btn = h('button', { class: 'btn xs', type: 'button', text: r.url ? '변경' : '저장' });
+  const note = h('p', { class: 'cht-note', hidden: true });
+  const row = h('div', { class: 'cht-in' },
+    h('label', { class: 'cht-if wide' }, h('span', { text: '주소' }), input), btn);
+  btn.addEventListener('click', async () => {
+    const url = String(input.value || '').trim();
+    if (!url) {
+      note.hidden = false;
+      note.className = 'cht-note err';
+      note.textContent = (r.label || r.channel) + ' 주소를 넣어 주세요';
+      input.focus();
+      return;
+    }
+    if (!matchesChannel(r.channel, url)) {
+      const id = identifyChannel(url);
+      note.hidden = false;
+      note.className = 'cht-note err';
+      note.textContent = id.ok && id.channel
+        ? '이 주소는 ' + (LINK_LABEL[id.channel] || id.channel) + ' 주소입니다 — 칸을 확인해 주세요'
+        : (r.label || r.channel) + ' 주소가 아닙니다 (' + (id.reason || '주소 확인') + ')';
+      input.focus();
+      return;
+    }
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = '저장 중…';
+    try {
+      const { patch } = linkPatch([{ channel: r.channel, url }], d.meta || {});
+      await api.updateContent(Object.assign({ content_id: contentId, expected_version: d.version }, patch), api.createAction('link'));
+      await afterLinkSave(contentId, dlg, (r.label || r.channel) + ' 주소를 저장했습니다');
+    } catch (err) {
+      toast(friendlyError(err), 'err');
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+  return h('div', null, row, note);
+}
+
+/** 여러 링크를 한 번에 — 도메인으로 채널을 고른다. */
+function linkPastePanel(ctx) {
+  const { d, contentId, dlg, toast } = ctx;
+  const area = h('textarea', { class: 'textarea', rows: '3',
+    placeholder: '올린 주소를 한 번에 붙여넣으세요 — 줄마다 채널을 알아서 고릅니다\nhttps://clip.naver.com/… / https://youtube.com/shorts/… / https://instagram.com/reel/… / https://blog.naver.com/…',
+    'aria-label': '4채널 발행 주소 여러 개 붙여넣기' });
+  const btn = h('button', { class: 'btn sm primary', type: 'button', text: '링크 넣기' });
+  const note = h('p', { class: 'st-hint', hidden: true });
+
+  btn.addEventListener('click', async () => {
+    const parsed = parseLinkText(area.value);
+    if (!parsed.links.length) {
+      note.hidden = false;
+      note.className = 'st-hint err';
+      note.textContent = parsed.unknown.length
+        ? '아는 채널 주소가 없습니다 — ' + parsed.unknown.slice(0, 2).map((u) => u.text.slice(0, 40) + ': ' + u.reason).join(' · ')
+        : '주소를 먼저 붙여넣어 주세요';
+      return;
+    }
+    const { patch, changed } = linkPatch(parsed.links, d.meta || {});
+    if (!changed.length) { note.hidden = false; note.className = 'st-hint err'; note.textContent = '저장할 주소가 없습니다'; return; }
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = '저장 중…';
+    try {
+      await api.updateContent(Object.assign({ content_id: contentId, expected_version: d.version }, patch), api.createAction('link'));
+      const skipped = parsed.unknown.length + parsed.duplicates.length;
+      await afterLinkSave(contentId, dlg,
+        changed.map((c) => c.label).join('·') + ' 링크를 저장했습니다' + (skipped ? ' (못 읽은 줄 ' + skipped + '개)' : ''));
+    } catch (err) {
+      toast(friendlyError(err), 'err');
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+
+  return h('div', { class: 'link-paste' },
+    h('p', { class: 'st-hint', text: '주소만 붙여넣으면 클립·쇼츠·릴스·블로그를 도메인으로 알아서 고릅니다. 네 채널을 한 번에 넣어도 됩니다.' }),
+    area,
+    h('div', { class: 'row' }, btn),
+    note);
+}
+
+/**
+ * 발행 완료 가드레일 — 비어 있는 채널을 먼저 보여 준다.
+ * '그래도 넘기기'는 남겨 둔다(사람이 알고 넘기는 선택은 막지 않는다).
+ */
+function publishGuardDialog(info, onForce) {
+  const audit = info.audit;
+  const dlg = h('dialog', { class: 'sheet guard-sheet' });
+  const close = () => { if (dlg.open) dlg.close(); };
+  const list = h('div', { class: 'gate' });
+  audit.incomplete.forEach((it) => {
+    list.appendChild(h('div', { class: 'gate-row' },
+      h('span', { text: it.label + ' — ' + (it.status ? channelLabel(it.status) : '기록 없음') }),
+      h('span', { class: 'gv no', text: it.note || '확인' })));
+  });
+  const body = h('div', { class: 'sheet-body' },
+    h('p', { class: 'hint', text: '아직 기록이 없는 채널: ' + auditSummary(audit) }),
+    list,
+    h('p', { class: 'hint', style: 'margin-top:10px', text: '그대로 넘기면 보드에서는 정리되지만 시트의 채널 칸과 주소는 비어 있게 됩니다 — 자동 수집기도 그 영상을 찾지 못합니다.' }),
+    h('div', { class: 'row end', style: 'margin-top:14px' },
+      h('button', { class: 'btn sm', type: 'button', text: '주소 넣으러 가기',
+        onclick: () => { close(); goDetailTab('ana'); } }),
+      h('button', { class: 'btn sm primary', type: 'button', text: '그래도 넘기기',
+        onclick: () => { close(); onForce && onForce(); } })));
+  const head = h('header', { class: 'sheet-head' },
+    h('h2', { text: '전 채널 발행 기록이 비어 있어요' }),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': '닫기', text: '✕', onclick: close }));
+  dlg.appendChild(h('div', { class: 'sheet-card' }, head, body));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.appendChild(dlg);
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  return dlg;
+}
+
+/** '전 채널 발행 완료' — 기록이 다 차 있으면 바로, 비면 한 번 물어보고 넘긴다. */
+async function moveToLinked(ctx, contentId, d, btn) {
+  const { dlg, toast } = ctx;
+  const m = d.meta || {};
+  const guard = publishGuard(m, m.brand || state.brand);
+
+  const commit = async (force) => {
+    const old = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '넘기는 중…'; }
+    try {
+      await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED', confirm_incomplete: force === true },
+        api.createAction('link'));
+      toast('발행 완료로 옮겼어요', 'ok');
+      if (dlg && dlg.open) dlg.close();
+      await refresh();
+      renderRoute();
+    } catch (err) {
+      if (err && err.code === 'ERR_LINK_INCOMPLETE') {
+        /* 화면 판정과 서버 판정이 어긋난 경우 — 서버가 센 목록을 그대로 보여 준다 */
+        const det = (err.details || {});
+        const detail = [].concat(det.missing || [], det.no_url || [], det.bad_url || []).map((c) => LINK_LABEL[c] || c).join(' · ');
+        toast('아직 기록이 없는 채널: ' + (detail || '확인 필요'), 'err');
+      } else {
+        toast(friendlyError(err), 'err');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = old; }
+    }
+  };
+
+  if (guard.ok) { await commit(false); return; }
+  publishGuardDialog(guard, () => { commit(true); });
 }
 
 function sourceSection(contentId, d, m, payload, dlg) {
@@ -1818,24 +2010,8 @@ function detailActionButtons(contentId, d, m, dlg) {
       class: 'btn sm primary', type: 'button',
       title: '모든 채널 업로드·연결이 끝났으면 마지막 칸으로 옮깁니다',
       text: '발행 완료로 넘기기',
-      onclick: async (e) => {
-        const btn = e.currentTarget;
-        btn.disabled = true;
-        const label = btn.textContent;
-        btn.textContent = '넘기는 중…';
-        try {
-          await api.updateContent({ content_id: contentId, expected_version: d.version, status: 'LINKED' },
-            api.createAction('link'));
-          toast('발행 완료로 옮겼어요', 'ok');
-          dlg.close();
-          await refresh();
-          renderRoute();
-        } catch (err) {
-          toast(friendlyError(err), 'err');
-          btn.disabled = false;
-          btn.textContent = label;
-        }
-      }
+      /* 2026-11-26 — 기록이 빈 채널이 있으면 경고 모달을 먼저 띄운다(그래도 넘기기는 남김) */
+      onclick: (e) => { moveToLinked({ dlg, toast }, contentId, d, e.currentTarget); }
     }));
   }
   if (d.status === 'REVIEW') {
