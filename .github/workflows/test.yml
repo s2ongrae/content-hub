@@ -1,0 +1,41 @@
+name: test
+
+# 테스트 CI — PR 과 main 푸시에서 허브의 세 시험을 모두 돌린다.
+#  · test/run.js            : GAS 시험 + js 문법 + 조립기 + 수집기 + 스타일 DNA 계약
+#  · gas/test/run.js        : GAS 서버 로직
+#  · tools/analytics/test/  : 지표 수집기
+# 2026-11-25: 노트북(hub-agent) 대조 3건이 사흘 넘게 방치된 일이 있어 CI 로 고정한다.
+#  허브 시험은 옆 폴더에 hub-agent 가 없으면 그 대조만 건너뛴다(단독 클론 기준).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 수집기 시험이 설정 파일을 읽는다 — 없으면 예시를 복사한다(analytics-collect 워크플로우와 같은 규칙)
+      - name: 설정 파일 준비
+        run: |
+          if [ ! -f tools/analytics/config.json ]; then
+            cp tools/analytics/config.example.json tools/analytics/config.json
+          fi
+
+      - name: 시험 (본문·GAS·분석)
+        run: node test/run.js && node gas/test/run.js && node tools/analytics/test/run.js
