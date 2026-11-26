@@ -2790,7 +2790,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v10/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v11/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -2995,7 +2995,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js v10 · studio.css b)', /js\/app\.js\?v=20261126v10/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js v11 · studio.css b)', /js\/app\.js\?v=20261126v11/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3083,6 +3083,197 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     }
   } catch (err) {
     ok('상품 실패 대비·트랙 A/B 시험', false, (err && err.stack) || err);
+  }
+
+
+  /* ═══════════════════════════════════════════════════════════════
+     [20] 인스타 카드뉴스 초안 — 3:4 프리셋 · 승인 탭 카드 (2026-11-26)
+     - studioCanvas: 4:5(1080×1350) 기본 유지 + 3:4(1080×1440) 선택
+     - quickApprove: ig_feed_status=draft_ready 카드(🖼️ N장 · 요약 · 드라이브 링크 · 미리보기)
+     - 승인 = human_approved / 반려 = queued (서버 액션 ig_card_review)
+     ═══════════════════════════════════════════════════════════════ */
+  console.log('\n[20] 인스타 카드뉴스 초안 — 3:4 프리셋 · 승인 탭 카드');
+  try {
+    const SC = await import('file://' + path.join(ROOT, 'js', 'studioCanvas.js'));
+    const apimod2 = await import('file://' + path.join(ROOT, 'js', 'api.js'));
+
+    /* ── ① 비율 프리셋 ── */
+    ok('프리셋 2종: 4:5 · 3:4', SC.CARD_PRESETS.map((p) => p.id).join(',') === '4:5,3:4');
+    ok('4:5 는 1080×1350 그대로(기본값 호환)', SC.CARD_PRESET_DEFAULT === '4:5' && SC.cardPreset().width === 1080 && SC.cardPreset().height === 1350 && SC.CARD_W === 1080 && SC.CARD_H === 1350);
+    ok('3:4 는 1080×1440', SC.cardPreset('3:4').width === 1080 && SC.cardPreset('3:4').height === 1440);
+    ok('모르는 비율은 기본(4:5)로 돌아간다', SC.cardPreset('9:16').id === '4:5' && SC.cardPreset({ aspect: '' }).id === '4:5');
+    ok('{aspect} 객체로도 고른다', SC.cardPreset({ aspect: '3:4' }).height === 1440);
+
+    const p45 = SC.cardWatermarkPoint('bottom-right');
+    const p34 = SC.cardWatermarkPoint('bottom-right', { width: 1080, height: 1440 });
+    ok('워터마크 자리가 비율을 따라간다(4:5 → 1296 · 3:4 → 1386)', p45.x === 1032 && p45.y === 1296 && p34.x === 1032 && p34.y === 1386, [p45, p34]);
+
+    /* 실제 캔버스 크기 — 가짜 캔버스로 잡는다 */
+    {
+      const prevDoc = global.document;
+      const makeCanvas = () => {
+        const texts = [];
+        const ctx = new Proxy({}, {
+          get: (t, k) => {
+            if (k === 'measureText') return () => ({ width: 100 });
+            if (k === 'createLinearGradient') return () => ({ addColorStop() {} });
+            if (k === 'fillText') return (str, x, y) => texts.push({ str: String(str), x, y });
+            return () => {};
+          },
+          set: () => true
+        });
+        const c = { width: 0, height: 0, texts: texts, getContext: () => ctx };
+        return c;
+      };
+      const made = [];
+      global.document = { createElement: (t) => { const c = makeCanvas(); made.push(c); return c; } };
+      const card = { no: 1, kicker: '먼저 볼 것', headline: '대기 30분', body: '그래도 갑니다' };
+      try {
+        const c45 = SC.drawCard(card, null, {});
+        ok('기본 카드는 1080×1350(4:5)로 그린다', c45 && c45.width === 1080 && c45.height === 1350, c45 && [c45.width, c45.height]);
+        const c34 = SC.drawCard(card, null, { aspect: '3:4' });
+        ok('3:4 를 고르면 1080×1440 으로 그린다', c34 && c34.width === 1080 && c34.height === 1440, c34 && [c34.width, c34.height]);
+        ok('3:4 카드에도 워터마크가 아래(1386)에 그려진다', c34 && c34.texts.some((t) => t.str === '@s2ongrae' && t.y === 1386), c34 && c34.texts.filter((t) => /@/.test(t.str)));
+      } finally {
+        global.document = prevDoc;
+      }
+    }
+
+    ok('초안 슬라이드 → 카드 모양(번호·문구 그대로)', (() => {
+      const cards = SC.cardsFromSlides([{ kicker: 'k', headline: 'h1', body: 'b1' }, { no: 5, headline: 'h2' }]);
+      return cards.length === 2 && cards[0].no === 1 && cards[1].no === 5 && cards[0].headline === 'h1' && cards[1].body === '';
+    })());
+    ok('슬라이드가 없으면 빈 배열(지어내지 않음)', SC.cardsFromSlides(null).length === 0 && SC.cardsFromSlides([]).length === 0);
+    ok('예전 4:5 카드 그리기 API 는 그대로 있다', typeof SC.drawCard === 'function' && typeof SC.canvasToPng === 'function' && typeof SC.cardFileName === 'function' && SC.FILTER_PRESETS.length === 4);
+
+    /* ── ② 승인 탭 카드 ── */
+    class N2 {
+      constructor(tag) {
+        this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.className = ''; this._text = '';
+        this.value = ''; this.hidden = false; this.disabled = false; this.isConnected = true; this.style = {};
+        const set = new Set();
+        this.classList = { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c), toggle: (c) => (set.has(c) ? (set.delete(c), false) : (set.add(c), true)) };
+      }
+      set textContent(v) { this._text = String(v); this.children = []; }
+      get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+      setAttribute(k, v) { this.attrs[k] = String(v); }
+      removeAttribute(k) { delete this.attrs[k]; }
+      getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+      hasAttribute(k) { return k in this.attrs; }
+      addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+      removeEventListener() {}
+      append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { textContent: String(k), tag: '#text', children: [] }; this.children.push(n); }); }
+      appendChild(k) { this.append(k); return k; }
+      replaceChildren(...kids) { this.children = []; this.append(...kids); }
+      querySelector() { return null; }
+      querySelectorAll() { return []; }
+      click() { if (this.disabled) return; (this.listeners.click || []).forEach((f) => f({ target: this, currentTarget: this })); }
+      focus() {}
+      remove() {}
+    }
+    const walk2 = (n, fn) => { if (!n || !n.tag) return; fn(n); (n.children || []).forEach((c) => walk2(c, fn)); };
+    const findByText = (node, label) => {
+      let hit = null;
+      walk2(node, (n) => { if (!hit && n.tag === 'button' && String(n._text || '').indexOf(label) >= 0) hit = n; });
+      return hit;
+    };
+    const anchors = (node) => { const out = []; walk2(node, (n) => { if (n.tag === 'a') out.push(n); }); return out; };
+    const canvases = (node) => { const out = []; walk2(node, (n) => { if (n.tag === 'canvas') out.push(n); }); return out; };
+
+    const prev = { d: global.document, l: global.localStorage, loc: global.location, pr: global.prompt };
+    const canvasTexts = [];
+    const makeCanvas2 = () => {
+      const ctx = new Proxy({}, {
+        get: (t, k) => {
+          if (k === 'measureText') return () => ({ width: 100 });
+          if (k === 'createLinearGradient') return () => ({ addColorStop() {} });
+          if (k === 'fillText') return (str, x, y) => canvasTexts.push({ str: String(str), x, y });
+          return () => {};
+        },
+        set: () => true
+      });
+      return { tag: 'canvas', width: 0, height: 0, children: [], getContext: () => ctx, toBlob: (cb) => cb({ size: 1 }) };
+    };
+    global.document = { createElement: (t) => (t === 'canvas' ? makeCanvas2() : new N2(t)), createTextNode: (t) => ({ tag: '#text', textContent: String(t), children: [] }), body: new N2('body'), addEventListener() {}, removeEventListener() {} };
+    global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+    global.location = { hash: '#/approve' };
+    global.prompt = () => '3장 가격이 틀렸어요';
+
+    const QA2 = await import('file://' + path.join(ROOT, 'js', 'quickApprove.js'));
+    const real = { list: apimod2.api.listContents, detail: apimod2.api.getContentDetail, approve: apimod2.api.igCardApprove, reject: apimod2.api.igCardReject };
+    const calls2 = [];
+    const feed = {
+      kind: 'ig_card_draft', summary: '봉명동 삼겹살, 대기 30분이지만 다시 갈 집',
+      slides: [1, 2, 3, 4, 5, 6].map((i) => ({ no: i, kicker: '메뉴', headline: '삼겹 ' + i, body: '보충 ' + i })),
+      caption: '캡션입니다', hashtags: ['#봉명동맛집', '#삼겹살'], flags: { fact_placeholder: false }
+    };
+    apimod2.api.listContents = async () => ({
+      data: { items: [{ content_id: 'DY-1', brand: 'daejeon_youth', place_name: '미미삼겹', quality_score: 88, blog_title: '제목', blog_status: 'UPLOADED', ig_feed_status: 'draft_ready', ig_carousel_count: 6, media_drive_url: 'https://drive.google.com/drive/folders/abc123' }] }
+    });
+    apimod2.api.getContentDetail = async () => ({ data: { version: 1, payload: { ig_feed: feed } } });
+    apimod2.api.igCardApprove = async (id) => { calls2.push('approve:' + id); return { ok: true }; };
+    apimod2.api.igCardReject = async (id, reason) => { calls2.push('reject:' + id + ':' + reason); return { ok: true }; };
+
+    const toasts2 = [];
+    const root2 = new N2('div');
+    const view2 = new QA2.QuickApproveView(root2, { toast: (m, k) => toasts2.push(k + '|' + m), onChanged() {} });
+    try {
+      await view2.mount();
+      await new Promise((r) => setTimeout(r, 10));
+      const bodyText = String(root2.textContent);
+      ok('승인 탭: 🖼️ 인스타 카드뉴스 6장 카드로 보인다', bodyText.indexOf('🖼️ 인스타 카드뉴스 6장') >= 0, bodyText.slice(0, 160));
+      ok('승인 탭: 초안 요약이 카드에 실린다', /봉명동 삼겹살, 대기 30분/.test(bodyText));
+      ok('승인 탭: 해시태그도 보여 준다', /#봉명동맛집/.test(bodyText));
+      ok('승인 탭: 드라이브에서 초안 보기 링크', anchors(root2).some((a) => String(a.href).indexOf('drive.google.com') >= 0));
+      ok('승인 탭: 4:5 · 3:4 미리보기 버튼이 있다', !!findByText(root2, '4:5 미리보기') && !!findByText(root2, '3:4 미리보기'));
+      ok('승인 버튼 글자가 카드뉴스 승인으로 바뀐다', view2.approveBtn.textContent === '✅ 카드뉴스 승인', view2.approveBtn.textContent);
+
+      canvasTexts.length = 0;
+      findByText(root2, '3:4 미리보기').click();
+      await new Promise((r) => setTimeout(r, 10));
+      const cvs = canvases(root2);
+      ok('3:4 미리보기는 1080×1440 카드 6장', cvs.length === 6 && cvs.every((c) => c.width === 1080 && c.height === 1440), cvs.map((c) => c.width + 'x' + c.height));
+      ok('미리보기에 비율·크기를 적어 준다', /3:4 · 1080×1440 미리보기/.test(String(root2.textContent)));
+      canvasTexts.length = 0;
+      findByText(root2, '4:5 미리보기').click();
+      await new Promise((r) => setTimeout(r, 10));
+      const cvs45 = canvases(root2);
+      ok('4:5 로 바꾸면 같은 6장을 1080×1350 으로 다시 그린다', cvs45.length === 6 && cvs45.every((c) => c.width === 1080 && c.height === 1350), cvs45.map((c) => c.width + 'x' + c.height));
+
+      await view2.approve();
+      await new Promise((r) => setTimeout(r, 10));
+      ok('승인은 서버 액션 ig_card_review(approve)로 간다', calls2.indexOf('approve:DY-1') >= 0, calls2);
+      ok('승인 뒤 카드는 승인됨으로 보이고 버튼이 잠긴다', view2.approveBtn.disabled === true && String(root2.textContent).indexOf('승인함') >= 0, view2.approveBtn.textContent);
+      ok('승인 뒤에도 인스타 게시는 직접이라고 알린다', /직접 올립니다/.test(String(root2.textContent)));
+
+      await view2.reject();
+      await new Promise((r) => setTimeout(r, 10));
+      ok('반려는 ig_card_review(reject) + 사유로 간다', calls2.some((c) => c.indexOf('reject:DY-1:3장 가격이 틀렸어요') === 0), calls2);
+      ok('반려하면 카드가 목록에서 빠진다', /승인할 원고가 없어요/.test(String(root2.textContent)), String(root2.textContent).slice(0, 120));
+    } finally {
+      apimod2.api.listContents = real.list;
+      apimod2.api.getContentDetail = real.detail;
+      apimod2.api.igCardApprove = real.approve;
+      apimod2.api.igCardReject = real.reject;
+      global.document = prev.d;
+      global.localStorage = prev.l;
+      global.location = prev.loc;
+      global.prompt = prev.pr;
+    }
+
+    /* ── ③ 화면 연결(정적) ── */
+    const qaSrc2 = fs.readFileSync(path.join(ROOT, 'js', 'quickApprove.js'), 'utf8');
+    const apiSrc2 = fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8');
+    const html2 = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    ok('quickApprove: 카드뉴스 초안 상태를 화면이 직접 안다', /draft_ready/.test(qaSrc2) && /human_approved/.test(qaSrc2));
+    ok('quickApprove: 승인·반려를 전용 액션으로 보낸다', /igCardApprove\(/.test(qaSrc2) && /igCardReject\(/.test(qaSrc2));
+    ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
+    ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
+    ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261126a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
+    ok('index.html: 새 화면 캐시 버전(app.js v11 · style.css m2-33)', /js\/app\.js\?v=20261126v11/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m58/.test(html2));
+    ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
+  } catch (err) {
+    ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
