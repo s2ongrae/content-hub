@@ -457,6 +457,35 @@ function fakeFetch(routes) {
     eq('올릴 게 없으면 조용히 성공', (await sync.pushMediaMeta([], {})).ok, true);
   }
 
+
+  /* ───────── 인스타 피드 카드뉴스 초안 ↔ 수집 표면 계약 (2026-11-26) ─────────
+     초안(gas/IgCardDraft.gs)은 '피드를 운영하는 트랙'에서만 돈다. 수집기도 같은 기준
+     (seeds/track_channels.json)으로 피드를 모은다 — 한쪽만 바뀌면 여기서 깨진다.
+     그리고 초안은 Analytics_Daily(자동 수집분)에 아무것도 쓰지 않는다(발행 전 초안 ≠ 올린 글). */
+  console.log('[7] 인스타 피드 카드뉴스 초안 ↔ 수집 표면 계약');
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const vm = require('vm');
+    const { TRACK_CHANNELS, instagramSurfacesOf } = require('../lib/channels');
+    const ROOT = path.join(__dirname, '..', '..', '..');
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'track_channels.json'), 'utf8'));
+    const src = fs.readFileSync(path.join(ROOT, 'gas', 'IgCardDraft.gs'), 'utf8');
+    const ctx = vm.createContext({ TRACK_CHANNELS });
+    vm.runInContext(src, ctx, { filename: 'IgCardDraft.gs' });
+    const allows = vm.runInContext('igCardTrackAllows_', ctx);
+
+    ok('수집기 트랙 표가 기준 파일과 같다', JSON.stringify(TRACK_CHANNELS) === JSON.stringify(seed));
+    ok('인스타 표면: 대전 청년은 릴스·피드, 김메리는 릴스만', instagramSurfacesOf('daejeon_youth').join(',') === 'reels,feed' && instagramSurfacesOf('ppiyak_kimmary').join(',') === 'reels');
+    ok('초안도 같은 기준 — 피드를 운영하는 트랙에서만 돈다',
+      allows('daejeon_youth') === true && allows('ppiyak_kimmary') === false);
+    ok('두 모듈의 판정이 모든 트랙에서 일치한다',
+      Object.keys(TRACK_CHANNELS).every((b) => allows(b) === (instagramSurfacesOf(b).indexOf('feed') >= 0)));
+    ok('모르는 트랙에는 초안을 만들지 않는다', allows('unknown_track') === false && allows('') === false);
+    ok('초안은 자동 수집 시트(Analytics_Daily)를 건드리지 않는다', !/Analytics_Daily|ingest_analytics/.test(src));
+    ok('초안은 Meta(인스타) API 로 발행하지 않는다', !/graph\.facebook\.com|graph\.instagram\.com|instagram\.com\/v\d/.test(src));
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));
   process.exit(failed ? 1 : 0);
 })().catch((err) => {

@@ -6,12 +6,33 @@
  *  - 하단 고정 액션바(엄지 영역 52px): [반려] [스킵] [✅ 승인]
  *  - 승인 1탭 = record_checklist + update_content(READY) 를 api.quickApprove 가 순서대로 수행
  *  - 처리 후 카드 즉시 사라지고 남은 건수 갱신
+ *
+ * 인스타 카드뉴스 초안 카드 (2026-11-26) — ig_feed_status='draft_ready' 인 카드는
+ *   🖼️ 인스타 카드뉴스 N장 · 요약 · 드라이브 링크 · 3:4/4:5 미리보기 카드로 바뀌고,
+ *   승인은 human_approved, 다시 쓰기는 queued 로 api.igCardApprove/igCardReject 가 보낸다.
+ *   인스타 게시는 사람이 직접 한다(자동 발행 없음).
  */
 
 import { api } from './api.js';
 import { friendlyError } from './uiState.js?v=20261126a';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, cardsFromSlides, cardPreset, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261126a';
 
 const BRAND_EMOJI = { daejeon_youth: '🍺 대전 청년', ppiyak_kimmary: '🐱 김메리' };
+const BRAND_NAME = { daejeon_youth: '대전 청년', ppiyak_kimmary: '삐약 김메리' };
+
+function brandNameOf(brand) { return BRAND_NAME[brand] || BRAND_NAME.daejeon_youth; }
+
+/** 인스타 카드뉴스 초안 상태 — 승인 대기(draft_ready) · 승인됨(human_approved) */
+const IG_READY = 'draft_ready';
+const IG_APPROVED = 'human_approved';
+
+/** 이 카드가 인스타 카드뉴스 초안인가: '' | 'ready' | 'approved' */
+function igStateOf(item) {
+  const s = String((item && item.ig_feed_status) || '');
+  if (s === IG_READY) return 'ready';
+  if (s === IG_APPROVED) return 'approved';
+  return '';
+}
 
 export class QuickApproveView {
   constructor(rootEl, opts = {}) {
@@ -22,6 +43,7 @@ export class QuickApproveView {
     this.onChanged = opts.onChanged || function () {};
     this.toast = opts.toast || function () {};
     this._keyHandler = null;
+    this.igCache = {};              // content_id → { loading, feed, error } — 초안 요약(드라이브 payload) 캐시
   }
 
   async mount() {
@@ -82,6 +104,7 @@ export class QuickApproveView {
   async reload() {
     this.countEl.textContent = '불러오는 중…';
     this.cardHost.replaceChildren();
+    this.igCache = {};
     try {
       const res = await api.listContents({ status: 'REVIEW', limit: 20 });
       this.items = (res.data && res.data.items) || [];
@@ -125,8 +148,14 @@ export class QuickApproveView {
       this.approveBtn.disabled = true;
       return;
     }
+    const ig = igStateOf(item);
     this.rejectBtn.disabled = false;
-    this.approveBtn.disabled = false;
+    this.approveBtn.disabled = ig === 'approved';
+    this.approveBtn.textContent = ig === 'approved' ? '✅ 카드뉴스 승인됨' : (ig === 'ready' ? '✅ 카드뉴스 승인' : '✅ 승인');
+    if (ig) {
+      this.cardHost.appendChild(this.buildIgCard(item, ig));
+      return;
+    }
 
     const card = el('article', 'qa-card');
     const top = el('div', 'qa-top');
@@ -167,12 +196,166 @@ export class QuickApproveView {
     this.cardHost.appendChild(card);
   }
 
+  /**
+   * 인스타 카드뉴스 초안 카드 (2026-11-26) — 🖼️ N장 · 요약 · 드라이브 링크 · 3:4/4:5 미리보기.
+   * 승인하면 ig_feed_status 만 human_approved 로 바뀌고, 인스타 게시는 사람이 직접 한다.
+   */
+  buildIgCard(item, ig) {
+    const count = Number(item.ig_carousel_count) || 0;
+    const card = el('article', 'qa-card qa-card-ig');
+
+    const top = el('div', 'qa-top');
+    top.appendChild(el('span', 'qa-brand', BRAND_EMOJI[item.brand] || item.brand));
+    top.appendChild(el('strong', 'qa-title', item.place_name || item.content_id));
+    top.appendChild(el('span', 'qa-score', ig === 'approved' ? '승인함' : '카드뉴스'));
+    card.appendChild(top);
+
+    card.appendChild(el('p', 'qa-meta',
+      [item.cluster_id, item.region_dong, item.content_id].filter(Boolean).join(' · ')));
+
+    const summary = el('div', 'qa-summary');
+    summary.appendChild(el('p', 'qa-line', `🖼️ 인스타 카드뉴스 ${count}장`));
+    const lineEl = el('p', 'qa-line dim', '초안을 읽고 있어요…');
+    summary.appendChild(lineEl);
+    const tagsEl = el('p', 'qa-line dim', '');
+    summary.appendChild(tagsEl);
+    card.appendChild(summary);
+
+    const links = el('div', 'row qa-ig-links');
+    const driveUrl = String(item.media_drive_url || '').trim();
+    if (driveUrl) {
+      const a = el('a', 'qa-link', '↗ 드라이브에서 초안 보기');
+      a.href = driveUrl;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      links.appendChild(a);
+    }
+    const pv45 = el('button', 'ghost-btn sm', '4:5 미리보기');
+    const pv34 = el('button', 'ghost-btn sm', '3:4 미리보기');
+    [pv45, pv34].forEach((b) => { b.type = 'button'; });
+    links.appendChild(pv45);
+    links.appendChild(pv34);
+    card.appendChild(links);
+
+    const previewHost = el('div', 'qa-ig-preview');
+    card.appendChild(previewHost);
+
+    card.appendChild(el('p', 'qa-meta', ig === 'approved'
+      ? '승인한 초안입니다. 인스타에는 직접 올립니다(자동 발행 없음).'
+      : '승인하면 이 카드의 피드만 승인으로 바뀝니다. 인스타 게시는 직접 합니다.'));
+
+    const open = (aspect) => {
+      const st = this.igCache[item.content_id];
+      if (!st || !st.feed) {
+        this.toast('초안을 아직 읽지 못했어요 — 드라이브에서 확인하세요', 'err');
+        return;
+      }
+      this.paintPreview(previewHost, item, st.feed, aspect);
+    };
+    pv45.addEventListener('click', () => open('4:5'));
+    pv34.addEventListener('click', () => open('3:4'));
+
+    this.fillIgCard(item, lineEl, tagsEl);
+    return card;
+  }
+
+  /** 목록에는 요약이 없다 — 카드 payload(ig_feed)를 한 번만 읽어 요약·해시태그를 채운다. */
+  async ensureIgDetail(item) {
+    const id = item.content_id;
+    const cached = this.igCache[id];
+    if (cached && !cached.loading) return cached;
+    this.igCache[id] = { loading: true, feed: null };
+    try {
+      const res = await api.getContentDetail(id);
+      const feed = (res && res.data && res.data.payload && res.data.payload.ig_feed) || null;
+      this.igCache[id] = { loading: false, feed: feed };
+    } catch (err) {
+      this.igCache[id] = { loading: false, feed: null, error: err };
+    }
+    return this.igCache[id];
+  }
+
+  async fillIgCard(item, lineEl, tagsEl) {
+    const st = await this.ensureIgDetail(item);
+    if (!lineEl || lineEl.isConnected === false) return;
+    if (!st.feed) {
+      lineEl.textContent = st.error
+        ? friendlyError(st.error)
+        : '초안 요약을 읽지 못했어요 — 드라이브에서 확인하세요';
+      lineEl.classList.add('qa-warn');
+      return;
+    }
+    const feed = st.feed;
+    const first = Array.isArray(feed.slides) && feed.slides[0] ? String(feed.slides[0].headline || '') : '';
+    lineEl.textContent = String(feed.summary || feed.hook || first || '');
+    lineEl.classList.remove('qa-warn');
+    const bits = [];
+    if (Array.isArray(feed.hashtags) && feed.hashtags.length) bits.push(feed.hashtags.join(' '));
+    if (feed.flags && feed.flags.fact_placeholder) bits.push('확인 안 된 값은 빈칸으로 두었어요');
+    if (tagsEl) tagsEl.textContent = bits.join(' · ');
+  }
+
+  /** 3:4 · 4:5 미리보기 — 초안 슬라이드를 그 비율의 카드로 그려 보여 준다. */
+  paintPreview(host, item, feed, aspect) {
+    host.replaceChildren();
+    const preset = cardPreset(aspect);
+    const cards = cardsFromSlides(feed.slides);
+    if (!cards.length) {
+      host.appendChild(el('p', 'qa-meta', '초안에 슬라이드가 없습니다'));
+      return;
+    }
+    const theme = CARD_THEME[item.brand] || CARD_THEME.daejeon_youth;
+    const head = el('div', 'row qa-ig-head');
+    head.appendChild(el('span', 'qa-meta', `${preset.label} · ${preset.width}×${preset.height} 미리보기`));
+    const saveBtn = el('button', 'ghost-btn sm', 'PNG로 저장');
+    saveBtn.type = 'button';
+    saveBtn.addEventListener('click', () => this.savePreview(cards, item, preset, theme));
+    head.appendChild(saveBtn);
+    host.appendChild(head);
+
+    const grid = el('div', 'qa-ig-cards');
+    cards.forEach((c) => {
+      const canvas = drawCard(c, null, {
+        theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+      });
+      const holder = el('div', 'qa-ig-card');
+      holder.appendChild(canvas || el('div', 'qa-ig-card-fallback', '카드를 그리지 못했어요'));
+      holder.appendChild(el('span', 'qa-ig-cap', `0${c.no} ${c.headline}`));
+      grid.appendChild(holder);
+    });
+    host.appendChild(grid);
+  }
+
+  async savePreview(cards, item, preset, theme) {
+    let n = 0;
+    for (const c of cards) {
+      const canvas = drawCard(c, null, {
+        theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+      });
+      if (!canvas) continue;
+      const blob = await canvasToPng(canvas);
+      if (blob && downloadBlob(blob, cardFileName(item.place_name, `${c.no}_${preset.id.replace(':', 'x')}`))) n += 1;
+    }
+    this.toast(n ? `카드 ${n}장을 ${preset.label} PNG 로 저장했습니다` : '저장하지 못했어요 — 브라우저를 확인하세요', n ? 'ok' : 'err');
+  }
+
   async approve() {
     if (this.busy || !this.current()) return;
     const item = this.current();
+    const ig = igStateOf(item);
+    if (ig === 'approved') { this.toast('이미 승인한 카드뉴스입니다', 'ok'); return; }
     this.busy = true;
     this.actionBar.classList.add('busy');
     try {
+      if (ig === 'ready') {
+        // 인스타 피드 초안은 승인(human_approved)만 기록한다 — 인스타 게시는 사람이 직접(자동 발행 없음)
+        await api.igCardApprove(item.content_id);
+        item.ig_feed_status = IG_APPROVED;
+        this.render();
+        this.toast(`${item.place_name || item.content_id} 인스타 카드뉴스 → 승인`, 'ok');
+        this.onChanged();
+        return;
+      }
       await api.quickApprove(item.content_id, {
         channel: item.blog_status === 'SKIPPED' ? 'youtube_shorts' : 'naver_blog'
       });
@@ -194,10 +377,23 @@ export class QuickApproveView {
   async reject() {
     if (this.busy || !this.current()) return;
     const item = this.current();
-    const reason = prompt('어떤 점을 고칠까요? (한 줄) — 예: 말투, 사실관계, 첫 문장이 약함') || '대표님 다시 쓰기';
+    const ig = igStateOf(item);
+    const reason = prompt(ig
+      ? '카드뉴스에서 어떤 점을 고칠까요? (한 줄) — 예: 3장 가격이 사실과 달라요'
+      : '어떤 점을 고칠까요? (한 줄) — 예: 말투, 사실관계, 첫 문장이 약함') || '대표님 다시 쓰기';
     this.busy = true;
     this.actionBar.classList.add('busy');
     try {
+      if (ig) {
+        // 반려 = queued — 다음 밤 초안이 다시 만들어진다
+        await api.igCardReject(item.content_id, reason);
+        this.items.splice(this.index, 1);
+        if (this.index >= this.items.length) this.index = Math.max(0, this.items.length - 1);
+        this.render();
+        this.toast(`카드뉴스 다시 쓰기: ${reason}`, 'ok');
+        this.onChanged();
+        return;
+      }
       await api.quickReject(item.content_id, reason);
       this.items.splice(this.index, 1);
       if (this.index >= this.items.length) this.index = Math.max(0, this.items.length - 1);
@@ -224,6 +420,7 @@ function channelLine(item) {
     ['블로그', item.blog_status],
     ['쇼츠', item.shorts_status],
     ['릴스', item.reels_status],
+    ['피드', item.ig_feed_status],
     ['클립', item.clip_status],
     ['당근', item.daangn_status]
   ];
@@ -236,6 +433,10 @@ function statusKo(s) {
   if (s === 'PENDING') return '대기';
   if (s === 'UPLOADED') return '완료';
   if (s === 'PUBLISHED') return '발행';
+  if (s === IG_READY) return '초안 완료';
+  if (s === IG_APPROVED) return '승인';
+  if (s === 'drafting') return '작성 중';
+  if (s === 'queued') return '대기';
   return s;
 }
 

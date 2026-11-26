@@ -129,7 +129,7 @@ function loadGas() {
   const env = makeEnv();
   // Apps Script 는 모든 파일을 한 스코프로 올리지만, vm 은 파일 단위로 평가한다 →
   // Code.gs 의 M1_HANDLERS 가 핸들러를 참조하므로 Orders.gs 를 먼저 올린다.
-  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Result.gs', 'Blog.gs', 'BlogSeo.gs', 'Insight.gs', 'AiBrief.gs', 'Analytics.gs', 'PostDetail.gs', 'Product.gs', 'Code.gs'];
+  const files = ['Setup.gs', 'Auth.gs', 'Backup.gs', 'Notify.gs', 'Onboarding.gs', 'Orders.gs', 'Upload.gs', 'Bgm.gs', 'Result.gs', 'Blog.gs', 'BlogSeo.gs', 'Insight.gs', 'AiBrief.gs', 'IgCardDraft.gs', 'Analytics.gs', 'PostDetail.gs', 'Product.gs', 'Code.gs'];
   const sandbox = Object.assign({ console, Date: env.Date }, env.gas);
   vm.createContext(sandbox);
   for (const f of files) {
@@ -2994,6 +2994,386 @@ console.log('\n[8m] 4채널 링크 가드레일 — 기록 없는 LINKED 는 서
   const audit = ev(G.ctx, 'channelLinkAudit_')({});
   ok('점검 규칙은 4채널 주소 열을 본다', ev(G.ctx, 'contentLinkValidationSpec_')(header).map((s) => s.column).join(',') === 'blog_url,shorts_url,reels_url,clip_url');
   ok('김메리 트랙은 세 채널만 본다', ev(G.ctx, 'channelLinkAudit_')({ brand: 'ppiyak_kimmary', shorts_status: 'SKIPPED', reels_status: 'UPLOADED', reels_url: 'https://www.instagram.com/reel/x/', clip_status: 'SKIPPED' }).total === 1, audit.total);
+}
+
+
+/* ============================================================================
+   [IG] 인스타 카드뉴스 초안 (gas/IgCardDraft.gs) — 2026-11-26 1차 MVP
+     · queued → drafting 선점 → Gemini 무료 초안 → 드라이브 저장 → draft_ready/REVIEW
+     · 실패하면 queued 복구 + Channel_Logs
+     · 승인(human_approved) / 반려(queued)는 ig_card_review 만이 바꾼다
+     · Contents 40칸·새 열 없음, Meta 자동 발행 없음, 유료 API 없음
+   ============================================================================ */
+console.log('\n[IG] 인스타 카드뉴스 초안 (gas/IgCardDraft.gs) — 선점 · 드라이브 저장 · 승인/반려');
+{
+  const HEADER = ev(loadGas().ctx, 'SHEET_SCHEMAS').Contents;
+  const TODAY = loadGas().ctx.kstDay_(new Date());
+  const DAYC = TODAY.replace(/-/g, '');
+  const YM = DAYC.slice(0, 6);
+
+  /* ── 액션 등록 · 40칸 불변 (로드만 하는 검사) ── */
+  {
+    const S = loadGas();
+    const wl = ev(S.ctx, 'ACTION_WHITELIST');
+    const HM = ev(S.ctx, 'M1_HANDLERS');
+    ok('ig_card_draft_run 은 쓰기·라우터 락 없음(외부 Gemini 호출)', wl.ig_card_draft_run && wl.ig_card_draft_run.mode === 'WRITE' && wl.ig_card_draft_run.longRunning === true);
+    ok('ig_card_review 는 쓰기·라우터 락 없이 자체 락(드라이브 메모가 락 밖)', wl.ig_card_review && wl.ig_card_review.mode === 'WRITE' && wl.ig_card_review.longRunning === true);
+    ok('핸들러 2개가 라우터에 등록됨', typeof HM.ig_card_draft_run === 'function' && typeof HM.ig_card_review === 'function');
+    ok('Contents 스키마는 40칸 그대로(새 열 없음)', HEADER.length === 40 && ['ig_feed_status', 'ig_carousel_count', 'media_drive_url', 'payload_file_id'].every((c) => HEADER.indexOf(c) >= 0), HEADER.length);
+    ok('트랙 A 만 피드를 운영한다(트랙 B 는 초안을 만들지 않음)', ev(S.ctx, 'igCardTrackAllows_')('daejeon_youth') === true && ev(S.ctx, 'igCardTrackAllows_')('ppiyak_kimmary') === false && ev(S.ctx, 'igCardTrackAllows_')('nope') === false);
+    ok('트리거 대상 함수 이름이 igCardDraftNightly_', typeof S.ctx.igCardDraftNightly_ === 'function' && ev(S.ctx, 'IG_CARD_TRIGGER_HANDLER_') === 'igCardDraftNightly_');
+    ok('초안은 무료 모델 두 개만 쓴다(유료 금지)', ev(S.ctx, 'IG_CARD_MODELS_').join(',') === 'gemini-4-hydrogen,gemini-3.8-flash');
+    ok('실행 예산은 240초', ev(S.ctx, 'IG_CARD_TIME_BUDGET_MS_') === 240000);
+  }
+
+  /* ── 가짜 드라이브/시트 세계 ── */
+  function makeWorld(ctx) {
+    const files = new Map();
+    const iter = (arr) => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
+    class IFile {
+      constructor(name, text) {
+        this.id = 'if_' + Math.random().toString(36).slice(2);
+        this.name = name; this.text = String(text == null ? '' : text); this.trashed = false; this.updated = new Date();
+        files.set(this.id, this);
+      }
+      getId() { return this.id; }
+      getName() { return this.name; }
+      getSize() { return Buffer.byteLength(this.text, 'utf8'); }
+      getBlob() { const t = this.text; return { getDataAsString: () => t, getBytes: () => Array.from(Buffer.from(t, 'utf8')) }; }
+      setContent(t) { this.text = String(t); return this; }
+      setTrashed(v) { this.trashed = !!v; return this; }
+      isTrashed() { return this.trashed === true; }
+      getLastUpdated() { return this.updated; }
+    }
+    class IFolder {
+      constructor(name) { this.id = 'ifd_' + Math.random().toString(36).slice(2); this.name = name; this.files = []; this.folders = []; }
+      getId() { return this.id; }
+      getName() { return this.name; }
+      live() { return this.files.filter((f) => !f.trashed); }
+      getFiles() { return iter(this.live()); }
+      getFilesByName(n) { return iter(this.live().filter((f) => f.name === n)); }
+      getFoldersByName(n) { return iter(this.folders.filter((f) => f.name === n)); }
+      createFolder(n) { const f = new IFolder(n); this.folders.push(f); return f; }
+      createFile(a, content) { const f = (typeof a === 'string') ? new IFile(a, content) : new IFile(a.name, String(content)); this.files.push(f); return f; }
+      setSharing() { return this; }
+    }
+    const root = new IFolder('내 드라이브');
+    const payloadFolder = root.createFolder('payloads');
+    ctx.DriveApp = {
+      getRootFolder: () => root,
+      getFolderById: (id) => {
+        const walk = (folder) => { if (folder.id === id) return folder; for (const sub of folder.folders) { const hit = walk(sub); if (hit) return hit; } return null; };
+        const hit = walk(root);
+        if (!hit) throw new Error('폴더 없음: ' + id);
+        return hit;
+      },
+      getFileById: (id) => { if (!files.has(id)) throw new Error('파일 없음: ' + id); return files.get(id); }
+    };
+    return { root: root, files: files, payloadFolder: payloadFolder };
+  }
+
+  /** 40칸짜리 Contents 시트 — getValue/setValue 까지 흉내 낸다(칸을 새로 붙이는지 보려고). */
+  function makeSheet(header, rows, name) {
+    const values = [header.slice()].concat(rows.map((r) => header.map((k) => (r[k] === undefined ? '' : r[k]))));
+    return {
+      _values: values,
+      getName: () => name,
+      getLastRow: () => values.length,
+      getLastColumn: () => header.length,
+      getMaxRows: () => values.length,
+      getRange: (r, c, nr, nc) => ({
+        getValues: () => {
+          const out = [];
+          for (let i = 0; i < nr; i += 1) {
+            const src = values[r - 1 + i] || [];
+            const line = [];
+            for (let j = 0; j < nc; j += 1) line.push(src[c - 1 + j] === undefined ? '' : src[c - 1 + j]);
+            out.push(line);
+          }
+          return out;
+        },
+        setValues: (v) => {
+          v.forEach((line, i) => {
+            if (!values[r - 1 + i]) values[r - 1 + i] = [];
+            for (let j = 0; j < line.length; j += 1) values[r - 1 + i][c - 1 + j] = line[j];
+          });
+        },
+        getValue: () => { const line = values[r - 1] || []; return line[c - 1] === undefined ? '' : line[c - 1]; },
+        setValue: (v) => { if (!values[r - 1]) values[r - 1] = []; values[r - 1][c - 1] = v; }
+      }),
+      appendRow: (arr) => values.push(arr.slice())
+    };
+  }
+
+  const LOG_HEADER = ev(loadGas().ctx, 'SHEET_SCHEMAS').Channel_Logs;
+
+  /** 카드 5장 + 로그 시트를 가진 가짜 스프레드시트. payload 파일도 붙인다. */
+  function makeFixture(world, overrides) {
+    const payload1 = world.payloadFolder.createFile('payload_DY-1.json', JSON.stringify({ version: 1, blog: { body: '봉명동 삼겹살집. 대기 30분, 불판 교체가 잦다.' } }));
+    const payload2 = world.payloadFolder.createFile('payload_DY-2.json', JSON.stringify({ version: 1 }));
+    const base = { brand: 'daejeon_youth', version: 1, place_name: '미미삼겹', region_dong: '봉명동', category: '고기', target_keywords: '봉명동 맛집, 삼겹살', blog_title: '봉명동 삼겹살 후기', media_drive_url: '' };
+    const rows = [
+      Object.assign({}, base, { content_id: 'DY-1', status: 'DRAFT', ig_feed_status: 'queued', payload_file_id: payload1.id }),
+      Object.assign({}, base, { content_id: 'KM-1', brand: 'ppiyak_kimmary', place_name: '메리', status: 'DRAFT', ig_feed_status: 'queued', payload_file_id: payload2.id }),
+      Object.assign({}, base, { content_id: 'DY-2', status: 'REVIEW', ig_feed_status: 'draft_ready', ig_carousel_count: 6, payload_file_id: payload2.id }),
+      Object.assign({}, base, { content_id: 'DY-3', status: 'REVIEW', ig_feed_status: 'draft_ready', ig_carousel_count: 0, payload_file_id: payload2.id }),
+      Object.assign({}, base, { content_id: 'DY-4', place_name: '연락처 010-1234-5678 미미삼겹', status: 'DRAFT', ig_feed_status: 'queued', payload_file_id: payload2.id })
+    ];
+    (overrides || []).forEach((o) => {
+      const hit = rows.filter((r) => r.content_id === o.content_id)[0];
+      if (hit) Object.assign(hit, o);
+    });
+    const contents = makeSheet(HEADER, rows, 'Contents');
+    const logs = makeSheet(LOG_HEADER, [], 'Channel_Logs');
+    const sheets = { Contents: contents, Channel_Logs: logs };
+    return {
+      ss: { getSheetByName: (n) => sheets[n] || null, getSheets: () => Object.keys(sheets).map((k) => sheets[k]) },
+      contents: contents, logs: logs, payload1: payload1, payload2: payload2
+    };
+  }
+
+  /** 한 번의 실행 환경 — env 준비(키·과금인지)까지. */
+  function setUp(opts) {
+    const o = opts || {};
+    const g = loadGas();
+    const world = makeWorld(g.ctx);
+    const fx = makeFixture(world, o.rows);
+    if (o.key !== false) g.env.props.set('GEMINI_API_KEY', 'test-key');
+    if (o.ack !== false) g.env.props.set('GEMINI_BILLING_ACK_' + YM, '1');
+    g.env.setFetchReply(geminiReply(o.slides === undefined ? 6 : o.slides));
+    return { g: g, world: world, fx: fx };
+  }
+
+  const cellOf = (fx, contentId, colName) => {
+    const idIdx = HEADER.indexOf('content_id');
+    const colIdx = HEADER.indexOf(colName);
+    const line = fx.contents._values.filter((r) => String(r[idIdx]) === contentId)[0];
+    return line ? line[colIdx] : null;
+  };
+
+  /** Gemini 응답 — slides 개수를 바꿔 가며 쓴다. */
+  function geminiReply(slideCount, extra) {
+    const slides = [];
+    for (let i = 1; i <= (slideCount === undefined ? 6 : slideCount); i += 1) {
+      slides.push({ kicker: i === 1 ? '먼저 볼 것' : '메뉴', headline: '삼겹 ' + i + '장 요약', body: '보충 설명 ' + i });
+    }
+    return {
+      code: 200,
+      body: JSON.stringify({
+        candidates: [{ content: { parts: [{ text: JSON.stringify(Object.assign({
+          summary: '봉명동 삼겹살, 대기 30분이지만 다시 갈 집',
+          hook: '웨이팅 30분, 그래도 줄 서는 이유',
+          slides: slides,
+          caption: '봉명동에서 삼겹살 먹고 왔습니다.\n불판 교체가 잦아서 좋았어요.\n저장해 두세요.',
+          hashtags: ['봉명동맛집', '#삼겹살', '대전맛집']
+        }, extra || {})) }] } }],
+        usageMetadata: { totalTokenCount: 321 }
+      })
+    };
+  }
+
+  const runDraft = (ctx, ss, payload) => callHandler(ctx, 'handleIgCardDraftRun_', ss, payload || {});
+  const runReview = (ctx, ss, payload) => callHandler(ctx, 'handleIgCardReview_', ss, payload, { clientId: 'tester' });
+
+  /* 1. 키가 없으면 카드를 건드리지 않고 queued 로 둔다 */
+  {
+    const S = setUp({ key: false });
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    eq('키가 없으면 SKIPPED_NO_API_KEY', r.ok && r.data.status, 'SKIPPED_NO_API_KEY');
+    eq('키가 없으면 외부 호출 0회', S.g.env.fetched.length, 0);
+    eq('키가 없으면 카드는 queued 그대로', cellOf(S.fx, 'DY-1', 'ig_feed_status'), 'queued');
+  }
+
+  /* 2. 과금 인지 플래그가 없으면 부르지 않는다(0원 방어) */
+  {
+    const g = loadGas();
+    const world = makeWorld(g.ctx);
+    const fx = makeFixture(world);
+    g.env.props.set('GEMINI_API_KEY', 'test-key');
+    g.env.setFetchReply(geminiReply(6));
+    const r = runDraft(g.ctx, fx.ss, { content_id: 'DY-1' });
+    eq('과금 인지 없으면 SKIPPED_NO_BILLING_ACK', r.ok && r.data.status, 'SKIPPED_NO_BILLING_ACK');
+    eq('과금 인지 없으면 외부 호출 0회', g.env.fetched.length, 0);
+    eq('과금 인지 없으면 카드는 queued 그대로', cellOf(fx, 'DY-1', 'ig_feed_status'), 'queued');
+  }
+
+  /* 3. 정상 한 바퀴 — 선점 → 초안 → 드라이브 저장 → draft_ready/REVIEW */
+  {
+    const S = setUp();
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    ok('초안 만들기가 성공으로 돌아온다', r.ok && r.data.ok === true && r.data.drafted.length === 1 && r.data.drafted[0].content_id === 'DY-1', r.ok ? r.data : r);
+    eq('초안이 준비되면 draft_ready', cellOf(S.fx, 'DY-1', 'ig_feed_status'), 'draft_ready');
+    eq('카드 단계가 검수 대기(REVIEW)로 넘어간다', cellOf(S.fx, 'DY-1', 'status'), 'REVIEW');
+    eq('장 수를 ig_carousel_count 에 적는다', Number(cellOf(S.fx, 'DY-1', 'ig_carousel_count')), 6);
+    ok('드라이브 링크(media_drive_url)를 적는다', /^https:\/\/drive\.google\.com\/drive\/folders\//.test(String(cellOf(S.fx, 'DY-1', 'media_drive_url'))), cellOf(S.fx, 'DY-1', 'media_drive_url'));
+    eq('payload_file_id 는 있던 파일 그대로(새 파일을 만들지 않음)', cellOf(S.fx, 'DY-1', 'payload_file_id'), S.fx.payload1.id);
+    eq('Gemini 호출은 한 번', S.g.env.fetched.length, 1);
+    eq('트랙 B(김메리)는 초안을 만들지 않는다', cellOf(S.fx, 'KM-1', 'ig_feed_status'), 'queued');
+    eq('남은 queued 수를 돌려준다', r.ok && r.data.remaining_queued, 2);
+
+    const sent = S.g.env.fetched[0].body.contents[0].parts[0].text;
+    ok('프롬프트에 근거 글 발췌가 들어간다', /근거/.test(sent) && /봉명동 삼겹살집/.test(sent), sent.slice(0, 200));
+    ok('프롬프트가 지어내지 말라고 못 박는다', /없는 사실/.test(sent));
+    ok('응답 스키마를 slides 배열로 요청한다', (() => {
+      const b = S.g.env.fetched[0].body;
+      const props = b.generationConfig.responseSchema.properties;
+      return b.generationConfig.responseMimeType === 'application/json' && props.slides.type === 'ARRAY' && !!props.caption && !!props.hashtags;
+    })());
+
+    let savedDoc = null;
+    try { savedDoc = JSON.parse(S.world.files.get(S.fx.payload1.id).text); } catch (e) { savedDoc = null; }
+    ok('payload 에 ig_feed 초안을 남긴다(화면이 읽는 자리)', !!savedDoc && savedDoc.ig_feed && savedDoc.ig_feed.kind === 'ig_card_draft', savedDoc && Object.keys(savedDoc));
+    ok('초안 슬라이드 6장 · 캡션 · 해시태그', !!savedDoc && savedDoc.ig_feed.slides.length === 6 && !!savedDoc.ig_feed.caption && savedDoc.ig_feed.hashtags.length === 3, savedDoc && savedDoc.ig_feed && savedDoc.ig_feed.slides.length);
+    ok('해시태그는 # 붙은 모양으로 정리된다', !!savedDoc && savedDoc.ig_feed.hashtags.every((t) => /^#[0-9A-Za-z가-힣_]+$/.test(t)), savedDoc && savedDoc.ig_feed.hashtags);
+    ok('초안 본문(body)은 캡션과 같은 글(보드 요약 호환)', !!savedDoc && savedDoc.ig_feed.body === savedDoc.ig_feed.caption);
+    ok('초안에 3:4/4:5 비율 정보가 실린다', !!savedDoc && savedDoc.ig_feed.aspect === '4:5' && savedDoc.ig_feed.aspect_options.join(',') === '4:5,3:4');
+    ok('슬라이드마다 번호가 1부터 붙는다', !!savedDoc && savedDoc.ig_feed.slides.map((s) => s.no).join(',') === '1,2,3,4,5,6');
+    ok('초안 JSON 파일이 드라이브 폴더에 남는다(ig_card_draft.json)', (() => {
+      const uploads = S.world.root.folders.filter((f) => f.name === 'ContentHubOS_Uploads')[0];
+      if (!uploads) return false;
+      const cardFolder = uploads.folders.filter((f) => f.name === 'DY-1')[0];
+      return !!cardFolder && cardFolder.live().some((f) => f.name === 'ig_card_draft.json');
+    })());
+    ok('Channel_Logs 에 초안 기록을 남긴다', S.fx.logs._values.some((r) => r[4] === 'ig_card_draft' && r[2] === 'DY-1' && r[9] === 'OK' && r[3] === 'feed'));
+    eq('Contents 40칸을 유지한다(열을 붙이지 않음)', S.fx.contents._values.every((r) => r.length <= 40), true);
+  }
+
+  /* 4. 개인정보는 전송 전에 가린다 */
+  {
+    const S = setUp();
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-4' });
+    const sent = S.g.env.fetched[S.g.env.fetched.length - 1].body.contents[0].parts[0].text;
+    ok('휴대폰 번호는 전송 문장에서 가려진다', r.ok && sent.indexOf('010-1234-5678') === -1, sent.slice(0, 200));
+    ok('가려진 카드도 초안이 만들어진다', cellOf(S.fx, 'DY-4', 'ig_feed_status') === 'draft_ready');
+    ok('가린 사실을 초안 flags 에 남긴다', (() => {
+      try { return JSON.parse(S.world.files.get(S.fx.payload2.id).text).ig_feed.flags.pii_masked === true; } catch (e) { return false; }
+    })());
+  }
+
+  /* 5. 429 — 재시도 없이 멈추고 당일 잠금, 카드는 queued 로 복구 */
+  {
+    const g = loadGas();
+    const world = makeWorld(g.ctx);
+    const fx = makeFixture(world);
+    g.env.props.set('GEMINI_API_KEY', 'test-key');
+    g.env.props.set('GEMINI_BILLING_ACK_' + YM, '1');
+    g.env.setFetchReply({ code: 429, body: '{"error":{"status":"RESOURCE_EXHAUSTED"}}' });
+    const r1 = runDraft(g.ctx, fx.ss, { content_id: 'DY-1' });
+    eq('429 면 SKIPPED_429', r1.ok && r1.data.status, 'SKIPPED_429');
+    eq('429 는 재시도 없이 1회만 호출', g.env.fetched.length, 1);
+    eq('429 면 카드를 queued 로 되돌린다', cellOf(fx, 'DY-1', 'ig_feed_status'), 'queued');
+    eq('429 면 당일 잠금 플래그를 남긴다', g.env.props.get('GEMINI_EXHAUSTED_' + DAYC), '1');
+    const r2 = runDraft(g.ctx, fx.ss, { content_id: 'DY-1' });
+    eq('당일 잠금 뒤에는 부르지 않는다', g.env.fetched.length, 1);
+    eq('당일 잠금 뒤에도 SKIPPED_429', r2.ok && r2.data.status, 'SKIPPED_429');
+    ok('실패한 카드는 Channel_Logs 에 ERROR 로 남는다', fx.logs._values.some((r) => r[2] === 'DY-1' && r[9] === 'ERROR'));
+  }
+
+  /* 6. 슬라이드가 모자란 응답 — 초안으로 쓰지 않고 queued 복구 */
+  {
+    const S = setUp({ slides: 2 });
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    ok('슬라이드 3장 미만은 실패로 돌려준다', r.ok && r.data.failed.length === 1 && r.data.failed[0].code === 'ERR_IG_CARD_DRAFT_INVALID', r.ok && r.data.failed);
+    eq('해석 실패면 queued 로 되돌린다', cellOf(S.fx, 'DY-1', 'ig_feed_status'), 'queued');
+    eq('해석 실패면 장 수를 쓰지 않는다', String(cellOf(S.fx, 'DY-1', 'ig_carousel_count')), '');
+  }
+
+  /* 7. 개인정보 잔존 — 전송 자체를 막는다 */
+  {
+    const S = setUp();
+    const realScrub = S.g.ctx.aiBriefScrubPii_;
+    S.g.ctx.aiBriefScrubPii_ = () => ({ text: '***', blocked: true, remainingPatterns: ['rrn'] });
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    S.g.ctx.aiBriefScrubPii_ = realScrub;
+    ok('가릴 수 없는 개인정보는 BLOCKED 로 실패', r.ok && r.data.failed.length === 1 && r.data.failed[0].code === 'ERR_BLOCKED_PII', r.ok && r.data.failed);
+    eq('PII 차단이면 외부 호출 0회', S.g.env.fetched.length, 0);
+    eq('PII 차단이면 queued 그대로', cellOf(S.fx, 'DY-1', 'ig_feed_status'), 'queued');
+  }
+
+  /* 8. 일일 상한 · 모델 화이트리스트 */
+  {
+    const S = setUp();
+    S.g.env.props.set('IG_CARD_CNT_' + DAYC, '12');
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    eq('하루 12콜을 다 쓰면 SKIPPED_BUDGET', r.ok && r.data.status, 'SKIPPED_BUDGET');
+    eq('상한이면 외부 호출 0회', S.g.env.fetched.length, 0);
+    const bad = runDraft(S.g.ctx, S.fx.ss, { model: 'gpt-4o' });
+    eq('허용 밖 모델은 ERR_MODEL_NOT_ALLOWED', bad.code, 'ERR_MODEL_NOT_ALLOWED');
+    const badScope = runDraft(S.g.ctx, S.fx.ss, { scope: 'household' });
+    eq('다른 scope 는 거부(가계부를 건드리지 않는다)', badScope.code, 'ERR_SCOPE_NOT_ALLOWED');
+  }
+
+  /* 9. 선점 회수 — 멈춘 drafting 은 30분 뒤 되살리고, 방금 잡은 것은 건드리지 않는다 */
+  {
+    const S = setUp({ rows: [{ content_id: 'DY-1', ig_feed_status: 'drafting' }] });
+    S.g.env.props.set('IG_CARD_CLAIM_DY-1', String(Date.now()));
+    const r1 = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    eq('방금 선점한 drafting 은 다시 만들지 않는다', S.g.env.fetched.length, 0);
+    ok('진행 중(drafting)인 카드는 이번 차례에서 빠진다', r1.ok && r1.data.drafted.length === 0 && r1.data.status === 'NO_QUEUED', r1.ok && r1.data);
+    S.g.env.props.set('IG_CARD_CLAIM_DY-1', String(Date.now() - 31 * 60 * 1000));
+    const r2 = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    ok('30분 넘게 멈춘 drafting 은 회수해 다시 만든다', r2.ok && r2.data.drafted.length === 1, r2.ok && r2.data.drafted);
+    eq('회수한 카드는 draft_ready 가 된다', cellOf(S.fx, 'DY-1', 'ig_feed_status'), 'draft_ready');
+  }
+
+  /* 10. 승인 · 반려 (ig_card_review) */
+  {
+    const S = setUp();
+    const okApprove = runReview(S.g.ctx, S.fx.ss, { content_id: 'DY-2', decision: 'approve' });
+    ok('초안이 준비된 카드는 승인된다', okApprove.ok && okApprove.data.ig_feed_status === 'human_approved' && okApprove.data.previous === 'draft_ready', okApprove.ok ? okApprove.data : okApprove);
+    eq('시트에 human_approved 로 남는다', cellOf(S.fx, 'DY-2', 'ig_feed_status'), 'human_approved');
+    const again = runReview(S.g.ctx, S.fx.ss, { content_id: 'DY-2', decision: 'approve' });
+    ok('같은 승인을 다시 눌러도 실패하지 않는다(already)', again.ok && again.data.already === true, again.ok && again.data);
+    const reject = runReview(S.g.ctx, S.fx.ss, { content_id: 'DY-2', decision: 'reject', reason: '3장 가격이 틀렸어요' });
+    ok('승인한 초안도 반려하면 queued 로 돌아간다', reject.ok && reject.data.ig_feed_status === 'queued' && reject.data.previous === 'human_approved', reject.ok ? reject.data : reject);
+    eq('반려는 카드 단계(REVIEW)를 건드리지 않는다', cellOf(S.fx, 'DY-2', 'status'), 'REVIEW');
+    const notReady = runReview(S.g.ctx, S.fx.ss, { content_id: 'DY-2', decision: 'approve' });
+    eq('초안이 없는(queued) 카드는 승인할 수 없다', notReady.code, 'ERR_IG_CARD_NOT_READY');
+    const noDraft = runReview(S.g.ctx, S.fx.ss, { content_id: 'DY-3', decision: 'approve' });
+    eq('장 수가 0인 카드는 승인할 수 없다', noDraft.code, 'ERR_IG_CARD_NO_DRAFT');
+    const wrong = runReview(S.g.ctx, S.fx.ss, { content_id: 'DY-3', decision: 'ok' });
+    eq('decision 이 approve/reject 가 아니면 거부', wrong.code, 'ERR_VALIDATION_FAILED');
+    const missing = runReview(S.g.ctx, S.fx.ss, { decision: 'approve' });
+    eq('content_id 가 없으면 거부', missing.code, 'ERR_VALIDATION_FAILED');
+    const notFound = runReview(S.g.ctx, S.fx.ss, { content_id: 'NOPE', decision: 'approve' });
+    eq('없는 카드는 ERR_NOT_FOUND', notFound.code, 'ERR_NOT_FOUND');
+    ok('승인·반려도 Channel_Logs 에 남는다', S.fx.logs._values.some((r) => r[4] === 'ig_card_review' && r[9] === 'OK'));
+    ok('반려 사유는 초안 파일(ig_feed.review)에 남는다', (() => {
+      try {
+        const doc = JSON.parse(S.world.files.get(S.fx.payload2.id).text);
+        return doc.ig_feed && doc.ig_feed.review && doc.ig_feed.review.decision === 'reject' && /가격/.test(doc.ig_feed.review.reason);
+      } catch (e) { return false; }
+    })());
+  }
+
+  /* 11. 야간 트리거 등록·해제 · 자가진단(키 미노출) */
+  {
+    const g = loadGas();
+    const triggers = [];
+    const chain = (handler) => {
+      const api = {
+        timeBased: () => api, inTimezone: () => api, atHour: () => api, nearMinute: () => api,
+        everyDays: () => api, onWeekDay: () => api, onMonthDay: () => api, everyMinutes: () => api,
+        create: () => { triggers.push({ getHandlerFunction: () => handler }); }
+      };
+      return api;
+    };
+    g.ctx.ScriptApp = {
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: (t) => { const i = triggers.indexOf(t); if (i >= 0) triggers.splice(i, 1); },
+      newTrigger: (handler) => chain(handler),
+      WeekDay: { SUNDAY: 'SUNDAY' }
+    };
+    const first = g.ctx.installIgCardDraftTrigger();
+    ok('트리거 설치 — 02:30 Asia/Seoul 하루 한 번', first.installed === true && first.schedule === '02:30 Asia/Seoul' && triggers.length === 1);
+    const second = g.ctx.installIgCardDraftTrigger();
+    ok('두 번 실행해도 중복 설치하지 않는다', second.installed === false && second.note === 'already_exists' && triggers.length === 1);
+    const removed = g.ctx.removeIgCardDraftTrigger();
+    ok('해제하면 트리거가 사라진다', removed.removed === 1 && triggers.length === 0);
+    g.env.props.set('GEMINI_API_KEY', 'SECRET_SHOULD_NOT_LEAK');
+    const st = g.ctx.igCardSelfTest();
+    ok('자가진단은 키 값 없이 상태만 돌려준다', st.ok === true && st.has_api_key === true && JSON.stringify(st).indexOf('SECRET_SHOULD_NOT_LEAK') === -1, st);
+  }
 }
 
 console.log('\n' + (failed ? '❌ 실패 ' + failed + '건 / 통과 ' + passed + '건' : '✅ 전부 통과 ' + passed + '건'));

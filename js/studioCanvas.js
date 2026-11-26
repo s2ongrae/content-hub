@@ -1,7 +1,7 @@
 /**
- * js/studioCanvas.js — 인스타 4:5 카드 PNG 만들기 (2026-11-21, O1)
+ * js/studioCanvas.js — 인스타 카드 PNG 만들기 (2026-11-21, O1 · 3:4 프리셋 2026-11-26)
  *
- * 1080×1350 카드 6장을 브라우저 <canvas> 로 그린다. 서버·토큰 없음.
+ * 1080×1350(4:5, 기본) 또는 1080×1440(3:4) 카드를 브라우저 <canvas> 로 그린다. 서버·토큰 없음.
  *  · 사진은 로컬 Blob/ObjectURL 에서만 그린다 — 드라이브는 비공개라 <img> 로 못 쓴다(CSP img-src 'self').
  *  · 글꼴은 이 기기의 Pretendard → Apple SD Gothic → Noto Sans KR 순. 웹폰트를 새로 받지 않는다(CSP font-src 'self').
  *  · 보정 프리셋은 canvas filter 로만 건다 — 원본 파일은 건드리지 않는다.
@@ -13,6 +13,27 @@ import { PHOTO_WATERMARK_DEFAULT, watermarkPoint } from './designModel.js?v=2026
 export const CARD_W = 1080;
 export const CARD_H = 1350;
 export const CARD_RATIO = CARD_W / CARD_H;
+
+/**
+ * 카드 비율 프리셋 (2026-11-26) — 4:5 가 기본이고 3:4 를 고를 수 있다.
+ *  · 4:5  1080×1350 : 피드 기본(지금까지 만들던 카드)
+ *  · 3:4  1080×1440 : 세로가 길어 글자를 더 담고, 저장을 권하는 카드뉴스에 유리
+ * 부르는 쪽은 { aspect: '3:4' } 처럼 비율만 넘기면 된다(안 넘기면 4:5 — 기존 동작 그대로).
+ */
+export const CARD_PRESETS = [
+  { id: '4:5', label: '4:5', width: 1080, height: 1350, note: '피드 기본' },
+  { id: '3:4', label: '3:4', width: 1080, height: 1440, note: '세로로 길게' }
+];
+export const CARD_PRESET_DEFAULT = '4:5';
+
+/** 비율 아이디(또는 {aspect}) → 프리셋. 모르는 값은 기본(4:5). */
+export function cardPreset(idOrOpts) {
+  const raw = (typeof idOrOpts === 'string')
+    ? idOrOpts
+    : ((idOrOpts && (idOrOpts.aspect || idOrOpts.preset)) || '');
+  const id = String(raw || '').trim();
+  return CARD_PRESETS.find((p) => p.id === id) || CARD_PRESETS[0];
+}
 export const CARD_FONT = '"Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif';
 // 워터마크 기본값(2026-11-25) — 사진·카드뉴스에도 @s2ongrae 를 기본으로 넣는다(사용자 지시).
 export const CARD_WATERMARK_DEFAULT = PHOTO_WATERMARK_DEFAULT;
@@ -67,27 +88,31 @@ export const CARD_THEME = {
 function paintCard(canvas, card, image, opts) {
   const o = opts || {};
   const theme = o.theme || CARD_THEME.daejeon_youth;
+  if (!canvas || typeof canvas.getContext !== 'function') return false;
+  const size = o.size || cardPreset(o);
+  const W = size.width;
+  const H = size.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return false;
-  canvas.width = CARD_W;
-  canvas.height = CARD_H;
+  canvas.width = W;
+  canvas.height = H;
   const pad = 72;
   ctx.save();
   ctx.fillStyle = theme.bg;
-  ctx.fillRect(0, 0, CARD_W, CARD_H);
+  ctx.fillRect(0, 0, W, H);
 
-  const photoH = image ? Math.round(CARD_H * 0.58) : 0;
+  const photoH = image ? Math.round(H * 0.58) : 0;
   if (image && photoH) {
-    const r = coverRect(image.width, image.height, CARD_W, photoH);
+    const r = coverRect(image.width, image.height, W, photoH);
     ctx.filter = filterCss(o.filter);
-    try { ctx.drawImage(image, r.sx, r.sy, r.sw, r.sh, 0, 0, CARD_W, photoH); } catch (e) { /* 못 그리면 글자만 */ }
+    try { ctx.drawImage(image, r.sx, r.sy, r.sw, r.sh, 0, 0, W, photoH); } catch (e) { /* 못 그리면 글자만 */ }
     ctx.filter = 'none';
     // 사진 아래 그라데이션 — 글자와 사진 경계를 부드럽게
     const g = ctx.createLinearGradient(0, photoH - 160, 0, photoH);
     g.addColorStop(0, 'rgba(0,0,0,0)');
     g.addColorStop(1, theme.bg);
     ctx.fillStyle = g;
-    ctx.fillRect(0, photoH - 160, CARD_W, 160);
+    ctx.fillRect(0, photoH - 160, W, 160);
   }
 
   const top = image ? photoH + 34 : 120;
@@ -102,47 +127,48 @@ function paintCard(canvas, card, image, opts) {
   if (kicker) ctx.fillText(kicker, pad + 92, top + 2);
 
   // 헤드라인 — 2줄까지, 넘치면 글자를 줄인다
-  let size = 72;
+  let fontSize = 72;
   let lines = [];
-  while (size >= 40) {
-    ctx.font = '800 ' + size + 'px ' + CARD_FONT;
-    lines = splitLines(card.headline, Math.floor((CARD_W - pad * 2) / (size * 0.62)));
+  while (fontSize >= 40) {
+    ctx.font = '800 ' + fontSize + 'px ' + CARD_FONT;
+    lines = splitLines(card.headline, Math.floor((W - pad * 2) / (fontSize * 0.62)));
     if (lines.length <= 2) break;
-    size -= 6;
+    fontSize -= 6;
   }
   ctx.fillStyle = theme.ink;
-  lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, pad, top + 82 + i * (size + 10)));
+  lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, pad, top + 82 + i * (fontSize + 10)));
 
   // 본문 — 남은 높이만큼만
-  const bodyTop = top + 82 + Math.min(lines.length, 2) * (size + 10) + 26;
+  const bodyTop = top + 82 + Math.min(lines.length, 2) * (fontSize + 10) + 26;
   ctx.font = '500 36px ' + CARD_FONT;
   ctx.fillStyle = theme.sub;
   const bodyLines = splitLines(card.body, 28);
-  const maxLines = Math.max(1, Math.floor((CARD_H - bodyTop - pad - 40) / 54));
+  const maxLines = Math.max(1, Math.floor((H - bodyTop - pad - 40) / 54));
   bodyLines.slice(0, maxLines).forEach((l, i) => ctx.fillText(l, pad, bodyTop + i * 54));
 
   // 꼬리 — 저장 유도
   ctx.font = '600 28px ' + CARD_FONT;
   ctx.fillStyle = theme.accent;
-  ctx.fillText(o.brandName || '대전 청년', pad, CARD_H - pad - 20);
+  ctx.fillText(o.brandName || '대전 청년', pad, H - pad - 20);
 
   // 워터마크(2026-11-25) — 옅은 흰 글씨 + 얇은 그림자. 브랜드 이름과 반대쪽 모서리(기본 오른쪽 아래).
-  paintWatermark(ctx, o.watermark);
+  paintWatermark(ctx, o.watermark, size);
   ctx.restore();
   return true;
 }
 
-/** 카드 워터마크 자리(1080×1350) — designModel.watermarkPoint 를 카드 비율에 맞춰 쓴다. */
-export function cardWatermarkPoint(position) {
-  return watermarkPoint(position, { width: CARD_W, height: CARD_H, pad: 48, yTop: 54, yBottom: CARD_H - 54 });
+/** 카드 워터마크 자리 — designModel.watermarkPoint 를 카드 비율(기본 1080×1350)에 맞춰 쓴다. */
+export function cardWatermarkPoint(position, size) {
+  const s = size || { width: CARD_W, height: CARD_H };
+  return watermarkPoint(position, { width: s.width, height: s.height, pad: 48, yTop: 54, yBottom: s.height - 54 });
 }
 
-function paintWatermark(ctx, raw) {
+function paintWatermark(ctx, raw, size) {
   const wm = raw === false ? null : Object.assign({}, CARD_WATERMARK_DEFAULT, raw && typeof raw === 'object' ? raw : {});
   if (!wm || wm.enabled === false) return;
   const text = String(wm.text || '').trim();
   if (!text) return;
-  const p = cardWatermarkPoint(wm.position);
+  const p = cardWatermarkPoint(wm.position, size);
   ctx.save();
   ctx.font = '700 ' + (Number(wm.size) || 30) + 'px ' + CARD_FONT;
   ctx.textAlign = p.align;
@@ -161,6 +187,20 @@ export function drawCard(card, image, opts) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   return paintCard(canvas, card || {}, image || null, opts) ? canvas : null;
+}
+
+/**
+ * 인스타 카드뉴스 초안(draft.slides — {no,kicker,headline,body}) → 캔버스 카드 모양.
+ * 카드뉴스는 지금 사진 없이 글자만 그리므로(photo 키를 만들지 않는다) 있다가 없어도 그대로 돈다.
+ */
+export function cardsFromSlides(slides) {
+  const list = Array.isArray(slides) ? slides : [];
+  return list.map((s, i) => ({
+    no: Number(s && s.no) || i + 1,
+    kicker: String((s && s.kicker) || ''),
+    headline: String((s && s.headline) || ''),
+    body: String((s && s.body) || '')
+  }));
 }
 
 /** 캔버스 → PNG Blob. */
