@@ -275,7 +275,10 @@ const M1_HANDLERS = {
   ai_brief_latest: handleAiBriefLatest_,
   ai_brief_budget: handleAiBriefBudget_,
   // 오늘의 블로그 제목 10 (2026-11-21) — gas/BlogSeo.gs
-  blog_seo_titles: handleBlogSeoTitles_
+  blog_seo_titles: handleBlogSeoTitles_,
+  // 인스타 피드 카드뉴스 초안 (2026-11-26) — gas/IgCardDraft.gs
+  ig_card_draft_run: handleIgCardDraftRun_,
+  ig_card_review: handleIgCardReview_
 };
 
 function handleHealth_(ss, payload) {

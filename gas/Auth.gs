@@ -84,6 +84,10 @@ const ACTION_WHITELIST = {
   ai_brief_run:         { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   ai_brief_latest:      { mode: 'READ',  allowDegraded: true,  m1: true },
   ai_brief_budget:      { mode: 'READ',  allowDegraded: true,  m1: true },
+  // 인스타 피드 카드뉴스 초안 (2026-11-26, gas/IgCardDraft.gs) — 초안 만들기는 Gemini 외부 호출 → 라우터 락 없음.
+  //   승인·반려는 시트 두 칸 + 드라이브 메모라 라우터 락 대신 핸들러가 짧은 락을 직접 잡는다(드라이브 호출은 락 밖).
+  ig_card_draft_run:    { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  ig_card_review:       { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
   // 오늘의 블로그 제목 10 (2026-11-21, gas/BlogSeo.gs) — 데이터랩·블로그 검색을 부르므로 라우터 락 없음.
   //   오늘 줄이 이미 있으면 계산 없이 저장된 줄을 돌려준다(브리핑·화면이 같은 줄을 본다).
   blog_seo_titles:      { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
