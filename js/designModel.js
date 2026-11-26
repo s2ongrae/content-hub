@@ -77,7 +77,6 @@ export function clampNum(v, min, max, dflt) {
   if (!Number.isFinite(n)) return dflt;
   return Math.min(max, Math.max(min, n));
 }
-const round1 = (n) => Math.round(n * 10) / 10;
 const round2 = (n) => Math.round(n * 100) / 100;
 
 export function hexColor(v, dflt) {

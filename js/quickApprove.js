@@ -9,6 +9,7 @@
  */
 
 import { api } from './api.js';
+import { friendlyError } from './uiState.js?v=20261126a';
 
 const BRAND_EMOJI = { daejeon_youth: '🍺 대전 청년', ppiyak_kimmary: '🐱 김메리' };
 
@@ -88,8 +89,8 @@ export class QuickApproveView {
       this.render();
     } catch (err) {
       this.items = [];
-      this.countEl.textContent = '목록을 불러오지 못했습니다';
-      this.cardHost.appendChild(el('p', 'qa-empty', err.message || String(err)));
+      this.countEl.textContent = '목록을 불러오지 못했어요';
+      this.cardHost.appendChild(errorBox(this, err));
     }
   }
 
@@ -181,13 +182,9 @@ export class QuickApproveView {
       this.toast(`${item.place_name || item.content_id} → 발행 준비`, 'ok');
       this.onChanged();
     } catch (err) {
-      if (err.code === 'ERR_TOS_REVIEW_REQUIRED') {
-        this.toast('검수 기록이 필요해요. 검수 화면에서 체크리스트를 먼저 끝내 주세요.', 'err');
-      } else if (err.code === 'ERR_VERSION_CONFLICT') {
-        this.toast('다른 곳에서 먼저 수정됐습니다. 새로고침 후 다시 시도하세요.', 'err');
-      } else {
-        this.toast(`승인 실패: ${err.code || ''} ${err.message || ''}`, 'err');
-      }
+      this.toast(friendlyError(err), 'err');
+      // 다른 곳에서 먼저 고쳤으면 이 카드는 낡은 것이다 — 목록을 최신으로 다시 읽는다
+      if (err && err.code === 'ERR_VERSION_CONFLICT') this.reload();
     } finally {
       this.busy = false;
       this.actionBar.classList.remove('busy');
@@ -208,7 +205,7 @@ export class QuickApproveView {
       this.toast(`다시 쓰기: ${reason}`, 'ok');
       this.onChanged();
     } catch (err) {
-      this.toast(`되돌리지 못했어요: ${err.code || ''} ${err.message || ''}`, 'err');
+      this.toast(friendlyError(err), 'err');
     } finally {
       this.busy = false;
       this.actionBar.classList.remove('busy');
@@ -247,4 +244,24 @@ function el(tag, cls, text) {
   if (cls) node.className = cls;
   if (text != null) node.textContent = text;   // innerHTML 금지
   return node;
+}
+
+/** 목록을 못 읽었을 때 — 사람 말로 사유를 보여 주고 [다시 시도]를 붙인다. */
+function errorBox(view, err) {
+  const box = el('div', 'qa-errorbox');
+  box.style.cssText = 'margin:auto;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center;max-width:420px';
+  box.setAttribute('role', 'alert');
+  box.appendChild(el('p', 'qa-empty', friendlyError(err) || '목록을 불러오지 못했어요.'));
+  const retry = el('button', 'btn sm primary', '다시 시도');
+  retry.type = 'button';
+  retry.addEventListener('click', () => view.reload());
+  const board = el('button', 'btn sm', '현황 보기');
+  board.type = 'button';
+  board.addEventListener('click', () => { location.hash = '#/board'; });
+  const row = el('div', 'row');
+  row.style.justifyContent = 'center';
+  row.appendChild(retry);
+  row.appendChild(board);
+  box.appendChild(row);
+  return box;
 }

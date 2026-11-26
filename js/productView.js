@@ -20,6 +20,7 @@ import {
   SC_NOTICE_CLIP, CLIP_CHALLENGE_TAG, PRODUCT_TRACKS, normalizeTrack, trackRules, trackWarnings,
   dedupState, dedupKey, urlHash
 } from './productShorts.js?v=20261124v3';
+import { copyButton } from './clipboard.js?v=20261126a';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_FACTS = 'contenthub.product.facts.v1';
@@ -56,18 +57,6 @@ function writeDedup(brand, url, contentId, atIso) {
   const now = Date.now();
   Object.keys(map).forEach((k) => { if (!dedupState(map[k], now).blocked) delete map[k]; });
   try { localStorage.setItem(LS_DEDUP, JSON.stringify(map)); } catch (e) { /* 무시 */ }
-}
-
-/** 복사 버튼 하나 — 클립보드가 막힌 환경에서도 화면이 죽지 않게. */
-function copyButton(h, text, toast, label) {
-  const btn = h('button', { class: 'btn', type: 'button', text: label || '복사' });
-  btn.addEventListener('click', () => {
-    const done = () => toast((label || '복사') + ' 완료', 'ok');
-    const fail = () => toast('복사가 막혔습니다 — 길게 눌러 선택하세요', 'err');
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fail);
-    else fail();
-  });
-  return btn;
 }
 
 export function renderProductView(main, ctx) {

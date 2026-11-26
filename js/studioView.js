@@ -10,13 +10,14 @@
  * 렌더링은 textContent/createElement만(내부 원칙 동일).
  */
 
-import { loadFormulas, scoreHook, rankHooks, band } from './yt/hookscore.js';
+import { loadFormulas, rankHooks, band } from './yt/hookscore.js';
 import { lintPackage } from './yt/titlelint.js';
-import { buildEDL, edlToText } from './yt/edl.js';
+import { buildEDL, edlToText } from './yt/edl.js?v=20261126c';
 import { analyze, parseRows } from './yt/viral.js';
 import { loadPreset, pickPreset, buildScript, scriptToText } from './yt/preset.js';
 import { api } from './api.js';
 import { loadTriage, classifyComments, draftReply, pickPin } from './yt/comments.js';
+import { copyText } from './clipboard.js?v=20261126a';
 
 const mem = {
   hooks: [],
@@ -27,24 +28,6 @@ const mem = {
   viral: null,
   openPreset: false
 };
-
-function copyText(text, toast, label) {
-  const done = () => toast((label || '복사') + ' 완료', 'ok');
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done).catch(fallback);
-  } else fallback();
-  function fallback() {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); done(); } catch (e) { toast('복사에 실패했습니다 — 길게 눌러 선택하세요', 'err'); }
-    ta.remove();
-  }
-}
 
 function panel(h, title, sub) {
   return h('div', { class: 'panel' }, h('h3', null, title), sub ? h('p', { class: 'hint', text: sub }) : null);

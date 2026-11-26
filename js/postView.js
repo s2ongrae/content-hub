@@ -14,6 +14,7 @@
 
 import { postHref } from './channelView.js?v=20261123c';
 import { CHANNEL_LABEL, DONE_STATES, NO_METRIC_CHANNELS, trackChannelsOf } from './trackChannels.js?v=20261123c';
+import { loadingPanel, errorPanel, isDeployGap } from './uiState.js?v=20261126a';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const SOURCES = ['youtube', 'instagram', 'blog'];
@@ -237,7 +238,7 @@ export async function renderPostView(main, ctx) {
 
   const host = h('div');
   main.appendChild(host);
-  host.appendChild(h('div', { class: 'panel' }, h('p', { class: 'hint', text: '불러오는 중…' })));
+  host.appendChild(loadingPanel(h, '상세 숫자를 불러오는 중이에요…'));
 
   let d;
   try {
@@ -246,13 +247,13 @@ export async function renderPostView(main, ctx) {
   } catch (err) {
     if (location.hash !== hashAtStart) return;
     while (host.firstChild) host.removeChild(host.firstChild);
-    const code = err && err.code;
-    let text;
-    if (code === 'ERR_UNKNOWN_ACTION' || code === 'ERR_NOT_IMPLEMENTED') text = '상세 기능이 서버(Apps Script)에 아직 배포되지 않았어요. gas/PostDetail.gs 를 붙여 넣고 새 버전으로 배포하면 열립니다.';
-    else if (code === 'ERR_NOT_FOUND') text = '이 트랙에서 운영하지 않는 채널의 게시물이에요.';
-    else if (code === 'ERR_BLOG_SKIPPED') text = '이 트랙은 블로그를 운영하지 않아요.';
-    else text = ctx.friendlyError(err);
-    host.appendChild(infoPanel(ctx, '상세를 열지 못했어요', text));
+    host.appendChild(errorPanel(h, err, {
+      title: '상세를 열지 못했어요',
+      text: (err && err.code === 'ERR_NOT_FOUND') ? '이 트랙에서 운영하지 않는 채널의 게시물이에요.'
+        : (err && err.code === 'ERR_BLOG_SKIPPED') ? '이 트랙은 블로그를 운영하지 않아요.' : '',
+      hint: isDeployGap(err) ? 'gas/PostDetail.gs 를 붙여 넣고 새 버전으로 배포하면 이 화면이 열립니다.' : '연결이 돌아오면 다시 눌러 보세요.',
+      onRetry: () => { if (ctx.renderRoute) ctx.renderRoute(); }
+    }));
     return;
   }
   if (location.hash !== hashAtStart) return;               // 그 사이 다른 화면·다른 게시물로 이동했다

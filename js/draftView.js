@@ -13,6 +13,10 @@
 import { api } from './api.js';
 import { applyBlogRhythm } from './blogTone.js?v=20261124';
 import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261123c';
+import { copyText } from './clipboard.js?v=20261126a';
+
+/** 복사 문구 — 화면마다 새로 쓰던 것을 한 곳(js/clipboard.js)으로 모았다. */
+const COPY_LINE = { okText: '복사했어요 — 네이버·인스타에 붙여넣으면 됩니다', failText: '복사가 막혔어요 — 길게 눌러 직접 복사해 주세요' };
 
 
 /** 채널별 복사 문안 — 줄바꿈 규칙을 적용한다(사실·문장은 그대로, 배치만). */
@@ -98,25 +102,6 @@ export function draftPreview(payload, max = 90) {
     chars: chars(text),
     titleOnly: false
   };
-}
-
-async function copyText(text, toast) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('복사했어요 — 네이버·인스타에 붙여넣으면 됩니다', 'ok');
-    return;
-  } catch (e) { /* 아래 폴백 */ }
-  const box = document.createElement('textarea');
-  box.value = text;
-  box.setAttribute('readonly', '');
-  box.style.position = 'fixed';
-  box.style.opacity = '0';
-  document.body.appendChild(box);
-  box.select();
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-  box.remove();
-  toast(ok ? '복사했어요' : '복사가 막혔어요 — 길게 눌러 직접 복사해 주세요', ok ? 'ok' : 'err');
 }
 
 /* ─────────────────────────── 본체 ─────────────────────────── */
@@ -317,7 +302,7 @@ export function draftSection(ctx) {
          블로그 = 2~5줄 덩어리 · 빈 줄은 덩어리 사이에만 / 클립·쇼츠·릴스 = 제목·요약·정보·행동·해시태그 5블록 */
       row.appendChild(h('button', {
         class: 'btn sm primary', type: 'button', text: '본문 복사',
-        onclick: () => copyText(copyTextFor(c.key, title, body), toast)
+        onclick: () => copyText(copyTextFor(c.key, title, body), toast, COPY_LINE)
       }));
       const descIssues = (c.key !== 'blog' && c.key !== 'daangn') ? lintDesc(copyTextFor(c.key, title, body), c.key) : [];
       if (descIssues.length) {

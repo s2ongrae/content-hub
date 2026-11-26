@@ -18,23 +18,25 @@
  */
 
 import { api } from './api.js';
-import { openSeriesTab } from './seriesView.js';
-import { buildEDL } from './yt/edl.js?v=20261125k';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261125k';
+import { openSeriesTab } from './seriesView.js?v=20261126c';
+import { buildEDL } from './yt/edl.js?v=20261126c';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261126c';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
   isTerminalStatus, isNotDeployedCode, describeOrder, POLL_INTERVAL_MS, POLL_MAX_FAILS,
   cutsFromEdl, cutSummary, cutsForOrder, checkUploadFile, formatBytes,
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
-  MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_GAP_S, VOICE_LONG_WARN_S,
+  MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_LONG_WARN_S,
   PACE_IDS, PACE_LABELS, PACE_NOTES
-} from './produceLogic.js?v=20261125k';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261125k';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261125k';
-import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261125k';
-import { designPanel } from './designView.js?v=20261125k';
-import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261125k';
+} from './produceLogic.js?v=20261126c';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261126c';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261126c';
+import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261126c';
+import { designPanel } from './designView.js?v=20261126c';
+import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261126c';
+import { copyText } from './clipboard.js?v=20261126a';
+import { errorInfo } from './uiState.js?v=20261126a';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -363,22 +365,20 @@ export function produceSection(ctx) {
         poll.fails = 0; poll.halted = ''; poll.live = null;
         paintList();
       } catch (err) {
-        const code = err && err.code;
-        if (code === 'ERR_QUEUE_TYPE_UNKNOWN') {
+        const info = errorInfo(err);
+        if (info.code === 'ERR_QUEUE_TYPE_UNKNOWN') {
           showBanner('warn', '노트북 큐가 아직 영상 렌더를 몰라요.',
             '큐(Apps Script) 새 버전 배포가 먼저 필요해요. 오더는 만들어지지 않았어요. 배포 뒤 다시 눌러 주세요.');
-        } else if (code === 'ERR_VALIDATION_FAILED' || code === 'bad_request') {
-          showBanner('err', '입력을 확인해 주세요.', (err && err.message) || '');
-        } else if (code === 'ERR_NO_CONFIG') {
-          showBanner('err', '연결이 안 돼 있어요.', 'GAS 주소·토큰을 먼저 설정해 주세요.');
+        } else if (info.code === 'ERR_VALIDATION_FAILED' || info.code === 'BAD_REQUEST') {
+          showBanner('err', '입력을 확인해 주세요.', info.text);
         } else {
-          showBanner('err', '오더를 보내지 못했어요.', ((err && err.message) || '알 수 없는 오류') + ' — 잠시 뒤 다시 눌러 주세요.');
+          showBanner('err', '오더를 보내지 못했어요.', info.text + (info.retryable ? ' — 잠시 뒤 다시 눌러 주세요.' : ''));
         }
         sendBtn.textContent = opts.sendText;
         refresh();
       }
     });
-    copyBtn.addEventListener('click', () => { refresh(); copyText(isSendable(cur) ? JSON.stringify(Object.assign({ type: 'content_render' }, cur.built.payload), null, 2) : '', '오더 내용을 복사했어요'); });
+    copyBtn.addEventListener('click', () => { refresh(); copyLine(isSendable(cur) ? JSON.stringify(Object.assign({ type: 'content_render' }, cur.built.payload), null, 2) : '', '오더 내용을 복사했어요'); });
 
     const nodes = [
       warnHost,
@@ -420,21 +420,7 @@ export function produceSection(ctx) {
     class: 'btn sm', type: 'button', text: label,
     onclick: () => { openSeriesTab(tab); if (onNavigate) onNavigate('#/series'); else location.hash = '#/series'; }
   });
-  const copyText = (text, okMsg) => {
-    const done = () => toast(okMsg, 'ok');
-    const fallback = () => {
-      const ta = h('textarea', { readonly: true, style: 'position:fixed;opacity:0' });
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-      ta.remove();
-      if (ok) done(); else toast('복사가 막혔어요 — 길게 눌러 직접 복사해 주세요', 'err');
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
-    else fallback();
-  };
+  const copyLine = (text, okMsg) => copyText(text, toast, { okText: okMsg });
 
   /* ── ① 영상 올리기(구글 드라이브) ── */
   const up = { busy: false, cancel: false };
@@ -719,7 +705,7 @@ export function produceSection(ctx) {
     });
     const copyBtn = h('button', {
       class: 'btn sm', type: 'button', text: '카드 복사',
-      onclick: () => { if (!card.ok) { toast(card.error, 'err'); return; } copyText(card.text, () => toast('녹음 카드를 복사했어요 — 폰으로 붙여넣고 읽어 주세요', 'ok')); }
+      onclick: () => { if (!card.ok) { toast(card.error, 'err'); return; } copyText(card.text, toast, { okText: '녹음 카드를 복사했어요 — 폰으로 붙여넣고 읽어 주세요', failText: '복사가 막혔어요 — 길게 눌러 직접 복사해 주세요' }); }
     });
 
     const fileIn = h('input', { type: 'file', accept: '.m4a,.mp3,.wav,audio/mp4,audio/mpeg,audio/wav', class: 'pr-file', 'aria-label': '녹음 파일 고르기' });
@@ -1414,7 +1400,7 @@ export function produceSection(ctx) {
       h('strong', { text: required ? 'BGM 출처 표기가 필요해요 — ' : 'BGM 출처(표기 안 해도 되지만 넣어도 좋아요) — ' }),
       h('span', { text: required ? '영상 설명란에 아래 문구를 그대로 넣어 주세요(CC BY 라이선스 조건).' : '' }),
       h('code', { class: 'pr-credit', text: credit }),
-      h('div', { class: 'pr-row' }, h('button', { class: 'btn sm', type: 'button', text: '출처 문구 복사', onclick: () => copyText(credit, '출처 문구를 복사했어요') })));
+      h('div', { class: 'pr-row' }, h('button', { class: 'btn sm', type: 'button', text: '출처 문구 복사', onclick: () => copyLine(credit, '출처 문구를 복사했어요') })));
   }
 
   function bgmFinder() {

@@ -7,21 +7,22 @@
  */
 
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
+import { friendlyError, errorPanel, withBusy } from './uiState.js?v=20261126a';
 import { QuickApproveView } from './quickApprove.js';
-import { renderSeriesView } from './seriesView.js';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261123k';
-import { renderPostView } from './postView.js?v=20261123k';
+import { renderSeriesView } from './seriesView.js?v=20261126c';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261126c';
+import { renderPostView } from './postView.js?v=20261126c';
 import { trackChannelsOf } from './trackChannels.js?v=20261123k';
-import { renderLintView } from './lintView.js?v=20261124e';
+import { renderLintView } from './lintView.js?v=20261126c';
 import { loadDaangnSeed } from './daangnView.js?v=20261123k';
-import { getAnalytics } from './analyticsView.js?v=20261123k';
+import { getAnalytics } from './analyticsView.js?v=20261126c';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123k';
-import { renderCreateView } from './create-view.js?v=20261123k';
-import { renderCreateStudio } from './createStudio.js?v=20261126s1';
-import { renderProductView } from './productView.js?v=20261124v4';
-import { renderBlogView, loadBlogStats } from './blogView.js?v=20261123k';
-import { draftSection, draftPreview } from './draftView.js?v=20261123k';
-import { produceSection } from './produceView.js?v=20261126v1';
+import { renderCreateView } from './create-view.js?v=20261126c';
+import { renderCreateStudio } from './createStudio.js?v=20261126c';
+import { renderProductView } from './productView.js?v=20261126c';
+import { renderBlogView, loadBlogStats } from './blogView.js?v=20261126c';
+import { draftSection, draftPreview } from './draftView.js?v=20261126c';
+import { produceSection } from './produceView.js?v=20261126v8';
 import {
   LINK_CHANNELS, LINK_LABEL, parseLinkText, identifyChannel, matchesChannel,
   auditLinks, auditSummary, linkPatch, publishGuard
@@ -469,9 +470,13 @@ function renderBanners() {
       h('button', { class: 'ghost-btn sm', type: 'button', onclick: openSettings, text: '설정 열기' })));
   }
 
-  if (state.connError) {
-    host.appendChild(banner('danger', '⚠️', '서버 응답을 받지 못했습니다.',
-      friendlyError(state.connError)));
+  if (state.connError && (state.route || 'board') !== 'board') {
+    // 보드에서는 같은 사유를 큰 패널(errorPanel)이 이미 보여 준다 — 두 번 읽히지 않게 배너는 다른 화면에서만
+    host.appendChild(banner('danger', '⚠️', '서버 응답을 받지 못했습니다.', friendlyError(state.connError),
+      h('button', {
+        class: 'ghost-btn sm', type: 'button', text: '다시 시도',
+        onclick: () => { refresh().then(() => { renderRoute(); loadHealth(); }); }
+      })));
   }
 
   const needsHuman = state.contents.filter((c) => c.status === 'NEEDS_HUMAN').length
@@ -500,23 +505,6 @@ function banner(kind, ico, title, body, action) {
     h('span', { class: 'b-ico', text: ico }),
     h('div', null, h('strong', { text: title + ' ' }), h('span', { text: body })),
     action || null);
-}
-
-function friendlyError(err) {
-  if (!err) return '';
-  if (err instanceof ApiError) {
-    switch (err.code) {
-      case 'ERR_NO_CONFIG': return 'GAS URL/토큰이 설정되지 않았습니다. ⚙︎ → 연결에서 입력하세요.';
-      case 'ERR_UNAUTHORIZED': return '토큰이 맞지 않습니다. 시트 메뉴 → 2. API 토큰 확인에서 다시 복사하세요.';
-      case 'ERR_BAD_RESPONSE': return 'GAS가 JSON이 아닌 응답을 보냈습니다. 배포 액세스가 "모든 사용자"인지 확인하세요.';
-      case 'ERR_NETWORK': return '네트워크에 연결되지 않았거나 GAS 주소가 잘못됐습니다.';
-      case 'ERR_TIMEOUT': return '서버 응답이 너무 느립니다. 잠시 후 다시 시도하세요.';
-      case 'ERR_QUOTA_EXCEEDED': return '구글 사용량 한도를 넘었어요 — 60초 뒤 다시 시도해 주세요.';
-      case 'ERR_LINK_INCOMPLETE': return '아직 기록이 없는 채널이 있습니다 — 링크를 넣거나 [그래도 넘기기]를 눌러 주세요.';
-      default: return `${err.code || 'ERR'} · ${err.message || ''}`;
-    }
-  }
-  return err.message || String(err);
 }
 
 /* ────────────────────────── 라우터 ────────────────────────── */
@@ -592,6 +580,17 @@ function renderBoard(main) {
       h('p', { class: 'hint', text: '연결하면 실제 콘텐츠허브 시트를 읽어 보드를 그립니다. Web App URL(/exec)과 API 토큰은 ⚙︎ 설정에서 넣을 수 있습니다.' }),
       h('div', { class: 'row', style: 'margin-top:10px' },
         h('button', { class: 'btn sm primary', type: 'button', text: '설정 열기', onclick: openSettings }))));
+    return;
+  }
+
+  if (state.connError) {
+    main.appendChild(errorPanel(h, state.connError, {
+      title: '목록을 불러오지 못했어요',
+      hint: '연결이 돌아오면 보드가 바로 채워집니다. 위쪽 ⚙︎ 설정에서 주소·토큰도 확인할 수 있어요.',
+      onRetry: () => {
+        refresh().then(() => { renderRoute(); loadHealth(); });
+      }
+    }));
     return;
   }
 
@@ -1652,22 +1651,19 @@ function numInputRow(ctx, r, fields) {
       }
       items[f.key] = n;
     }
-    btn.disabled = true;
-    const label = btn.textContent;
-    btn.textContent = '저장 중…';
     try {
-      await api.recordMetrics({
-        items: [Object.assign({ content_id: contentId, channel: r.channel, snapshot: 'LATEST', measured_at: kstToday() }, items)]
-      }, api.createAction('metrics'));
-      toast(r.label + ' 숫자를 저장했어요', 'ok');
-      dlg.close();
-      await refresh();
-      renderRoute();
-      openDetail(contentId, 'ana');
+      await withBusy(btn, '저장 중…', async () => {
+        await api.recordMetrics({
+          items: [Object.assign({ content_id: contentId, channel: r.channel, snapshot: 'LATEST', measured_at: kstToday() }, items)]
+        }, api.createAction('metrics'));
+        toast(r.label + ' 숫자를 저장했어요', 'ok');
+        dlg.close();
+        await refresh();
+        renderRoute();
+        openDetail(contentId, 'ana');
+      });
     } catch (err) {
       toast(friendlyError(err), 'err');
-      btn.disabled = false;
-      btn.textContent = label;
     }
   });
   return row;
@@ -1687,21 +1683,19 @@ function daangnLinkRow(ctx, r) {
       input.focus();
       return;
     }
-    btn.disabled = true;
-    btn.textContent = '저장 중…';
     try {
-      const patch = { content_id: contentId, expected_version: d.version, daangn_url: url };
-      if (!r.status || r.status === 'PENDING') patch.daangn_status = 'UPLOADED';
-      await api.updateContent(patch, api.createAction('daangn'));
-      toast('당근 스토리 링크를 저장했어요', 'ok');
-      dlg.close();
-      await refresh();
-      renderRoute();
-      openDetail(contentId, 'ana');
+      await withBusy(btn, '저장 중…', async () => {
+        const patch = { content_id: contentId, expected_version: d.version, daangn_url: url };
+        if (!r.status || r.status === 'PENDING') patch.daangn_status = 'UPLOADED';
+        await api.updateContent(patch, api.createAction('daangn'));
+        toast('당근 스토리 링크를 저장했어요', 'ok');
+        dlg.close();
+        await refresh();
+        renderRoute();
+        openDetail(contentId, 'ana');
+      });
     } catch (err) {
       toast(friendlyError(err), 'err');
-      btn.disabled = false;
-      btn.textContent = '저장';
     }
   });
   return row;

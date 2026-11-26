@@ -8,6 +8,7 @@
 
 import { lintBlog, loadLintRules } from './blogLint.js?v=20261124b';
 import { analyzeCompliance, complianceLine, withDisclosureNote, stripProfitLinks, stripOwnMoney } from './blogCompliance.js?v=20261124b';
+import { friendlyError } from './uiState.js?v=20261126a';
 
 const DRAFT_KEY = 'contenthub.lint_draft.v1';
 /* 카드에서 불러온 값은 수동 초안과 섞지 않는다(수동 메모가 지워지지 않게 별도 키). */
@@ -362,9 +363,10 @@ export async function renderLintView(main, ctx) {
       else toast('이 카드에는 블로그 본문이 없어요 — 본문을 넣고 [이 카드에 본문 저장]을 누르세요', 'err');
     } catch (err) {
       if (seq !== loadSeq) return;
+      const why = friendlyError(err) || '카드를 불러오지 못했어요.';
       cardSel.value = '';
-      cardInfo.textContent = '카드를 불러오지 못했어요. 서버 연결을 확인해 주세요.';
-      toast('카드를 불러오지 못했어요 — 서버 연결을 확인해 주세요', 'err');
+      cardInfo.textContent = why + ' 카드를 다시 고르면 또 시도합니다.';
+      toast(why, 'err');
     }
   }
 
@@ -427,7 +429,7 @@ export async function renderLintView(main, ctx) {
       refreshCardBar();
       const code = err && err.code;
       if (code === 'ERR_VERSION_CONFLICT') toast('다른 곳에서 먼저 바뀌었어요 — 카드를 다시 불러온 뒤 저장해 주세요', 'err');
-      else toast((ctx.friendlyError && ctx.friendlyError(err)) || '저장하지 못했어요', 'err');
+      else toast(friendlyError(err) || '저장하지 못했어요', 'err');
     }
   }
 

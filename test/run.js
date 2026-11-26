@@ -450,7 +450,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('uploadVideo.js 코드 규칙: innerHTML 0건 · 주소·토큰 값 없음', !/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(uv) && !/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}/.test(uv));
     ok('uploadVideo.js 가 produceLogic 을 버전 쿼리로 부른다', /from '\.\/produceLogic\.js\?v=\d+[a-z]'/.test(uv));
     const pvSrc = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
-    ok('모든 produceLogic·uploadVideo·edl import 의 버전이 같다', (() => { const v = new Set(); [pvSrc, uv, fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8')].forEach((src) => { (src.match(/\.js\?v=(\d+[a-z])/g) || []).forEach((m) => v.add(m)); }); return v.size === 1; })());
+    ok('모든 produceLogic·uploadVideo·edl import 의 버전이 같다', (() => { const v = new Set(); [pvSrc, uv, fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8')].forEach((src) => { for (const m of src.matchAll(/(?:produceLogic|uploadVideo|yt\/edl)\.js\?v=(\d+[a-z])/g)) v.add(m[1]); }); return v.size === 1; })());
     ok('③ 화면이 컷 목록을 계산·저장하고 ④ 오더에 cuts 로 싣는다', /buildEDL\(/.test(pvSrc) && /cutsForOrder\(state, state\.inputs\)/.test(pvSrc) && /cuts: cr\.ok \? cr\.cuts : undefined/.test(pvSrc) && /s\.cut_list = list/.test(pvSrc));
     ok('서버가 컷을 접수하지 않았으면(옛 GAS) 경고가 남는다', /Number\(d\.cuts\) !== sentCuts/.test(pvSrc) && /if \(key === 'render' && renderWarn\) showBanner/.test(pvSrc));
     ok('컷이 잘못되면 오더 보내기 버튼이 막힌다', /isSendable\(cur\)/.test(pvSrc) && /sendBtn\.setAttribute\('disabled', ''\)/.test(pvSrc));
@@ -1111,7 +1111,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('studio: 사진 미리보기는 로컬 ObjectURL(드라이브 URL 을 img src 에 넣지 않는다)', /URL\.createObjectURL/.test(cs) && !/src.*drive\.google/.test(cs));
     ok('studio: 오더 보내기는 1회 1개로 잠긴다(mem.busy)', /mem\.busy\[key\]/.test(cs));
     ok('studio: hub_order_status 15초 폴링 · 탭 숨김이면 쉰다', /POLL_MS = 15000/.test(cs) && /document\.hidden/.test(cs) && /line\.isConnected/.test(cs));
-    ok('studio: 실패 문구 3종을 그대로 보여 준다', /ERR_VERSION_CONFLICT/.test(sl) && /시간 초과/.test(sl));
+    ok('studio: 실패 문구 3종은 js/uiState.js 한 곳에서 나온다', /shortErrorText/.test(sl) && /시간 초과/.test(fs.readFileSync(path.join(ROOT, 'js', 'uiState.js'), 'utf8')) && /동시 수정/.test(fs.readFileSync(path.join(ROOT, 'js', 'uiState.js'), 'utf8')));
     ok('studio: 예전 화면을 지우지 않았다(create-view 는 #/create/legacy 로 마운트)', fs.existsSync(path.join(ROOT, 'js', 'create-view.js')) && /create\/legacy/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')));
     ok('studio: 숏폼 공방(studioView.js)은 그대로 살아 있다', fs.existsSync(path.join(ROOT, 'js', 'studioView.js')) && /renderStudio/.test(fs.readFileSync(path.join(ROOT, 'js', 'seriesView.js'), 'utf8')));
     ok('studio: 영상 6단계를 마운트한다(produceSection)', /produceSection\(\{/.test(cs));
@@ -2547,6 +2547,212 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('모바일 블록이 실제로 파일에 있다(빈 규칙 아님)', mobile(css).length > 200 && mobile(studioCss).length > 100);
   } catch (err) {
     ok('4채널 링크·가드레일 시험', false, (err && err.stack) || err);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     [18] 공통 실패·기다림 안내 (js/uiState.js) · 중복 헬퍼 정리 (2026-11-26)
+     - 같은 실패가 화면마다 다른 말이거나 코드(ERR_XXX)로 보이던 것
+     - '불러오는 중…'·'읽는 중…' 이 제각각이던 것 → loadingPanel
+     - 버튼 잠금을 손으로 풀다 실패 뒤 원래 글자를 잃던 것 → withBusy
+     - 여섯 곳에 흩어져 있던 복사 헬퍼 → js/clipboard.js
+     ═══════════════════════════════════════════════════════════════════ */
+  console.log('[18] 공통 실패·기다림 안내 (js/uiState.js · js/clipboard.js)');
+  try {
+    const U = await import('file://' + path.join(ROOT, 'js', 'uiState.js'));
+    const CB = await import('file://' + path.join(ROOT, 'js', 'clipboard.js'));
+    const appSrc = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+    const qaSrc = fs.readFileSync(path.join(ROOT, 'js', 'quickApprove.js'), 'utf8');
+    const bvSrc = fs.readFileSync(path.join(ROOT, 'js', 'blogView.js'), 'utf8');
+    const postSrc = fs.readFileSync(path.join(ROOT, 'js', 'postView.js'), 'utf8');
+    const pvSrc2 = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
+    const apiSrc = fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8');
+    const uiSrc = fs.readFileSync(path.join(ROOT, 'js', 'uiState.js'), 'utf8');
+
+    /* ① 문장 — 코드가 아니라 사람 말 */
+    const loadFail = [];
+    for (const m of ['uiState', 'clipboard', 'seriesView', 'blogView', 'postView', 'lintView', 'perfView', 'analyticsView', 'productView', 'createStudio', 'draftView', 'studioView', 'produceView', 'quickApprove']) {
+      try { await import('file://' + path.join(ROOT, 'js', m + '.js')); } catch (e) { loadFail.push(m + ': ' + ((e && e.message) || e)); }
+    }
+    ok('바뀐 모듈 14개가 브라우저 없이도 짐을 싣는다(import 시점 오류 0)', loadFail.length === 0, loadFail.join(' | '));
+    const one = (c) => U.friendlyError({ code: c, message: '' });
+    ok('연결·시간·혼잡·한도 실패는 사람 말로 (코드가 문장에 없다)',
+      ['ERR_NETWORK', 'ERR_TIMEOUT', 'ERR_BUSY', 'ERR_RATE_LIMITED', 'ERR_QUOTA_EXCEEDED', 'ERR_NO_CONFIG', 'ERR_OFFLINE']
+        .every((c) => one(c).length > 8 && one(c).indexOf('ERR_') < 0), ['ERR_NETWORK', 'ERR_TIMEOUT', 'ERR_BUSY'].map(one));
+    ok('같은 실패는 어느 화면에서든 같은 문장', U.friendlyError({ code: 'ERR_TIMEOUT', message: 'x' }) === one('ERR_TIMEOUT') && U.friendlyError('ERR_TIMEOUT') === one('ERR_TIMEOUT'));
+    ok('서버가 사유를 준 입력 오류는 서버 문장을 그대로', /place_name/.test(U.friendlyError({ code: 'ERR_VALIDATION_FAILED', message: 'place_name 은 필수입니다.' })));
+    ok('모르는 코드 + 사유 없음 → 코드가 아니라 일반 안내', /알 수 없는 오류/.test(U.friendlyError({ code: 'ERR_WHAT_IS_THIS' })) && U.friendlyError({ code: 'ERR_WHAT_IS_THIS' }).indexOf('ERR_') < 0);
+    ok('빈 값은 빈 문장(토스트에 빈칸을 띄우지 않는다)', U.friendlyError(null) === '' && U.friendlyError(undefined) === '' && U.friendlyError('') === '');
+    ok('표에 넣은 문장은 모두 코드를 품지 않는다', Object.keys(U.ERROR_SENTENCE).every((c) => U.ERROR_SENTENCE[c].indexOf('ERR_') < 0 && U.ERROR_SENTENCE[c].length > 8));
+    ok('프런트가 직접 만드는 코드는 모두 표에 있다', ['ERR_NO_CONFIG', 'ERR_BAD_RESPONSE', 'ERR_TIMEOUT', 'ERR_NETWORK', 'ERR_OFFLINE', 'ERR_INTERNAL'].every((c) => !!U.ERROR_SENTENCE[c]));
+
+    /* ② 분류 — 재시도 · 미배포 · 입력 */
+    ok('미배포 코드 4가지 별칭은 재배포 안내 제목으로', ['ERR_NOT_IMPLEMENTED', 'ERR_UNKNOWN_ACTION', 'ERR_INVALID_ACTION', 'ERR_ACTION_NOT_ALLOWED'].every((c) => U.isDeployGap(c) && U.errorInfo({ code: c }).title === '서버 업데이트가 필요해요'));
+    ok('다시 시도: 연결·시간·혼잡·5xx 는 예, 입력·권한·미배포는 아니오',
+      ['ERR_NETWORK', 'ERR_TIMEOUT', 'ERR_BUSY', 'ERR_RATE_LIMITED', 'ERR_QUOTA_EXCEEDED', 'ERR_OFFLINE'].every((c) => U.isRetryable(c))
+      && U.isRetryable({ code: 'ERR_X', status: 503 })
+      && !U.isRetryable('ERR_VALIDATION_FAILED') && !U.isRetryable('ERR_UNAUTHORIZED') && !U.isRetryable('ERR_NOT_IMPLEMENTED') && !U.isRetryable('ERR_NOT_FOUND'));
+    ok('제목은 종류만 말한다(입력 · 연결)', U.errorInfo({ code: 'ERR_VALIDATION_FAILED' }).title === '입력을 확인해 주세요' && U.errorInfo({ code: 'ERR_NO_CONFIG' }).title === '연결을 확인해 주세요');
+    ok('스튜디오 짧은 문구 3종도 uiState 가 낸다', /시간 초과/.test(U.shortErrorText('ERR_TIMEOUT')) && /병합/.test(U.shortErrorText('ERR_VERSION_CONFLICT')) && /연결 또는 형식 오류/.test(U.shortErrorText('x')));
+
+    /* ③ 화면 조각 — 가짜 DOM 으로 실제 노드를 만든다 */
+    class N {
+      constructor(tag) {
+        this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.className = ''; this._text = '';
+        this.value = ''; this.hidden = false; this.disabled = false; this.isConnected = true; this.style = {};
+        const set = new Set();
+        this.classList = { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c), toggle: (c) => (set.has(c) ? (set.delete(c), false) : (set.add(c), true)) };
+      }
+      set textContent(v) { this._text = String(v); this.children = []; }
+      get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+      setAttribute(k, v) { this.attrs[k] = String(v); }
+      removeAttribute(k) { delete this.attrs[k]; }
+      hasAttribute(k) { return k in this.attrs; }
+      getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+      addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+      removeEventListener() {}
+      append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { textContent: String(k), tag: '#text', children: [] }; this.children.push(n); }); }
+      appendChild(k) { this.append(k); return k; }
+      replaceChildren(...kids) { this.children = []; this.append(...kids); }
+      querySelector() { return null; }
+      querySelectorAll() { return []; }
+      click() { (this.listeners.click || []).forEach((f) => f({ target: this, currentTarget: this })); }
+      focus() {}
+      select() {}
+      remove() {}
+    }
+    const hh = (tag, attrs, ...kids) => {
+      const n = new N(tag);
+      if (attrs) for (const [k, v] of Object.entries(attrs)) {
+        if (v == null || v === false) continue;
+        if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'style') n.setAttribute('style', v);
+        else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v);
+        else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+      }
+      n.append(...kids.flat(4).filter((k) => k != null && k !== false)); return n;
+    };
+    const textOf = (n) => String(n.textContent || '');
+    const findBtn = (node, label) => { let hit = null; (function w(n) { if (hit) return; if (n.tag === 'button' && String(n.textContent).indexOf(label) >= 0) { hit = n; return; } (n.children || []).forEach((c) => c && c.tag && w(c)); })(node); return hit; };
+    const hasClass = (node, cls) => { let hit = false; (function w(n) { if (hit) return; if ((n.className || '').split(/\s+/).indexOf(cls) >= 0) { hit = true; return; } (n.children || []).forEach((c) => c && c.tag && w(c)); })(node); return hit; };
+
+    const LP = U.loadingPanel(hh, '목록을 불러오는 중이에요…');
+    ok('기다림: role=status · aria-live · aria-busy 한 패널', LP.attrs.role === 'status' && LP.attrs['aria-live'] === 'polite' && LP.attrs['aria-busy'] === 'true' && /불러오는 중/.test(textOf(LP)));
+    ok('기다림: 기본은 스켈레톤 + 한 줄, 끄면 글자만', hasClass(LP, 'loading-skeleton') && !hasClass(U.loadingPanel(hh, 'x', { skeleton: false }), 'loading-skeleton'));
+
+    let tried = 0;
+    const EP = U.errorPanel(hh, { code: 'ERR_NETWORK' }, { title: '목록을 불러오지 못했어요', onRetry: () => { tried += 1; } });
+    const retryBtn = findBtn(EP, '다시 시도');
+    ok('실패: role=alert · 제목 · 사유 · [다시 시도] 한 버튼', EP.attrs.role === 'alert' && /목록을 불러오지 못했어요/.test(textOf(EP)) && /인터넷 연결/.test(textOf(EP)) && !!retryBtn);
+    if (retryBtn) retryBtn.click();
+    ok('[다시 시도]는 한 번 눌러 한 번 부른다', tried === 1, tried);
+    ok('화면 글자에는 코드가 없고, 툴팁에만 남는다', textOf(EP).indexOf('ERR_') < 0 && /ERR_NETWORK/.test(String((EP.children[0] || {}).attrs && EP.children[0].attrs.title)));
+    ok('입력 오류에는 [다시 시도]를 붙이지 않는다', !findBtn(U.errorPanel(hh, { code: 'ERR_VALIDATION_FAILED', message: 'place_name 은 필수입니다.' }, { onRetry: () => {} }), '다시 시도'));
+    ok('forceRetry 면 미배포에도 붙인다(시드 파일 다시 받기 같은 곳)', !!findBtn(U.errorPanel(hh, { code: 'ERR_NOT_IMPLEMENTED' }, { onRetry: () => {}, forceRetry: true }), '다시 시도'));
+    ok('추가 안내(hint)와 곁들일 버튼(extra)을 함께 그린다', /gas\/Blog\.gs/.test(textOf(U.errorPanel(hh, { code: 'ERR_NOT_IMPLEMENTED' }, { hint: 'gas/Blog.gs 를 배포하세요', extra: hh('button', { text: '관리 열기' }) }))) && !!findBtn(U.errorPanel(hh, { code: 'ERR_NOT_IMPLEMENTED' }, { extra: hh('button', { text: '관리 열기' }) }), '관리 열기'));
+
+    /* ④ 버튼 잠금 — 실패해도 원래 글자로 */
+    const btn = hh('button', { text: '변경' });
+    let inside = null;
+    await U.withBusy(btn, '저장 중…', async () => { inside = { disabled: btn.disabled, text: btn.textContent, rushing: btn.attrs['aria-busy'] }; });
+    ok('잠금: 누르는 동안 disabled + 다른 글자 + aria-busy', inside && inside.disabled === true && inside.text === '저장 중…' && inside.rushing === 'true', inside);
+    ok('잠금: 끝나면 원래 글자로(성공)', btn.disabled === false && btn.textContent === '변경' && btn.attrs['aria-busy'] === undefined);
+    let threw = false;
+    try { await U.withBusy(btn, '저장 중…', async () => { throw new Error('x'); }); } catch (e) { threw = true; }
+    ok('잠금: 실패해도 원래 글자로 되돌리고 오류는 그대로 던진다', threw && btn.disabled === false && btn.textContent === '변경');
+    ok('잠금: 동기 함수도 받는다', (await U.withBusy(hh('button', { text: 'a' }), 'b', () => 42)) === 42);
+
+    /* ⑤ 복사 — 한 곳에서 결과를 알린다 */
+    const prevNav = Object.getOwnPropertyDescriptor(global, 'navigator');
+    const prevDoc = global.document;
+    const got = [];
+    global.document = { createElement: (t) => new N(t), createTextNode: (t) => ({ tag: '#text', textContent: String(t), children: [] }), body: new N('body'), execCommand: () => true, addEventListener() {}, removeEventListener() {} };
+    Object.defineProperty(global, 'navigator', { value: { clipboard: { writeText: () => Promise.resolve() } }, configurable: true, writable: true });
+    CB.copyText('본문', (m, k) => got.push(k + '|' + m), '대본 복사');
+    await new Promise((r) => setTimeout(r, 10));
+    ok('복사: 성공하면 라벨 + 완료를 알린다', got[0] === 'ok|대본 복사 완료', got[0]);
+    got.length = 0;
+    Object.defineProperty(global, 'navigator', { value: { clipboard: { writeText: () => Promise.reject(new Error('denied')) } }, configurable: true, writable: true });
+    CB.copyText('본문', (m, k) => got.push(k + '|' + m), { label: '복사', failText: '복사가 막혔어요 — 길게 눌러 직접 복사해 주세요' });
+    await new Promise((r) => setTimeout(r, 10));
+    ok('복사: 막히면 textarea 로 한 번 더 시도하고 결과를 알린다', got[0] === 'ok|복사 완료', got[0]);
+    got.length = 0;
+    Object.defineProperty(global, 'navigator', { value: { clipboard: null }, configurable: true, writable: true });
+    global.document.execCommand = () => false;
+    CB.copyText('본문', (m, k) => got.push(k + '|' + m), { failText: '복사가 막혔어요' });
+    ok('복사: 끝내 막히면 조용히 넘어가지 않고 실패를 알린다', got[0] === 'err|복사가 막혔어요', got[0]);
+
+    /* ⑥ 승인 탭 — 실패에도 코드 대신 사유 + 다시 시도 (실제 클래스로) */
+    const QA = await import('file://' + path.join(ROOT, 'js', 'quickApprove.js'));
+    const apimod = await import('file://' + path.join(ROOT, 'js', 'api.js'));
+    const realList = apimod.api.listContents;
+    const realApprove = apimod.api.quickApprove;
+    const toasts2 = [];
+    const root = new N('div');
+    global.location = { hash: '#/approve' };
+    global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+    apimod.api.listContents = async () => { const e = new Error('Failed to fetch'); e.code = 'ERR_NETWORK'; throw e; };
+    const view = new QA.QuickApproveView(root, { toast: (m, k) => toasts2.push(k + '|' + m), onChanged() {} });
+    await view.mount();
+    ok('승인 탭: 못 읽으면 코드 대신 사유 + [다시 시도]', /인터넷 연결/.test(textOf(root)) && !!findBtn(root, '다시 시도') && textOf(root).indexOf('ERR_') < 0, textOf(root).slice(0, 120));
+    apimod.api.listContents = async () => ({ data: { items: [{ content_id: 'DY-1', place_name: '미미삼겹', quality_score: 88, blog_title: '제목', brand: 'daejeon_youth', blog_status: 'UPLOADED' }] } });
+    const retry2 = findBtn(root, '다시 시도');
+    if (retry2) retry2.click();
+    await new Promise((r) => setTimeout(r, 20));
+    ok('다시 시도하면 그 자리에서 목록이 채워진다', /승인할 원고 1건/.test(textOf(root)), textOf(root).slice(0, 120));
+    apimod.api.quickApprove = async () => { const e = new Error('검수 기록 없음'); e.code = 'ERR_TOS_REVIEW_REQUIRED'; throw e; };
+    toasts2.length = 0;
+    await view.approve();
+    ok('승인 실패도 같은 말로(코드 없이) — 검수 기록 안내', /검수 기록/.test(toasts2.join(' ')) && toasts2.join(' ').indexOf('ERR_') < 0, toasts2.join(' / '));
+    apimod.api.listContents = realList;
+    apimod.api.quickApprove = realApprove;
+    Object.defineProperty(global, 'navigator', prevNav || { value: undefined, configurable: true, writable: true });
+    global.document = prevDoc;
+
+    /* ⑦ 한 곳에서 나오는지(정적) — 화면마다 표를 다시 만들지 않았나 */
+    ok('app.js 는 자기 표를 버리고 uiState 를 쓴다', /from '\.\/uiState\.js\?v=\d+[a-z]'/.test(appSrc) && !/function friendlyError/.test(appSrc) && !/case 'ERR_NO_CONFIG': return/.test(appSrc));
+    ok('보드: 목록을 못 읽으면 빈 칸 6개 대신 사유 + [다시 시도]', /title: '목록을 불러오지 못했어요'/.test(appSrc) && /onRetry: \(\) => \{/.test(appSrc));
+    ok('상단 배너에도 [다시 시도]', /서버 응답을 받지 못했습니다/.test(appSrc) && /text: '다시 시도'/.test(appSrc));
+    ok('quickApprove 는 코드에서 문장을 만들지 않는다', /from '\.\/uiState\.js\?v=\d+[a-z]'/.test(qaSrc) && !/승인 실패: \$\{/.test(qaSrc) && !/err\.code \|\| ''/.test(qaSrc));
+    ok('blogView: 자기 blogErrorText 를 지우고 uiState 를 쓴다', /from '\.\/uiState\.js\?v=\d+[a-z]'/.test(bvSrc) && !/function blogErrorText/.test(bvSrc) && /text: '다시 시도'/.test(bvSrc));
+    ok('postView: 코드 분기 목록 대신 공통 분류(isDeployGap)·패널', /from '\.\/uiState\.js\?v=\d+[a-z]'/.test(postSrc) && /isDeployGap\(err\)/.test(postSrc) && /errorPanel\(h, err/.test(postSrc) && !/code === 'ERR_UNKNOWN_ACTION'/.test(postSrc));
+    ok('produceView·perf·analytics 도 같은 분류를 쓴다', /errorInfo\(err\)/.test(pvSrc2) && /from '\.\/uiState\.js\?v=\d+[a-z]'/.test(pvSrc2) && /isDeployGap\(status\)/.test(fs.readFileSync(path.join(ROOT, 'js', 'perfView.js'), 'utf8')) && /isDeployGap\(err\)/.test(fs.readFileSync(path.join(ROOT, 'js', 'analyticsView.js'), 'utf8')));
+    ok('화면 어디에도 "읽지 못했습니다(ERR_" 같은 코드 노출이 없다', !/읽지 못했습니다\(' \+/.test(fs.readFileSync(path.join(ROOT, 'js', 'perfView.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'js', 'analyticsView.js'), 'utf8')));
+    ok('produceLogic·studioLogic 의 기존 내보내기는 그대로, 목록만 한 곳으로', /export function isNotDeployedCode[\s\S]{0,80}isDeployGap/.test(fs.readFileSync(path.join(ROOT, 'js', 'produceLogic.js'), 'utf8')) && /export function errorText[\s\S]{0,80}shortErrorText/.test(uiSrc + fs.readFileSync(path.join(ROOT, 'js', 'studioLogic.js'), 'utf8')));
+
+    /* ⑧ 미사용 코드·중복 헬퍼 정리 */
+    ok('복사 구현은 js/clipboard.js 한 곳뿐', (fs.readdirSync(path.join(ROOT, 'js')).filter((f) => /\.js$/.test(f)).map((f) => fs.readFileSync(path.join(ROOT, 'js', f), 'utf8')).join('\n').match(/function copyText\(/g) || []).length === 1);
+    ok('복사 버튼도 한 곳뿐 · 쓰는 화면이 모두 그 모듈을 부른다', (fs.readdirSync(path.join(ROOT, 'js')).filter((f) => /\.js$/.test(f)).map((f) => fs.readFileSync(path.join(ROOT, 'js', f), 'utf8')).join('\n').match(/function copyButton\(/g) || []).length === 1
+      && ['createStudio.js', 'seriesView.js', 'studioView.js', 'draftView.js', 'productView.js', 'produceView.js'].every((f) => /from '\.\/clipboard\.js\?v=\d+[a-z]'/.test(fs.readFileSync(path.join(ROOT, 'js', f), 'utf8'))));
+    const unused = [];
+    for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter((x) => /\.js$/.test(x))) {
+      const src = fs.readFileSync(path.join(ROOT, 'js', f), 'utf8');
+      for (const m of src.matchAll(/^import \{([\s\S]*?)\} from/gm)) {
+        const body = src.slice(m.index + m[0].length);
+        for (const raw of m[1].split(',')) {
+          const name = raw.trim().split(/\s+as\s+/).pop().trim();
+          if (!name) continue;
+          if (!new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(body)) unused.push(f + ':' + name);
+        }
+      }
+    }
+    ok('쓰지 않는 import 0건(죽은 코드 정리)', unused.length === 0, unused.join(', '));
+    const brokenImports = [];
+    for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter((x) => /\.js$/.test(x))) {
+      const src = fs.readFileSync(path.join(ROOT, 'js', f), 'utf8');
+      for (const m of src.matchAll(/from '\.\/([^']+)\.js/g)) {
+        if (!fs.existsSync(path.join(ROOT, 'js', m[1] + '.js'))) brokenImports.push(f + ' → ' + m[1]);
+      }
+    }
+    ok('모든 import 가 실제 파일을 가리킨다(새 모듈 경로 오타 없음)', brokenImports.length === 0, brokenImports.join(', '));
+    const csSrc2 = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('죽은 코드 3개를 지웠다(photoCount · POLL_MAX · round1)', !/function photoCount/.test(csSrc2) && !/const POLL_MAX =/.test(csSrc2) && !/const round1 =/.test(fs.readFileSync(path.join(ROOT, 'js', 'designModel.js'), 'utf8')));
+
+    /* ⑨ api.js — 오프라인은 바로, 서버가 준 재시도 간격은 존중 */
+    ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
+    ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
+    ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v8/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+  } catch (err) {
+    ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

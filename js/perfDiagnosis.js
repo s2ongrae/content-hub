@@ -24,8 +24,9 @@
  * 화면은 createElement/textContent 만 쓴다(CSP — HTML 문자열 금지).
  */
 
-import { getAnalytics, waitAnalytics } from './analyticsView.js?v=20261123c';
+import { getAnalytics, waitAnalytics } from './analyticsView.js?v=20261126c';
 import { currentRows } from './channelView.js?v=20261123c';
+import { withBusy } from './uiState.js?v=20261126a';
 
 /* ───────────── 기준값(우리 기준) ───────────── */
 
@@ -520,27 +521,25 @@ function videoCard(h, ctx, v, basis, host) {
         toast('시청 지속(초)은 1~3600, 비율(%)은 0~100 사이로 넣어 주세요', 'err');
         return;
       }
-      btn.disabled = true;
-      btn.textContent = '저장 중…';
       try {
-        await api.recordMetrics({
-          items: [{
+        await withBusy(btn, '저장 중…', async () => {
+          await api.recordMetrics({
+            items: [{
+              content_id: v.content_id, channel: 'shorts', snapshot: 'LATEST',
+              avg_dwell_sec: sec, measured_at: kstToday()
+            }]
+          });
+          /* 방금 넣은 값을 화면 상태에도 반영한다(다음 새로고침 전까지). */
+          state.metrics = (state.metrics || []).concat([{
             content_id: v.content_id, channel: 'shorts', snapshot: 'LATEST',
-            avg_dwell_sec: sec, measured_at: kstToday()
-          }]
+            avg_dwell_sec: sec, views: 0, valid_views: 0, search_inflow_pct: 0,
+            likes_comments: 0, saves: 0, reward_krw: 0, measured_at: kstToday()
+          }]);
+          toast('저장 완료 · 평균 시청 지속 ' + sec + '초', 'ok');
+          if (host && host.isConnected) renderDiagnosisPanel(host, ctx, state.metrics);
         });
-        /* 방금 넣은 값을 화면 상태에도 반영한다(다음 새로고침 전까지). */
-        state.metrics = (state.metrics || []).concat([{
-          content_id: v.content_id, channel: 'shorts', snapshot: 'LATEST',
-          avg_dwell_sec: sec, views: 0, valid_views: 0, search_inflow_pct: 0,
-          likes_comments: 0, saves: 0, reward_krw: 0, measured_at: kstToday()
-        }]);
-        toast('저장 완료 · 평균 시청 지속 ' + sec + '초', 'ok');
-        if (host && host.isConnected) renderDiagnosisPanel(host, ctx, state.metrics);
       } catch (err) {
         toast(friendlyError ? friendlyError(err) : '저장하지 못했습니다', 'err');
-        btn.disabled = false;
-        btn.textContent = '넣기';
       }
     });
     card.appendChild(h('div', { style: 'display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap' },
