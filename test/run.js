@@ -2271,6 +2271,132 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('제목 3안·사진 메모 시험', false, (err && err.stack) || err);
   }
 
+  /* ────────────────────────── [18] cue2 QA 회귀 4건 (2026-11-26, Q-20261126-133038-86zu) ──────────────
+     ① fillStyleSlots — 이름표·번호로만 그 사진 자리에(앞 사진이 뒤 애드리브를 가져가지 않게, 중복 파일명)
+     ② buildStyleSkeleton·captionFor — 메모 > 직접 쓴 캡션 > 역할 추정(문서 BLOG_TITLE_PHOTO_MEMO_v1 과 통일)
+     ③ aside_chars(40) 상한 · memo 60자 코드포인트 경계(이모지 반토막 방지)
+     ④ fitTitle — 따옴표 짝·검색 키워드 보존·'대전' 중복 접두어 */
+  console.log('\n[18] cue2 QA 회귀 4건');
+  try {
+    const BS = await import('file://' + path.join(ROOT, 'js', 'blogStyle.js') + '?v=t18');
+    const SL = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=t18');
+    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'seeds', 'blog_style_dna_2026w48.json'), 'utf8'));
+    const build = (mats) => BS.renderStyleSkeleton(BS.buildStyleSkeleton({ materials: mats }));
+    const hasCap = (text, caption) => text.split('\n').some((l) => l === '▲ ' + caption);
+
+    /* ① 애드리브 — 이름표(또는 번호)로 그 사진 자리에만 */
+    const legacyMats = SL.normalizeMaterials({
+      place: { name: '미미삼겹' },
+      content: { region_dong: '봉명동', category: '고기집', memo: '📍 가게\n입구부터 줄이 있었습니다.\n\n🍴 먹은 것\n고기가 두툼했습니다.' },
+      concept: { kind: 'review' },
+      photos: [{ name: '1.jpg', role: '음식' }, { name: '2.jpg', role: '음식', memo: '사장님이 구워주심' }]
+    });
+    const legacyText = build(legacyMats);
+    ok('메모 없는 사진엔 옛 애드리브 자리, 메모 사진엔 이름표 붙은 자리',
+      legacyText.indexOf('⟦사진 애드리브 한 줄 (선택)⟧') >= 0 && legacyText.indexOf('⟦사진 애드리브 (사진 2)⟧') >= 0,
+      legacyText.split('\n').filter((l) => l.indexOf('⟦사진') === 0));
+    const legacyFilled = BS.fillStyleSlots(legacyText, { captions: [{ name: '2.jpg', aside: '집게 들 일이 없었다' }] });
+    ok('뒤 사진의 애드리브가 앞의 메모 없는 사진에 붙지 않는다(cue2 QA)',
+      legacyFilled.indexOf('(집게 들 일이 없었다)') >= 0
+      && (legacyFilled.match(/집게 들 일이 없었다/g) || []).length === 1
+      && legacyFilled.indexOf('▲ 불판 위 고기\n(') < 0,
+      legacyFilled.split('\n').filter((l) => l.charAt(0) === '(' || l.indexOf('▲') === 0));
+    ok('이름표가 붙은 애드리브는 그 사진 ▲ 바로 아래에 들어간다',
+      legacyFilled.indexOf('▲ 사장님이 구워주심\n(집게 들 일이 없었다)') >= 0);
+    ok('이름 없는 옛 결과는 예전처럼 순서대로(하위 호환)',
+      BS.fillStyleSlots(legacyText, { captions: [{ aside: '옛 방식 애드리브' }] }).indexOf('(옛 방식 애드리브)') >= 0);
+
+    /* 중복 파일명 — 덮어쓰지 않고 글 순서대로 하나씩 */
+    const dupMats = SL.normalizeMaterials({
+      place: { name: '가게' }, content: { memo: '📍 가게\n문단입니다.\n\n🍴 먹은 것\n문단 둘.' }, concept: { kind: 'review' },
+      photos: [{ name: '3.jpg', role: '음식', memo: '첫 사진 메모' }, { name: '3.jpg', role: '음식', memo: '둘째 사진 메모' }]
+    });
+    const dupFilled = BS.fillStyleSlots(build(dupMats), { captions: [{ name: '3.jpg', aside: '첫 애드리브' }, { name: '3.jpg', aside: '둘째 애드리브' }] });
+    ok('같은 파일명 두 장이어도 애드리브를 덮어쓰지 않는다(글 순서대로 하나씩)',
+      dupFilled.indexOf('▲ 첫 사진 메모\n(첫 애드리브)') >= 0 && dupFilled.indexOf('▲ 둘째 사진 메모\n(둘째 애드리브)') >= 0
+      && (dupFilled.match(/애드리브\)/g) || []).length === 2, dupFilled.split('\n').filter((l) => l.charAt(0) === '('));
+
+    /* AI 응답 순서가 뒤바뀌어도 이름표 자리에 */
+    const nameMats = SL.normalizeMaterials({
+      place: { name: '미미삼겹' }, content: { region_dong: '봉명동', category: '고기집', memo: '📍 가게\n입구부터 줄이 있었습니다.\n\n🍴 먹은 것\n고기가 두툼했습니다.' },
+      concept: { kind: 'review' },
+      photos: [{ name: '1.jpg', role: '외관' }, { name: '3.jpg', role: '음식', memo: '사장님이 구워주심' }, { name: '4.jpg', role: '음식', memo: '반찬 8가지' }]
+    });
+    const revFilled = BS.fillStyleSlots(build(nameMats), { captions: [{ name: '4.jpg', aside: '반찬이 여덟 가지' }, { name: '3.jpg', aside: '집게 들 일이 없었다' }] });
+    ok('AI 응답 순서가 뒤바뀌어도 이름표 자리에 들어간다',
+      revFilled.indexOf('▲ 사장님이 구워주심\n(집게 들 일이 없었다)') >= 0 && revFilled.indexOf('▲ 반찬 8가지\n(반찬이 여덟 가지)') >= 0,
+      revFilled.split('\n').filter((l) => l.charAt(0) === '('));
+    ok('사진 번호(number)로도 그 자리에 넣는다',
+      BS.fillStyleSlots(build(nameMats), { captions: [{ number: 3, aside: '번호로 찾은 애드리브' }] }).indexOf('(번호로 찾은 애드리브)') >= 0);
+
+    /* ② 메모 > 직접 쓴 캡션 > 역할 추정 (문서와 코드가 같다) */
+    const bothPhoto = { name: '9.jpg', role: '음식', caption: '직접 쓴 캡션', memo: '메모 사실' };
+    eq('captionFor: 메모가 직접 쓴 캡션보다 먼저(문서 BLOG_TITLE_PHOTO_MEMO_v1)', SL.captionFor(bothPhoto, legacyMats), '메모 사실');
+    eq('captionFor: 캡션만 있으면 캡션을 쓴다', SL.captionFor({ name: '9.jpg', role: '음식', caption: '직접 쓴 캡션' }, legacyMats), '직접 쓴 캡션');
+    const bothMats = SL.normalizeMaterials({ place: { name: '가게' }, content: { memo: '📍 가게\n문단입니다.' }, photos: [bothPhoto] });
+    ok('뼈대 ▲ 캡션도 메모가 이긴다', hasCap(build(bothMats), '메모 사실') && !hasCap(build(bothMats), '직접 쓴 캡션'),
+      build(bothMats).split('\n').filter((l) => l.indexOf('▲') === 0));
+    const bothKit = SL.buildBlogKit({ materials: bothMats });
+    eq('평문 키트 캡션도 뼈대와 같은 값', bothKit.captions[0].text, '메모 사실');
+    ok('메모로 만든 캡션은 자동이 아니다(AI 가 덮지 않는다)', bothKit.captions[0].auto === false);
+    const longMemoMats = SL.normalizeMaterials({
+      place: { name: '가게' }, content: { memo: '📍 가게\n문단입니다.' },
+      photos: [{ name: '7.jpg', role: '음식', memo: '가'.repeat(60) }]
+    });
+    const longMemoCap = build(longMemoMats).split('\n').filter((l) => l.indexOf('▲ ') === 0)[0].slice(2);
+    eq('60자 메모도 뼈대 ▲ 캡션과 평문 키트 캡션이 같은 값(42자에서 낱말 단위로 줄인다)',
+      longMemoCap, SL.buildBlogKit({ materials: longMemoMats }).captions[0].text);
+    ok('그 캡션이 42자 상한을 넘지 않는다', [...longMemoCap].length <= seed.caption.max_chars, longMemoCap);
+    const doc = fs.readFileSync(path.join(ROOT, 'docs', 'BLOG_TITLE_PHOTO_MEMO_v1.md'), 'utf8');
+    ok('문서에도 우선순위가 적혀 있다(메모 → 직접 쓴 캡션 → 역할 추정)', /메모[^\n]*캡션[^\n]*역할 추정/.test(doc));
+
+    /* ③ aside_chars 40 · memo 60자 코드포인트 경계 */
+    eq('애드리브 상한이 시드와 같다(40자)', seed.caption.aside_chars, BS.STYLE_DNA.caption.aside_chars);
+    const longAsideFill = BS.fillStyleSlots(legacyText, { captions: [{ name: '2.jpg', aside: '가'.repeat(60) }] });
+    const asideOne = longAsideFill.split('\n').filter((l) => l.charAt(0) === '(')[0] || '';
+    ok('긴 애드리브는 40자까지만 남긴다(괄호 포함 42자)', asideOne.length > 0 && [...asideOne].length <= BS.STYLE_DNA.caption.aside_chars + 2, asideOne);
+    const emojiMemo = '가'.repeat(59) + '😀' + '나';
+    const np = SL.normalizePhoto({ name: 'x.jpg', memo: emojiMemo });
+    ok('사진 메모 60자는 코드포인트 기준 — 이모지가 반으로 잘리지 않는다',
+      [...np.memo].length === 60 && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(np.memo) && [...np.memo].pop() === '😀', np.memo.slice(-3));
+    ok('이모지 40개 메모가 40자로 남는다(UTF-16 slice 는 30자에서 끊겼다)', [...SL.normalizePhoto({ name: 'x.jpg', memo: '😀'.repeat(40) }).memo].length === 40);
+    ok('뼈대 사진 메모도 60자 상한에서 이모지를 반토막 내지 않는다', (() => {
+      const bp = BS.buildStyleSkeleton({ materials: SL.normalizeMaterials({
+        place: { name: '가게' }, content: { memo: '문단' },
+        photos: [{ name: 'x.jpg', role: '음식', memo: '가'.repeat(59) + '😀' + '나' }]
+      }) });
+      const row = bp.photos.filter((p) => p.photo === 'x.jpg')[0] || {};
+      const m = String(row.memo || '');
+      return [...m].length === 60 && [...m].pop() === '😀' && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(m);
+    })());
+    ok('캡션으로 옮길 때도 42자 상한이 글자를 깨지 않는다', [...SL.captionFor({ name: 'x.jpg', memo: '😀'.repeat(60) }, legacyMats)].length === 42);
+
+    /* ④ fitTitle — 따옴표 짝·키워드 보존·'대전' 중복 */
+    const longMats = SL.normalizeMaterials({
+      place: { name: '미미삼겹 유성점 본점 별관 야외테라스' },
+      content: { region_dong: '봉명동', category: '고기집', price_menu: '냉삼 15,000원', memo: '본문' }, concept: { kind: 'review' }
+    });
+    const longT = SL.titleOptions(longMats, { photoCount: 4 });
+    ok('긴 재료도 55자를 넘지 않는다', longT.every((t) => [...t].length <= seed.title.max_chars), longT.map((t) => [...t].length));
+    ok('검색 키워드(지역·가게명)는 살아 있다', longT.every((t) => t.indexOf('미미삼겹 유성점 본점 별관 야외테라스') >= 0), longT);
+    ok('따옴표는 짝을 유지한다(홀수로 남지 않는다)', longT.every((t) => (t.match(/"/g) || []).length % 2 === 0), longT);
+    const quoteMats = SL.normalizeMaterials({
+      place: { name: '미미"삼겹 정말 길고 긴 이름 가게 본점 야외 테라스 자리' },
+      content: { region_dong: '봉명동', category: '고기집', memo: '본문' }, concept: { kind: 'review' }
+    });
+    const quoteT = SL.titleOptions(quoteMats, {});
+    ok('가게 이름에 따옴표가 섞여도 인용구 짝이 깨지지 않는다',
+      quoteT.every((t) => (t.match(/"/g) || []).length % 2 === 0) && quoteT.every((t) => [...t].length <= seed.title.max_chars), quoteT);
+    ok('이름 속 큰따옴표는 작은따옴표로 바꾼다(제목의 " 는 인용구 자리)',
+      quoteT.every((t) => t.indexOf("미미'삼겹") >= 0), quoteT);
+    const djT = SL.titleOptions(SL.normalizeMaterials({
+      place: { name: '미미삼겹' }, content: { region_dong: '대전 유성구', category: '고기집', memo: '본문' }, concept: { kind: 'review' }
+    }), {});
+    ok('동네가 이미 대전이면 접두어를 또 붙이지 않는다', djT.every((t) => t.indexOf('대전 대전') < 0) && djT[0].indexOf('[대전 유성구 고기집]') === 0, djT);
+  } catch (err) {
+    ok('cue2 QA 회귀 시험', false, (err && err.stack) || err);
+  }
+
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
   process.exit(failed ? 1 : 0);
 })();

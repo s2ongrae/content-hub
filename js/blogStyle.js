@@ -274,8 +274,15 @@ export function kindOf(conceptKind, hasPlace) {
 
 const cp = (s) => [...String(s == null ? '' : s)].length;
 
-/** 한 줄로 줄이기 — 캡션처럼 자리가 좁은 곳. 낱말 중간에서 자르지 않는다. */
-function clipLine(text, max) {
+/** 코드포인트로 자르기 — UTF-16 `slice` 는 이모지(서로게이트 페어)를 반으로 갈라 글자를 깬다. */
+export function clipChars(text, max) {
+  const chars = [...String(text == null ? '' : text)];
+  const n = Math.max(0, Number(max) || 0);
+  return chars.length <= n ? chars.join('') : chars.slice(0, n).join('');
+}
+
+/** 한 줄로 줄이기 — 캡션처럼 자리가 좁은 곳. 낱말 중간에서 자르지 않는다(허브·스튜디오가 같이 쓴다). */
+export function clipLine(text, max) {
   const chars = [...String(text == null ? '' : text).replace(/\s+/g, ' ').trim()];
   if (chars.length <= max) return chars.join('');
   const head = chars.slice(0, max).join('');
@@ -327,7 +334,8 @@ function planStylePhotos(photos, sectionCount, captionOf) {
     out.push({
       photo: p.name, role: role, section: section,
       caption: captionOf ? captionOf(p) : (p.caption || ''),
-      memo: String(p.memo || '').trim().slice(0, STYLE_DNA.caption.memo_max)
+      /* 60자 상한은 코드포인트 기준 — 이모지 경계에서 글자가 깨지지 않게(cue2 QA). */
+      memo: clipChars(String(p.memo || '').trim(), STYLE_DNA.caption.memo_max)
     });
   });
   return out;
@@ -448,10 +456,11 @@ export function buildStyleSkeleton(input) {
 
   let foodN = 0;
   const plan = planStylePhotos(photos, sections.length, (p) => {
-    if (String(p.caption || '').trim()) return String(p.caption).trim();
-    /* 사진 한 줄 메모(2026-11-25) — 내가 적은 사실이 역할 추정보다 먼저다. */
+    /* 캡션 우선순위(2026-11-26, cue2 QA — 문서 BLOG_TITLE_PHOTO_MEMO_v1 과 통일):
+       내가 적은 사실(memo) → 직접 쓴 캡션(caption) → 역할 추정. 메모가 이긴다. */
     const note = String(p.memo || '').trim();
     if (note) return clipLine(note, STYLE_DNA.caption.max_chars);
+    if (String(p.caption || '').trim()) return String(p.caption).trim();
     const role = p.role || '';
     if (role === '외관') return place ? place + ' 입구' : '가게 입구';
     if (role === '메뉴판') return '메뉴판 실물';
@@ -577,19 +586,30 @@ function titleSeed(text) {
   return h >>> 0;
 }
 
-/** 상한을 넘는 제목은 따옴표 안(펀치)부터 줄인다 — 지역·가게명(검색 키워드)은 살린다. */
+/** 상한을 넘는 제목은 따옴표 안(펀치)부터 줄인다 — 지역·가게명(검색 키워드)은 살린다.
+ *  · 따옴표가 **정확히 한 쌍**일 때만 안쪽을 줄인다. 가게 이름에 따옴표가 섞이면 짝이 깨진다(cue2 QA).
+ *  · 뒤에서 자를 때도 짝 없는 따옴표는 남기지 않고, 낱말·쉼표 중간에서 끝나지 않는다. */
 function fitTitle(text, max) {
+  const limit = Math.max(4, Number(max) || 55);
   const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
-  if (cp(t) <= max) return t;
-  const m = t.match(/^(.*?")([^"]*)(".*)$/);
-  if (m) {
-    const room = max - cp(m[1]) - cp(m[3]);
+  if (cp(t) <= limit) return t;
+  const first = t.indexOf('"');
+  const last = t.lastIndexOf('"');
+  if (first >= 0 && last > first && t.indexOf('"', first + 1) === last) {
+    const head = t.slice(0, first + 1);
+    const tail = t.slice(last);
+    const room = limit - cp(head) - cp(tail);
     if (room >= 8) {
-      const q = clipLine(m[2], room);
-      if (q) return m[1] + q + m[3];
+      const punch = t.slice(first + 1, last);
+      const q = clipLine(punch, room - 1);
+      /* 줄였다면 따옴표 안에 … 를 남겨 중간에서 끊긴 말처럼 보이지 않게. */
+      if (q && cp(q) >= 2) return head + q + (cp(q) < cp(punch) ? '…' : '') + tail;
     }
   }
-  return clipLine(t, max - 1) + '…';
+  let cut = clipLine(t, Math.max(2, limit - 1));
+  if ((cut.match(/"/g) || []).length % 2) cut = cut.slice(0, cut.lastIndexOf('"'));
+  cut = cut.replace(/[\s:·,;/\-–—]+$/, '').trim();
+  return (cut || clipLine(t, Math.max(1, limit - 1))) + '…';
 }
 
 /**
@@ -605,14 +625,17 @@ export function titleOptions(materials, opts) {
   const m = materials && typeof materials === 'object' ? materials : {};
   const c = (m.content && typeof m.content === 'object') ? m.content : {};
   const o = opts || {};
-  const place = String((m.place && m.place.name) || '').trim();
-  const dong = String(c.region_dong || '').trim();
-  const cat = String(c.category || '').trim();
+  /* 가게 이름·동네·종류에 섞인 큰따옴표는 작은따옴표로 바꿨다 — 제목의 큰따옴표는 인용구(펀치) 자리다.
+     이름에 " 가 섞이면 fitTitle 이 어느 따옴표가 짝인지 알 수 없어 제목이 중간에서 끊긴다(cue2 QA). */
+  const plain = (s) => String(s == null ? '' : s).replace(/["“”]/g, "'").replace(/\s+/g, ' ').trim();
+  const place = plain((m.place && m.place.name) || '');
+  const dong = plain(c.region_dong);
+  const cat = plain(c.category);
   const priceM = String(c.price_menu || '').match(/([0-9][0-9,]{2,})\s*원/);
   const price = priceM ? priceM[1] + '원' : '';
   const wait = String(c.wait_time || '').trim();
   const kind = String(o.kind || (m.concept && m.concept.kind) || 'review');
-  const topic = String(o.topic || '').trim();
+  const topic = plain(o.topic);
   /* 주제는 '가게 이름·주제' 칸(place)과 넘겨받은 topic 만 쓴다. 한 줄 지시(hint)는 제목 재료가 아니다. */
   const subject = place || topic || TITLE_FILL;
   const quotes = (T.quotes || [])
@@ -622,8 +645,15 @@ export function titleOptions(materials, opts) {
   if (!quotes.length) quotes.push('고기는 죄가 없다, 내 지갑이 얇을 뿐');
   const seed = titleSeed([place, dong, cat, kind, o.photoCount || ''].join('|'));
   const q = (n) => quotes[(seed + n) % quotes.length];
-  const prefix = (dong || cat)
-    ? '[' + [dong ? '대전 ' + dong : '대전', cat].filter(Boolean).join(' ') + ']'
+  /* 지역 접두어 — 동네가 이미 '대전 …'이면 또 붙이지 않는다('대전 대전 유성구' 방지, cue2 QA). */
+  const region = (() => {
+    const d = String(dong || '').trim().replace(/\s+/g, ' ');
+    if (!d) return '';
+    return /^대전/.test(d) ? d : '대전 ' + d;
+  })();
+  const catTag = (/^대전\s+/.test(cat) && /대전/.test(region)) ? cat.replace(/^대전\s+/, '') : cat;
+  const prefix = (region || catTag)
+    ? '[' + [region || '대전', catTag].filter(Boolean).join(' ') + ']'
     : '';
   const food = /(맛집|고기|삼겹|오겹|국밥|식당|분식|카페|커피|베이커리|한식|일식|중식|양식|술집|호프|포차|안주)/.test(cat + ' ' + place);
   const fact = price || wait;
@@ -631,7 +661,7 @@ export function titleOptions(materials, opts) {
   const two = fact
     ? subject + ', ' + fact + (food ? ' 먹고 ' : ' 쓰고 ') + '"' + q(1) + '"'
     : subject + (food ? ' 먹고 왔습니다 — "' : ' 이야기 — "') + q(1) + '"';
-  const three = '"' + q(2) + '" — ' + (dong ? dong + ' ' : '') + subject;
+  const three = '"' + q(2) + '" — ' + (String(dong || '').trim() ? String(dong).trim() + ' ' : '') + subject;
   const out = [one, two, three].map((t) => fitTitle(t, T.max_chars));
   /* 세 안이 같은 구조면(재료가 너무 적을 때만) 종류 이름으로 자리를 바꿔 준다. */
   const label = TITLE_KIND_LABEL[kind] || TITLE_KIND_LABEL.review;
@@ -832,7 +862,7 @@ export function qualityPromptLines(kind) {
 export function fillStyleSlots(text, draft) {
   let out = String(text == null ? '' : text);
   const d = draft || {};
-  const one = (s, max) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max || 200);
+  const one = (s, max) => clipChars(String(s == null ? '' : s).replace(/\s+/g, ' ').trim(), max || 200);
 
   const opener = one(d.opener, 120);
   if (opener) out = out.replace(new RegExp(SLOT_OPEN + '자기소개[^' + SLOT_CLOSE + ']*' + SLOT_CLOSE), opener);
@@ -842,29 +872,38 @@ export function fillStyleSlots(text, draft) {
   let pi = 0;
   out = out.replace(new RegExp(SLOT_OPEN + '판정[^' + SLOT_CLOSE + ']*' + SLOT_CLOSE, 'g'), (m) => (pi < punches.length ? punches[pi++] : m));
 
-  const asideSet = (Array.isArray(d.captions) ? d.captions : []).map((c) => (c && typeof c === 'object' ? c : {}));
+  /* 사진 애드리브 — 슬롯 라벨의 `(사진 N)` 번호와 바로 위 `[사진 N] 이름` 둘로 그 사진 자리에만 넣는다.
+     · 이름표가 먼저다(같은 파일명이 여럿이면 글에 나온 순서대로 하나씩 — 덮어쓰지 않는다).
+     · 이름이 없는 예전 결과만 순서 폴백(하위 호환) — 앞의 메모 없는 사진이 뒤 사진 애드리브를 가져가지 않는다(cue2 QA). */
+  const capName = (s) => String(s == null ? '' : s).trim().replace(/\\/g, '/').split('/').pop().toLowerCase();
+  const capChars = STYLE_DNA.caption.aside_chars;
   const asideByName = {};
+  const asideByNo = {};
   const looseAsides = [];
-  asideSet.forEach((c) => {
-    const v = one(c.aside, 120).replace(/^[(]|[)]$/g, '');
+  const takeAside = (q) => (Array.isArray(q) && q.length ? q.shift() : '');
+  (Array.isArray(d.captions) ? d.captions : []).forEach((raw) => {
+    const c = (raw && typeof raw === 'object') ? raw : {};
+    const v = clipLine(String(c.aside == null ? '' : c.aside).replace(/^[(]|[)]$/g, ''), capChars);
     if (!v) return;
-    const name = String(c.name || '').trim();
-    if (name) asideByName[name] = v;
-    looseAsides.push(v);
+    const no = String(c.number != null ? c.number : (c.photo_no != null ? c.photo_no : '')).trim();
+    const name = capName(c.name);
+    if (no) (asideByNo[no] = asideByNo[no] || []).push(v);
+    else if (name) (asideByName[name] = asideByName[name] || []).push(v);
+    else looseAsides.push(v);
   });
-  if (looseAsides.length) {
-    /* 애드리브 슬롯은 사진 바로 아래에 있다 — 바로 위 [사진 N] 이름으로 그 사진의 메모·캡션을 찾아 넣는다.
-       이름이 없는 예전 결과는 순서대로 채운다(하위 호환). */
-    let photoName = '';
-    let looseAt = 0;
+  if (Object.keys(asideByName).length || Object.keys(asideByNo).length || looseAsides.length) {
+    const nameByNo = {};
+    out.split('\n').forEach((line) => {
+      const m = line.match(/^\[사진\s+(\d+)\]\s*(.+)$/);
+      if (m) nameByNo[m[1]] = capName(m[2]);
+    });
     out = out.split('\n').map((line) => {
-      const mark = line.match(/^\[사진\s+\d+\]\s*(.+)$/);
-      if (mark) photoName = String(mark[1]).trim();
+      if (/^\[사진\s+\d+\]/.test(line)) return line;
       if (line.indexOf(SLOT_OPEN + '사진 애드리브') < 0) return line;
-      const aside = asideByName[photoName] || looseAsides[looseAt];
-      if (!aside) return line;
-      looseAt++;
-      return '(' + aside + ')';
+      const at = line.match(/사진\s*(\d+)/);
+      const no = at ? at[1] : '';
+      const aside = takeAside(asideByName[nameByNo[no] || '']) || takeAside(asideByNo[no]) || takeAside(looseAsides);
+      return aside ? '(' + aside + ')' : line;
     }).join('\n');
   }
 
