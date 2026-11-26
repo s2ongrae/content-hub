@@ -34,11 +34,20 @@ export const URL_COLUMN = {
 export const LINK_RULES = {
   blog: { label: '블로그', host: 'blog.naver.com', path: /^\/(?:PostView\.naver|[A-Za-z0-9_.-]+\/\d+)/ },
   shorts: { label: '쇼츠', host: 'youtube.com', path: /^\/(?:shorts\/|watch)/ },
-  reels: { label: '릴스', host: 'instagram.com', path: /^\/reels?\// },
-  clip: { label: '클립', host: 'clip.naver.com', path: null }
+  /* 릴스 — 앱·웹에서 주소를 복사하면 계정이 앞에 붙는다(instagram.com/{계정}/reel/…, …/{계정}/reels/…) */
+  reels: { label: '릴스', host: 'instagram.com', path: /^\/(?:[A-Za-z0-9_.]+\/)?reels?\// },
+  /* 클립 — 발급 주소가 clip.naver.com 이 아니라 naver.me 단축주소로 시트에 적혀 있다(2026-11-26 실 시트 9건) */
+  clip: { label: '클립', host: 'clip.naver.com', aliasHosts: ['naver.me'], path: null }
 };
 
-/** 경로 정규식이 없는 채널은 호스트만 본다(클립은 발급 주소가 /info·/shorts 등으로 갈린다) */
+/** 짧은 주소·모바일 주소 → 규칙의 주체 호스트(같은 채널로 본다) */
+const HOST_ALIAS = {
+  'm.youtube.com': 'youtube.com', 'music.youtube.com': 'youtube.com',
+  'm.blog.naver.com': 'blog.naver.com',
+  'naver.me': 'clip.naver.com', 'www.naver.me': 'clip.naver.com'
+};
+
+/** 경로 정규식이 없는 채널은 호스트만 본다(클립은 발급 주소가 /info·/shorts·naver.me 단축 코드로 갈린다) */
 const HOST_ONLY = ['clip.naver.com'];
 
 /** 'clip.naver.com/x' 처럼 스킴 없이 붙여넣은 값을 URL 로 만든다 */
@@ -65,13 +74,11 @@ export function identifyChannel(raw) {
   let hp;
   try { hp = hostPath(url); } catch (e) { return { ok: false, channel: '', url, label: '', reason: '주소 형식이 아닙니다' }; }
 
-  /* 유튜브는 짧은 주소(youtu.be)·모바일(m.youtube.com)·네이버 블로그는 m. 도 같은 채널로 본다 */
-  let host = hp.host;
-  if (host === 'm.youtube.com' || host === 'music.youtube.com') host = 'youtube.com';
-  if (host === 'm.blog.naver.com') host = 'blog.naver.com';
+  /* 유튜브는 모바일·뮤직, 네이버 블로그는 m., 클립은 naver.me 단축주소도 같은 채널로 본다 */
+  const host = HOST_ALIAS[hp.host] || hp.host;
 
-  /* 인스타는 /p/ 가 피드(카드뉴스), /reel/ 이 릴스 — 채널 표보다 먼저 가른다 */
-  if (host === 'instagram.com' && /^\/p\//.test(hp.path)) {
+  /* 인스타는 /p/ 가 피드(카드뉴스), /reel/ 이 릴스 — 채널 표보다 먼저 가른다(계정이 앞에 붙은 형태도) */
+  if (host === 'instagram.com' && /^\/(?:[A-Za-z0-9_.]+\/)?p\//.test(hp.path)) {
     return { ok: true, channel: 'feed', url, label: LINK_LABEL.feed, reason: '' };
   }
   const channel = Object.keys(LINK_RULES).filter((ch) => LINK_RULES[ch].host === host)[0] || '';
