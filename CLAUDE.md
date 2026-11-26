@@ -32,7 +32,8 @@
 | `index.html` | 앱 셸(CSP meta, 토큰 마스킹, 하단 탭 `data-route`). 스크립트는 `js/app.js?v=m2-1`, 빌드 표시는 `#build-label` |
 | `js/app.js` | 해시 라우터 · 브랜드 스위처 · 화면 6종(보드·승인·검수·취재·노하우·운영). 렌더링은 `textContent`/`createElement` 전용 |
 | `js/api.js` | GAS 호출(30s AbortController, 429/5xx만 3회 재시도, 멱등키, 미설정 시 `ERR_NO_CONFIG`) |
-| `js/quickApprove.js` | 폰 10초 승인 카드 스택 |
+| `js/quickApprove.js` | 폰 10초 승인 카드 스택. **인스타 카드뉴스 초안(2026-11-26)** — `ig_feed_status='draft_ready'` 카드는 `🖼️ 인스타 카드뉴스 N장`으로 뜨고, 4:5/3:4 미리보기·드라이브 링크와 함께 [카드뉴스 승인](human_approved)/[다시 쓰기](queued)를 `ig_card_review`로 보낸다 |
+| `gas/IgCardDraft.gs` | **인스타 피드 카드뉴스 초안(2026-11-26, 1차 MVP)** — 밤 02:30 한 번, `ig_feed_status='queued'` 카드를 `drafting`으로 선점하고 무료 Gemini로 슬라이드·캡션·해시태그 초안 JSON을 만들어 드라이브(`payload.ig_feed` + `ContentHubOS_Uploads/<content_id>/ig_card_draft.json`)에 저장한 뒤 `draft_ready`·`REVIEW`. 실패하면 `queued` 복구·`Channel_Logs`. **새 파일이라 Apps Script 에 파일 추가 후 새 버전 배포** · `docs/IG_CARD_NEWS_v1.md` |
 | `js/trackChannels.js` · `js/channelView.js` · `js/postView.js` | 채널 드릴다운 — 트랙별 운영 채널 상수(`seeds/track_channels.json` 사본, 시험이 3곳 대조) · `#/perf` 유튜브·인스타 서브탭 · `#/post` 상세. `docs/CHANNEL_DRILLDOWN_v1.md` |
 | `js/igAudit.js` · `seeds/ig_audit_rules.json` | **인스타 계정 100점 진단(2026-11-23)** — `#/perf` 인스타 탭 맨 아래 카드. 프로필을 긁지 않고 사람이 넣은 값만 채점하고, 게시일(`published_at`)이 있으면 최근 게시일·30일 편수를 미리 채운다. 값은 브라우저 `localStorage`에만. `docs/IG_AUDIT_v1.md` |
 | `gas/PostDetail.gs` | `get_post_detail` · `upsert_media_meta` · `list_media_meta` + `Media_Meta` 시트(첫 올리기 때 자동 생성). 배포는 새 파일 추가 후 새 버전 |
