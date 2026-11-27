@@ -17,7 +17,7 @@
  *    — 드라이브는 비공개라 <img src> 에 넣으면 CSP(img-src 'self')와 인증 때문에 엑스박스가 된다.
  */
 
-import { UPLOAD_PART_BYTES, checkUploadFile, checkVoiceFile } from './produceLogic.js?v=20261127a';
+import { UPLOAD_PART_BYTES, checkUploadFile, checkVoiceFile } from './produceLogic.js?v=20261127b';
 import { FONT_MAX_BYTES, FONT_EXT_RE, checkFontFile, checkFontLicense } from './designModel.js?v=20261127a';
 
 const CHUNK_TIMEOUT_MS = 120000;

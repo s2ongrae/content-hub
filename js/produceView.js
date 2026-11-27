@@ -7,6 +7,8 @@
  *    (자막 번인 + TTS 내레이션 + 현장음 -15dB 덕킹 — docs/FINAL_RENDER_v1.md). 클린 마스터는 늘 함께 남는다.
  *  · ① 은 영상을 구글 드라이브(비공개 폴더)에 올린다(js/uploadVideo.js → gas/Upload.gs). 노트북이 렌더할 때 받아 간다.
  *  · ③ 은 타임코드 대본에서 컷 목록(무음·추임새·재시도)을 계산해 켜고 끌 수 있게 하고, ④ 오더에 cuts 로 실어 노트북이 실제로 자른다.
+ *    2026-11-27(시각 타임라인 v1): 같은 목록을 영상을 보며 in/out 드래그로 고치고, 컷마다 클립(영상)을 바꾸고,
+ *    재생 위치의 자막을 미리보기 위에 겹쳐 본다. 값은 cut_list 하나이고 오더는 지금까지의 cuts 계약 그대로다.
  *  · ④ 는 노트북에 영상 렌더 오더(hub_order · content_render)를 보낸다. 승인(15분) 뒤에만 실행된다.
  *    보낸 뒤에는 hub_order_status(읽기 전용)로 15초마다 진행 상태를 가져와 보여 준다(종료 상태·화면 이탈·탭 숨김이면 멈춤).
  *  · ⑤ 는 클린 마스터의 말소리를 Whisper 로 받아 쓴 초안(srt_draft)을 사람이 고쳐 확정(srt_final)한다. ⑥ 은 그 자막을 굽고 BGM·커버를 만든다(_finish.mp4).
@@ -19,8 +21,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js?v=20261126c';
-import { buildEDL } from './yt/edl.js?v=20261127a';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261127a';
+import { buildEDL } from './yt/edl.js?v=20261127b';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261127b';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -29,11 +31,13 @@ import {
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_LONG_WARN_S,
   PACE_IDS, PACE_LABELS, PACE_NOTES
-} from './produceLogic.js?v=20261127a';
+} from './produceLogic.js?v=20261127b';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261127c';
 import { readStudio, mergeFormat } from './studioLogic.js?v=20261127c';
 import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261126c';
 import { designPanel } from './designView.js?v=20261127c';
+import { timelinePanel } from './timelineView.js?v=20261127a';
+import { clipNameOf } from './timeline.js?v=20261127a';
 import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261127a';
 import { copyText } from './clipboard.js?v=20261126a';
 import { errorInfo } from './uiState.js?v=20261126a';
@@ -595,7 +599,7 @@ export function produceSection(ctx) {
 
   /* ── ③ 컷 목록 ── */
   const cutMem = { src: '', floor: '0.6', srcLen: null };   // 붙여 넣은 자막은 이 화면에서만 들고 있다(서버·저장소에 남기지 않는다)
-  const CUT_LABEL = { DEAD: '무음', FILLER: '추임새', REPEAT: '재시도' };
+  const CUT_LABEL = { MANUAL: '직접', DEAD: '무음', FILLER: '추임새', REPEAT: '재시도' };
   function bodyCuts(box) {
     const ta = h('textarea', {
       class: 'pr-ta', rows: '6', spellcheck: 'false', autocomplete: 'off', 'aria-label': '타임코드 대본',
@@ -607,6 +611,16 @@ export function produceSection(ctx) {
     const msg = h('div', { class: 'pr-err', role: 'alert' });
     const sumHost = h('div', { class: 'pr-banner', role: 'status', 'aria-live': 'polite' });
     const listHost = h('div', { class: 'pr-cutlist' });
+
+    /* 시각 타임라인 작업공간(2026-11-27, A단계) — 영상을 보며 끌어 자른다.
+     *  · 값은 state.cut_list 하나(이 표·대본 계산과 같은 목록)다. 타임라인에서 고치면 표가, 표에서 고치면 타임라인이 다시 그려진다.
+     *  · 확정 자막(⑤ srt_final)을 자막 트랙으로 읽어 재생 위치에 맞춰 겹쳐 보여 준다. */
+    const tl = timelinePanel({
+      h, state, change, toast, brand, inputs: state.inputs,
+      cues: cardCaptions,
+      loadCueText: async () => { const a = await getAsset('srt_final'); return a && a.exists ? String(a.text || '') : ''; },
+      onListChanged: () => { paintCuts(); }
+    });
 
     function paintSummary() {
       const sm = cutSummary(state.cut_list, cutMem.srcLen);
@@ -625,9 +639,11 @@ export function produceSection(ctx) {
       state.cut_list.forEach((c, i) => {
         const cb = h('input', { type: 'checkbox', 'aria-label': (i + 1) + '번 구간 자르기' });
         cb.checked = c.on !== false;
-        cb.addEventListener('change', () => { change((s) => { s.cut_list[i].on = cb.checked; }); paintSummary(); });
+        cb.addEventListener('change', () => { change((s) => { s.cut_list[i].on = cb.checked; }); paintSummary(); tl.refresh(); });
+        const clipName = state.inputs.length > 1 ? clipNameOf(c, state.inputs, state.cut_input) : '';
         tb.appendChild(h('tr', null,
-          h('td', null, cb), h('td', { text: CUT_LABEL[c.type] || c.type }),
+          h('td', null, cb),
+          h('td', null, h('span', { text: CUT_LABEL[c.type] || c.type }), clipName ? h('span', { class: 'pr-check-s', text: clipName }) : null),
           h('td', { text: c.from.toFixed(2) + ' → ' + c.to.toFixed(2) }), h('td', { text: (c.to - c.from).toFixed(2) })));
       });
       t.appendChild(tb);
@@ -650,14 +666,17 @@ export function produceSection(ctx) {
         change((s) => { s.cut_list = list; s.cuts = false; });
         paintCuts();
         paintStates();
+        tl.refresh();
       }
     });
     const clearBtn = h('button', {
       class: 'btn sm', type: 'button', text: '목록 지우기',
-      onclick: () => { change((s) => { s.cut_list = []; s.cuts = false; }); cutMem.srcLen = null; msg.textContent = ''; paintCuts(); paintStates(); }
+      onclick: () => { change((s) => { s.cut_list = []; s.cuts = false; }); cutMem.srcLen = null; msg.textContent = ''; paintCuts(); paintStates(); tl.refresh(); }
     });
 
     const kids = [
+      note('영상을 열고 그 자리에서 끌어 자르면 컷 목록(아래 표)에 바로 들어가요. 반대로 대본으로 만든 목록도 타임라인에 그대로 보여요. 시간은 원본 영상 기준이에요.'),
+      tl.el,
       note('원본 영상의 자막(SRT)이나 타임코드 대본을 넣으면 무음·추임새·재시도 구간을 초 단위로 뽑아 줘요. 끄고 싶은 구간은 체크를 풀어요. ④에서 노트북이 켜 둔 구간을 실제로 잘라요.'),
       h('div', { class: 'pr-warnbox' }, h('strong', { text: '시간은 원본 영상 기준이에요. ' }),
         h('span', { text: '이미 한 번 편집한 영상의 자막을 넣으면 엉뚱한 곳이 잘려요. 가장 위(①)에서 올린 원본의 자막을 쓰세요.' }))
@@ -667,9 +686,9 @@ export function produceSection(ctx) {
         h('option', { value: '', text: '어느 영상의 자막인가요?' }),
         ...state.inputs.map((n) => h('option', { value: n, text: n })));
       sel.value = state.inputs.indexOf(state.cut_input) >= 0 ? state.cut_input : '';
-      sel.addEventListener('change', () => { change((s) => { s.cut_input = sel.value; }); });
+      sel.addEventListener('change', () => { change((s) => { s.cut_input = sel.value; }); tl.refresh(); });
       kids.push(h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '컷을 적용할 영상' }), sel),
-        note('영상이 여러 개면 컷은 고른 영상 하나에만 적용돼요. 다른 영상의 컷은 영상마다 따로 계산해야 해서 지금은 지원하지 않아요.'));
+        note('영상이 여럿이면 대본으로 뽑은 컷은 여기서 고른 영상 하나에 적용돼요. 타임라인에서는 컷마다 영상을 따로 고를 수 있어요.'));
     }
     kids.push(
       h('label', { class: 'pr-field' }, h('span', { class: 'pr-label', text: '타임코드 대본' }), ta),
