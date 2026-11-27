@@ -2098,6 +2098,68 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 사진만 있을 때는 예전처럼 3장을 본다(로직은 mvMediaPlan)', /mvMediaPlan\(\{ images: photos, clips: clipList\(\) \}\)/.test(csSrc));
     ok('화면: 새 코드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=/.test(dgSrc) && !/\.innerHTML\s*=/.test(csSrc));
     ok('새 코드에 주소·토큰 값이 없다', !/script\.google\.com\/macros/.test(dgSrc.replace(/\/\*[\s\S]*?\*\//g, '')) && !/script\.google\.com\/macros/.test(fs.readFileSync(path.join(ROOT, 'js', 'designModel.js'), 'utf8')) && !/99090545329f/.test(dgSrc + csSrc));
+
+    /* 화면 스모크 — 가짜 DOM 으로 글자 디자인 패널을 실제로 그려 보고, 폰트 칸과 올리기 판을 열어 본다.
+     *  (정의 안 된 이름·append(null)·목록 렌더 오류를 실행으로 잡는다) */
+    {
+      class Node {
+        constructor(tag) { this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.style = {}; this.className = ''; this._text = ''; this.value = ''; this.checked = false; this.files = null; this.isConnected = true; }
+        set textContent(v) { this._text = String(v); this.children = []; }
+        get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+        setAttribute(k, v) { this.attrs[k] = String(v); }
+        removeAttribute(k) { delete this.attrs[k]; }
+        getAttribute(k) { return this.attrs[k] === undefined ? null : this.attrs[k]; }
+        addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+        removeEventListener() {}
+        append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { tag: '#text', textContent: String(k), children: [] }; this.children.push(n); }); }
+        appendChild(k) { this.append(k); return k; }
+        replaceChildren(...kids) { this.children = []; this.append(...kids); }
+        querySelector() { return null; }
+        querySelectorAll() { return []; }
+        getContext() { return new Proxy({}, { get: (t, k) => (k === 'measureText' ? () => ({ width: 10 }) : () => {}) }); }
+        getBoundingClientRect() { return { left: 0, top: 0, width: 360, height: 640 }; }
+        setPointerCapture() {} closest() { return null; } remove() {} focus() {} select() {}
+        click() { (this.listeners.click || []).forEach((f) => f({ target: this })); }
+      }
+      const prevDoc = global.document;
+      global.document = { createElement: (t) => new Node(t), createTextNode: (t) => ({ tag: '#text', textContent: String(t), children: [] }), addEventListener() {}, removeEventListener() {} };
+      try {
+        const DH = await import('file://' + path.join(ROOT, 'js', 'designView.js') + '?v=p0dom');
+        const state = { design: dm.normalizeDesign({ roles: { caption: { font: 'Miryung-Bold.otf' } } }) };
+        const fonts = [
+          { name: 'Miryung-Bold.otf', label: 'Miryung-Bold', license: 'OFL-1.1', parts: 1, bytes: 10, complete: true },
+          { name: 'Awoo.ttf', label: 'Awoo', license: 'CC0-1.0', parts: 1, bytes: 10, complete: true }
+        ];
+        // api.post 는 font_list 만 빈 목록을 돌려준다(미리보기 파일 받기는 이 시험에서 안 한다)
+        const stubApi = { post: async (action) => ({ data: action === 'font_list' ? { items: fonts } : {} }) };
+        const panel = DH.designPanel({ h: (tag, attrs, ...kids) => {
+          const n = new Node(tag);
+          if (attrs) for (const [k, v] of Object.entries(attrs)) {
+            if (v == null || v === false) continue;
+            if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'style') n.setAttribute('style', v);
+            else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v); else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+          }
+          n.append(...[].concat(kids).flat(4).filter((k) => k != null && k !== false)); return n;
+        }, state, change: (fn) => fn(state), toast() {}, contentId: 'C-1', api: stubApi, cues: [], size: 68, duration: 10, hookEnd: 0, brandBadge: true });
+        const walk = (n, f) => { f(n); (n.children || []).forEach((c) => c && c.tag && walk(c, f)); };
+        const junk = []; walk(panel, (n) => { if (n.tag === '#text' && /^(null|undefined|false|NaN)$/.test(n.textContent)) junk.push(n.textContent); });
+        ok('화면 스모크: 글자 디자인 패널이 오류 없이 그려지고 빈 값 글자가 없다', panel && junk.length === 0, junk.join(','));
+        const sels = []; walk(panel, (n) => { if (n.tag === 'select' && /폰트/.test(n.getAttribute('aria-label') || '')) sels.push(n); });
+        ok('화면 스모크: 지금 역할(자막)의 폰트 칸이 그려진다', sels.length >= 1 && sels[0].children.length >= 2, sels.length);
+        const openBtn = []; walk(panel, (n) => { if (n.tag === 'button' && /내 폰트 올리기/.test(n.textContent || '')) openBtn.push(n); });
+        ok('화면 스모크: [＋ 내 폰트 올리기] 버튼이 있다', openBtn.length >= 1);
+        openBtn[0].click();
+        const licSel = []; walk(panel, (n) => { if (n.tag === 'select' && /라이선스/.test(n.getAttribute('aria-label') || '')) licSel.push(n); });
+        ok('화면 스모크: 올리기 판이 열리고 라이선스는 허용 6종만 고를 수 있다', licSel.length === 1 && licSel[0].children.length === 6);
+        const chk = []; walk(panel, (n) => { if (n.tag === 'input' && n.getAttribute('type') === 'checkbox') chk.push(n); });
+        ok('화면 스모크: 확인 체크·파일 고르기·올리기 버튼이 함께 있다', chk.length >= 1 && /보관함에 올리기/.test((() => { let t = ''; walk(panel, (n) => { if (n.tag === 'button') t += n.textContent + '|'; }); return t; })()));
+        // 파일을 안 골랐는데 누르면 토스트만 나고 바뀌는 것은 없다
+        const before = JSON.stringify(state.design.roles.caption.font);
+        const upBtn = []; walk(panel, (n) => { if (n.tag === 'button' && /보관함에 올리기/.test(n.textContent || '')) upBtn.push(n); });
+        await upBtn[0].listeners.click[0]({ target: upBtn[0] });
+        ok('화면 스모크: 파일 없이 올리기를 누르면 그대로 둔다', JSON.stringify(state.design.roles.caption.font) === before);
+      } finally { global.document = prevDoc; }
+    }
   } catch (err) {
     ok('커스텀 폰트·MV 영상 컷 시험', false, (err && err.stack) || err);
   }
