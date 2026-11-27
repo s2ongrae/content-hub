@@ -2733,6 +2733,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('사진 정리 버튼도 히트 영역 44px(썸네일을 다 덮지 않게)', /\.st-op::after \{ content: ''; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px; \}/.test(css));
     ok('375px 이하 1열: 소구점·폼·스튜디오 두 칸', /@media \(max-width: 420px\) \{[\s\S]{0,400}\.prop-grid \{ grid-template-columns: 1fr; \}/.test(css) && /@media \(max-width: 420px\) \{[\s\S]{0,300}\.st-two, \.st-cards \{ grid-template-columns: 1fr; \}/.test(studioCss));
     ok('성과분석 숫자 줄은 폰에서 1열', /@media \(max-width: 420px\) \{[\s\S]{0,600}\.mrow \{ flex-direction: column/.test(css));
+    ok('연재·노하우 값 칸은 .kv-grid 안에서 줄바꿈(360px 가로 넘침 방지)', /\.kv-grid > \.kv \{ min-width: 0; \}/.test(css) && /\.kv-grid > \.kv > span \{ overflow: visible; text-overflow: clip; white-space: normal; \}/.test(css));
     ok('영상 모드 버튼은 폰에서 세로 배치', /st-field-row \{ flex-direction: column; align-items: stretch; \}/.test(studioCss) && /st-mode-row/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8')));
     ok('모바일 블록이 실제로 파일에 있다(빈 규칙 아님)', mobile(css).length > 200 && mobile(studioCss).length > 100);
   } catch (err) {
@@ -2940,7 +2941,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127d/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127e/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -3145,7 +3146,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127d/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127e/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3420,7 +3421,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
     ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-34)', /js\/app\.js\?v=20261127d/.test(html2) && /css\/style\.css\?v=m2-34/.test(html2) && /v2-m62/.test(html2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-34)', /js\/app\.js\?v=20261127e/.test(html2) && /css\/style\.css\?v=m2-35/.test(html2) && /v2-m63/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);

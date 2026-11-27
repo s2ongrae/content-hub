@@ -22,7 +22,7 @@ import { renderCreateStudio } from './createStudio.js?v=20261127d';
 import { renderProductView } from './productView.js?v=20261127a';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261127c';
 import { draftSection, draftPreview } from './draftView.js?v=20261127c';
-import { produceSection } from './produceView.js?v=20261127d';
+import { produceSection } from './produceView.js?v=20261127e';
 import {
   LINK_CHANNELS, LINK_LABEL, parseLinkText, identifyChannel, matchesChannel,
   auditLinks, auditSummary, linkPatch, publishGuard
