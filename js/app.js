@@ -10,19 +10,19 @@ import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { friendlyError, errorPanel, withBusy } from './uiState.js?v=20261126a';
 import { QuickApproveView } from './quickApprove.js?v=20261127a';
 import { renderSeriesView } from './seriesView.js?v=20261126c';
-import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261126c';
-import { renderPostView } from './postView.js?v=20261126c';
+import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261127c';
+import { renderPostView } from './postView.js?v=20261127c';
 import { trackChannelsOf } from './trackChannels.js?v=20261123k';
-import { renderLintView } from './lintView.js?v=20261126c';
+import { renderLintView } from './lintView.js?v=20261127c';
 import { loadDaangnSeed } from './daangnView.js?v=20261123k';
 import { getAnalytics } from './analyticsView.js?v=20261126c';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123k';
 import { renderCreateView } from './create-view.js?v=20261126c';
-import { renderCreateStudio } from './createStudio.js?v=20261127b';
+import { renderCreateStudio } from './createStudio.js?v=20261127c';
 import { renderProductView } from './productView.js?v=20261127a';
-import { renderBlogView, loadBlogStats } from './blogView.js?v=20261126c';
-import { draftSection, draftPreview } from './draftView.js?v=20261126c';
-import { produceSection } from './produceView.js?v=20261127b';
+import { renderBlogView, loadBlogStats } from './blogView.js?v=20261127c';
+import { draftSection, draftPreview } from './draftView.js?v=20261127c';
+import { produceSection } from './produceView.js?v=20261127c';
 import {
   LINK_CHANNELS, LINK_LABEL, parseLinkText, identifyChannel, matchesChannel,
   auditLinks, auditSummary, linkPatch, publishGuard

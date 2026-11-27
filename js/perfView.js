@@ -18,8 +18,8 @@
  */
 
 import { renderAnalyticsPanel } from './analyticsView.js?v=20261126c';
-import { renderChannelView } from './channelView.js?v=20261123c';
-import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261123c';
+import { renderChannelView } from './channelView.js?v=20261127c';
+import { renderDiagnosisPanel } from './perfDiagnosis.js?v=20261127c';
 import { trackChannelsOf } from './trackChannels.js?v=20261123c';
 import { friendlyError, isDeployGap, withBusy } from './uiState.js?v=20261126a';
 

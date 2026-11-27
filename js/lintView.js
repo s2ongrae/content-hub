@@ -6,7 +6,7 @@
  * 초안은 이 브라우저에만 저장한다(새로고침해도 남게).
  */
 
-import { lintBlog, loadLintRules } from './blogLint.js?v=20261124b';
+import { lintBlog, loadLintRules } from './blogLint.js?v=20261127c';
 import { analyzeCompliance, complianceLine, withDisclosureNote, stripProfitLinks, stripOwnMoney } from './blogCompliance.js?v=20261124b';
 import { friendlyError } from './uiState.js?v=20261126a';
 

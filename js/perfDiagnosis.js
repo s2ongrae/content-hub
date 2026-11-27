@@ -25,7 +25,7 @@
  */
 
 import { getAnalytics, waitAnalytics } from './analyticsView.js?v=20261126c';
-import { currentRows } from './channelView.js?v=20261123c';
+import { currentRows } from './channelView.js?v=20261127c';
 import { withBusy } from './uiState.js?v=20261126a';
 
 /* ───────────── 기준값(우리 기준) ───────────── */

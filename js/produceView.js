@@ -30,10 +30,10 @@ import {
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_LONG_WARN_S,
   PACE_IDS, PACE_LABELS, PACE_NOTES
 } from './produceLogic.js?v=20261127a';
-import { analyzeSrt, textHash } from './srtRules.js?v=20261126c';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261127a';
+import { analyzeSrt, textHash } from './srtRules.js?v=20261127c';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261127c';
 import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261126c';
-import { designPanel } from './designView.js?v=20261127a';
+import { designPanel } from './designView.js?v=20261127c';
 import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261127a';
 import { copyText } from './clipboard.js?v=20261126a';
 import { errorInfo } from './uiState.js?v=20261126a';
@@ -977,7 +977,7 @@ export function produceSection(ctx) {
         ? '모션 없이 지금과 똑같이 자르기만 해요(원본 그대로).'
         : '3초 이상 클립에 줌인·줌아웃을 번갈아 넣고, 훅 끝에 펀치줌 1회. 1080p 가로 원본은 최대 1.12배.' })));
 
-    // 템포(2026-11-23) — 성래 님 v5 지적 "긴박함도 없다". 컷 리듬·자막 표시·TTS 속도·모션·블러 여백을 한 번에 바꾼다.
+    // 템포(2026-11-23) — 레이 님 v5 지적 "긴박함도 없다". 컷 리듬·자막 표시·TTS 속도·모션·블러 여백을 한 번에 바꾼다.
     box.append(h('div', { class: 'pr-field' },
       h('span', { class: 'pr-label', text: '템포 (숏폼 긴박함)' }),
       h('select', { class: 'pr-sel', 'aria-label': '템포', onchange: (e) => change((st) => { st.pace = e.target.value; }) },

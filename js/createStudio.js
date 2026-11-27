@@ -14,7 +14,7 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261127a';
+import { produceSection } from './produceView.js?v=20261127c';
 import { uploadPhoto, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64, uploadVideo, listUploads } from './uploadVideo.js?v=20261127a';
 import {
   FORMATS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS,
@@ -24,12 +24,12 @@ import {
   errorText, orderLine, FEED_CARDS,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName,
   MV_MAX_CLIPS, MV_VIDEO_EXT_RE, mvClipNames, mvMediaPlan
-} from './studioLogic.js?v=20261127a';
+} from './studioLogic.js?v=20261127c';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261127a';
 import { WATERMARK_POSITIONS } from './designModel.js?v=20261127a';
-import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261124';
+import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261127c';
 import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
-import { lintAiTone } from './blogAiTone.js?v=20261123c';
+import { lintAiTone } from './blogAiTone.js?v=20261127c';
 import { peekSeoSeed, clearSeoSeed } from './blogSeo.js?v=20261123c';
 import { paintAiClip } from './aiClip.js?v=20261123c';
 import { copyText } from './clipboard.js?v=20261126a';
@@ -786,7 +786,7 @@ function paintKit(out, ctx, kit, ui, draft) {
   const { h } = ctx;
   const composed = draft ? composeBlogWithDraft(kit, draft) : null;
 
-  /* ── 🖋️ 내 스타일 본문 (2026-11-25, #50347) — 성래 님 발행글 문법으로 0토큰 조립한 본문을 맨 위에 ──
+  /* ── 🖋️ 내 스타일 본문 (2026-11-25, #50347) — 레이 님 발행글 문법으로 0토큰 조립한 본문을 맨 위에 ──
      인용구 섹션·▲ 캡션·📌 정보카드·⭐ 총평·펀치라인 순서. 비는 자리는 ⟦⟧ 로 보이게 둔다. */
   const style = kit.style;
   const panels = [];   // 🖋️ 내 스타일 본문 등 — 마지막에 box 와 함께 한 번에 그린다
@@ -794,7 +794,7 @@ function paintKit(out, ctx, kit, ui, draft) {
     const kindLabel = style.kind === 'place' ? '맛집·장소' : style.kind === 'story' ? '자기서사·정산' : '정보·리뷰';
     const sBox = h('div', { class: 'panel' },
       h('h3', null, '🖋️ 내 스타일 본문 ', h('span', { class: 'tag', text: kindLabel })),
-      h('p', { class: 'st-hint', text: '성래 님 발행글 문법(인용구 섹션 → ▲ 캡션 → 📌 정보카드 → ⭐ 총평 → 펀치라인 → 해시태그)으로 조립했습니다. 내가 쓴 문단은 그대로 옮겼습니다.' }),
+      h('p', { class: 'st-hint', text: '레이 님 발행글 문법(인용구 섹션 → ▲ 캡션 → 📌 정보카드 → ⭐ 총평 → 펀치라인 → 해시태그)으로 조립했습니다. 내가 쓴 문단은 그대로 옮겼습니다.' }),
       h('p', { class: 'st-hint' + (style.lint.warns.length ? ' err' : ''), text: '목소리 점수 ' + style.lint.score + ' · ' + style.lint.summary }),
       style.quality ? h('p', { class: 'st-hint' + (style.quality.warns.length ? ' err' : ''), text: '품질 점수 ' + style.quality.score + ' · ' + style.quality.summary + ' (' + style.quality.chars + '자, 공백 제외)' }) : null,
       h('pre', { class: 'st-pre' }, style.text),
