@@ -2940,7 +2940,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127c/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127d/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -3145,7 +3145,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127c/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127d/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3420,10 +3420,109 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
     ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-33)', /js\/app\.js\?v=20261127c/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m61/.test(html2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-34)', /js\/app\.js\?v=20261127d/.test(html2) && /css\/style\.css\?v=m2-34/.test(html2) && /v2-m62/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     [21] 카드뉴스 2단계 — 5~8장 PNG 순차 저장 · 발행/경보 규정 문서 (2026-11-27)
+     - cue2 설계(Q-20261127-180332-v9ou): 새 라이브러리 없이 canvas PNG, 간격 두고 순서대로
+     - 뷔투 초안(Q-20261127-180120-1v89)은 코드와 대조해 정정해 docs/ALERTS_AND_PUBLISH_CHECKLIST.md
+     ═══════════════════════════════════════════════════════════════ */
+  console.log('\n[21] 카드뉴스 2단계 · 발행/경보 규정');
+  try {
+    const CE = await import('file://' + path.join(ROOT, 'js', 'cardExport.js'));
+
+    /* ① 간격·문구 — 지어내지 않고 시험값을 상수로 둔다 */
+    ok('기본 간격은 900ms, 모르는 값이면 기본', CE.CARD_EXPORT_GAP_MS === 900 && CE.exportGapMs() === 900 && CE.exportGapMs('abc') === 900 && CE.exportGapMs(0) === 900);
+    ok('간격은 400~2500ms 로만 받는다', CE.exportGapMs(10) === 400 && CE.exportGapMs(99999) === 2500 && CE.exportGapMs(1200.6) === 1201);
+    ok('카드는 8장까지만(IG 초안 상한)', CE.CARD_EXPORT_MAX === 8);
+    ok('아이폰·아이패드만 iOS 로 본다', CE.isIosLike('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)') === true && CE.isIosLike('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) Mobile/15E148') === true && CE.isIosLike('Mozilla/5.0 (Linux; Android 14; SM-S921N)') === false && CE.isIosLike('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)') === false && CE.isIosLike('') === false);
+    ok('안내 문구: 장수 + 막혔을 때 누를 것', /카드 5장을 차례로 저장합니다/.test(CE.exportHintText(5)) && CE.exportHintText(5).indexOf('카드마다 [저장]') > 0);
+    ok('아이폰이면 문구가 더 분명해진다', /아이폰 사파리/.test(CE.exportHintText(6, { ios: true })) && CE.exportHintText(6, { ios: true }).indexOf('카드마다 [저장]') > 0);
+    ok('진행 표시는 저장 중 2/5', CE.exportProgressText(2, 5) === '저장 중 2/5' && CE.exportProgressText(0, 0) === '저장 중');
+    ok('결과 문구: 전부·일부·전부 실패·없음', CE.exportResultText({ total: 5, saved: 5, failed: [] }).indexOf('모두 저장') > 0 && CE.exportResultText({ total: 5, saved: 3, failed: [{}, {}] }).indexOf('2장은 막혔습니다') > 0 && CE.exportResultText({ total: 5, saved: 0, failed: [{}, {}, {}, {}, {}] }).indexOf('카드마다 [저장]') > 0 && CE.exportResultText(null) === '저장할 카드가 없어요');
+
+    /* ② 순서·간격·실패·취소 */
+    const three = [1, 2, 3].map((n) => ({ no: n, name: '카드' + n + '.png' }));
+    const waited = [], savedNames = [], steps = [];
+    const res = await CE.saveCardsInOrder({
+      cards: three,
+      render: async (c) => ({ no: c.no }),
+      save: (blob, name) => { savedNames.push(name); return true; },
+      gapMs: 900,
+      wait: async (ms) => { waited.push(ms); },
+      onProgress: (p) => steps.push(p.index + ':' + p.status)
+    });
+    ok('저장 순서는 카드 순서 그대로', savedNames.join(',') === '카드1.png,카드2.png,카드3.png', savedNames);
+    ok('간격은 장 사이에만(3장 → 2번)', waited.length === 2 && waited.every((ms) => ms === 900), waited);
+    ok('진행을 한 장마다 알린다', steps.join(',') === '1:saved,2:saved,3:saved', steps);
+    ok('결과: 3장 모두 저장', res.total === 3 && res.saved === 3 && res.failed.length === 0 && res.stopped === false);
+
+    const res2 = await CE.saveCardsInOrder({
+      cards: three,
+      render: async (c) => (c.no === 2 ? null : { ok: true }),
+      save: () => true, wait: async () => {}
+    });
+    ok('한 장을 못 그려도 나머지를 계속 저장', res2.saved === 2 && res2.failed.length === 1 && res2.failed[0].reason === 'render' && res2.failed[0].no === 2, res2);
+
+    const res3 = await CE.saveCardsInOrder({
+      cards: three,
+      render: async () => ({ ok: true }),
+      save: () => { throw new Error('blocked'); }, wait: async () => {}
+    });
+    ok('저장이 던져도 멈추지 않고 실패로 셈한다', res3.saved === 0 && res3.failed.length === 3 && res3.failed.every((f) => f.reason === 'save'));
+
+    let drawn = 0;
+    const res4 = await CE.saveCardsInOrder({
+      cards: [1, 2, 3, 4].map((n) => ({ no: n, name: 'c' + n })),
+      render: async () => ({ ok: true }),
+      save: () => { drawn += 1; return true; },
+      wait: async () => {},
+      isCancelled: () => drawn > 0
+    });
+    ok('중간에 취소하면 그 자리에서 멈춘다(1장 저장 · stopped)', res4.cancelled === true && res4.stopped === true && res4.saved === 1, res4);
+
+    const many = Array.from({ length: 10 }, (_, i) => ({ no: i + 1, name: 'k' + (i + 1) }));
+    const res5 = await CE.saveCardsInOrder({ cards: many, render: async () => ({ ok: true }), save: () => true, wait: async () => {} });
+    ok('9장 이상은 8장까지만 저장하고 넘은 장은 실패로 알린다', res5.total === 8 && res5.saved === 8 && res5.failed.filter((f) => f.reason === 'over-limit').length === 2, res5);
+
+    const res6 = await CE.saveCardsInOrder({ cards: three });
+    ok('그리기·저장 함수가 없으면 아무것도 하지 않고 멈춘다', res6.saved === 0 && res6.stopped === true);
+
+    /* ③ 화면 연결(정적) — 승인 탭·스튜디오가 같은 모듈을 쓰는가 */
+    const qaS = fs.readFileSync(path.join(ROOT, 'js', 'quickApprove.js'), 'utf8');
+    const csS = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('승인 탭이 cardExport 를 부른다', /from '\.\/cardExport\.js\?v=20261127a'/.test(qaS) && /saveCardsInOrder\(/.test(qaS));
+    ok('승인 탭: [전체 저장] + 카드마다 [저장] 폴백', /'전체 저장'/.test(qaS) && /qa-ig-save/.test(qaS) && /exportHintText\(/.test(qaS));
+    ok('승인 탭: 예전처럼 한 번에 몰아 받지 않는다(간격 인자)', /gapMs: exportGapMs\(CARD_EXPORT_GAP_MS\)/.test(qaS));
+    ok('스튜디오 피드도 같은 순차 저장을 쓴다', /from '\.\/cardExport\.js\?v=20261127a'/.test(csS) && /saveCardsInOrder\(/.test(csS) && /st-card-save/.test(csS));
+    ok('새 모듈은 DOM 을 만들지 않는다(노드 시험 가능)', !/document\./.test(fs.readFileSync(path.join(ROOT, 'js', 'cardExport.js'), 'utf8')) && !/innerHTML/.test(fs.readFileSync(path.join(ROOT, 'js', 'cardExport.js'), 'utf8')));
+    ok('카드 저장은 for 문으로 몰아 받지 않는다(순차 저장기에 넘긴다)', !/for \(const c of cards\)/.test(qaS) && /saveCardsInOrder\(/.test(qaS));
+
+    /* ④ 발행·경보 규정 문서 — 코드와 어긋나지 않는가 */
+    const docP = path.join(ROOT, 'docs', 'ALERTS_AND_PUBLISH_CHECKLIST.md');
+    const doc = fs.existsSync(docP) ? fs.readFileSync(docP, 'utf8') : '';
+    ok('문서가 있다: docs/ALERTS_AND_PUBLISH_CHECKLIST.md', doc.length > 1500, doc.length);
+    const alerts = ['STATS_STALE', 'DRAFT_READY_PILE', 'PARTIAL_FAIL_ACCUM', 'LINK_PENDING', 'TRIGGER_FAIL', 'ACTIVE_NO_OUTPUT'];
+    ok('추가 경보 6종이 모두 적혀 있다', alerts.every((a) => doc.indexOf(a) >= 0), alerts.filter((a) => doc.indexOf(a) < 0));
+    ok('기존 3종·4시간 쿨다운·슬랙→메일 폴백을 코드 이름으로 적는다', ['ALERT_BACKUP_FAIL', 'ALERT_QUOTA_80', 'ALERT_NEEDS_HUMAN_STALE', 'ALERT_COOLDOWN_SEC_', 'notifyOnce_'].every((a) => doc.indexOf(a) >= 0));
+    ok('문서는 40칸 유지·새 시트 없음을 말한다', /40칸/.test(doc) && /새 시트를 만들지 않는다/.test(doc));
+    ok('없는 시트(fail_log)를 만들지 않는다', doc.indexOf('fail_log') < 0);
+    ok('클립 자동 수집이 없다는 사실을 적는다', /클립[^\n]{0,40}자동 수집이 없다/.test(doc));
+    ok('발행 전 10항목·80점 게이트와 human_reviewed 를 적는다', /10항목/.test(doc) && /human_reviewed/.test(doc) && /80\s*점|80점/.test(doc));
+    ok('승인 접점은 포털 승인함(kind:approval)', /kind:'approval'/.test(doc) && /AGENT_PROTOCOL/.test(doc));
+    ok('카드뉴스 문서 §8 이 2단계를 끝난 것으로 적는다', /카드 이미지 PNG 일괄 저장/.test(fs.readFileSync(path.join(ROOT, 'docs', 'IG_CARD_NEWS_v1.md'), 'utf8')));
+
+    /* ⑤ GAS 는 그대로(프런트·문서만 바꿨다) — 경보 3종 정의와 40칸 스키마 */
+    const notifyS = fs.readFileSync(path.join(ROOT, 'gas', 'Notify.gs'), 'utf8');
+    const setupS = fs.readFileSync(path.join(ROOT, 'gas', 'Setup.gs'), 'utf8');
+    ok('GAS 경보는 아직 3종 그대로(새 경보는 문서만)', ['ALERT_BACKUP_FAIL', 'ALERT_QUOTA_80', 'ALERT_NEEDS_HUMAN_STALE'].every((a) => notifyS.indexOf(a) >= 0) && notifyS.indexOf('STATS_STALE') < 0);
+    ok('Contents 스키마는 40칸 그대로(새 열 없음)', /'photo_clip_status', 'photo_clip_url', 'photo_clip_uploaded_at'\s*\]/.test(setupS) && setupS.indexOf('alerts_') < 0);
+  } catch (err) {
+    ok('카드뉴스 2단계 · 발행/경보 규정 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
