@@ -17,7 +17,8 @@
  *    — 드라이브는 비공개라 <img src> 에 넣으면 CSP(img-src 'self')와 인증 때문에 엑스박스가 된다.
  */
 
-import { UPLOAD_PART_BYTES, checkUploadFile, checkVoiceFile } from './produceLogic.js?v=20261126c';
+import { UPLOAD_PART_BYTES, checkUploadFile, checkVoiceFile } from './produceLogic.js?v=20261127a';
+import { FONT_MAX_BYTES, FONT_EXT_RE, checkFontFile, checkFontLicense } from './designModel.js?v=20261127a';
 
 const CHUNK_TIMEOUT_MS = 120000;
 const CHUNK_TRIES = 4;
@@ -240,6 +241,92 @@ export async function uploadVoice(opts) {
     if (opts.onProgress) opts.onProgress({ index: i + 1, parts, sent, total: file.size });
   }
   return { name: chk.name, parts, bytes: file.size, ext: chk.ext };
+}
+
+/* ────────────────────────── 커스텀 폰트 (2026-11-27, P0) ──────────────────────────
+ *
+ * 글꼴 보관함(gas/Upload.gs font_*)에 폰트 한 벌을 올리고 목록을 읽는다.
+ *  · 파일은 카드에 묶지 않는다 — ContentHubOS_Fonts/ 비공개 폴더 한 곳에 모은다(모든 카드가 같이 쓴다).
+ *  · 재배포 가능한 라이선스(OFL·Apache·MIT·CC0·CC BY·퍼블릭 도메인)만 — 검사는 designModel.js 가 한다.
+ *  · 조각 규칙·재시도는 영상·사진과 같다(2MB 조각, 같은 번호는 덮어쓰기, 네트워크 실패만 4번 재시도).
+ */
+export { FONT_MAX_BYTES, FONT_EXT_RE, checkFontFile, checkFontLicense };
+
+/** 폰트인가(확장자). */
+export function isFontFile(name) {
+  return FONT_EXT_RE.test(String(name || ''));
+}
+
+/**
+ * 폰트 한 벌 올리기 — 라이선스를 먼저 검사하고, 2MB 조각으로 나눠 보낸다.
+ * opts: { api, file, license, onProgress?({index, parts, sent, total}), shouldCancel?() }
+ * 반환: { name, label, license, parts, bytes }
+ */
+export async function uploadFont(opts) {
+  const { api, file } = opts;
+  const lic = checkFontLicense(opts.license);
+  if (!lic.ok) { const e = new Error(lic.error); e.code = 'ERR_VALIDATION_FAILED'; throw e; }
+  const chk = checkFontFile(file);
+  if (!chk.ok) { const e = new Error(chk.errors[0]); e.code = 'ERR_VALIDATION_FAILED'; throw e; }
+  const size = Number(file.size) || 0;
+  const parts = Math.max(1, Math.ceil(size / UPLOAD_PART_BYTES));
+  let sent = 0;
+  for (let i = 0; i < parts; i++) {
+    if (opts.shouldCancel && opts.shouldCancel()) { const e = new Error('올리기를 멈췄어요'); e.code = 'CANCELLED'; throw e; }
+    const blob = file.slice(i * UPLOAD_PART_BYTES, Math.min(size, (i + 1) * UPLOAD_PART_BYTES));
+    const data = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+    let lastErr = null;
+    for (let t = 0; t < CHUNK_TRIES; t++) {
+      try {
+        await api.post('font_put', { name: chk.name, license: lic.id, index: i, parts, total_size: size, data }, null, { timeoutMs: CHUNK_TIMEOUT_MS });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (!isRetryableUploadError(err) || t === CHUNK_TRIES - 1) break;
+        await sleep(RETRY_WAIT_MS[t]);
+        if (opts.shouldCancel && opts.shouldCancel()) { const e = new Error('올리기를 멈췄어요'); e.code = 'CANCELLED'; throw e; }
+      }
+    }
+    if (lastErr) throw lastErr;
+    sent += blob.size;
+    if (opts.onProgress) opts.onProgress({ index: i + 1, parts, sent, total: size });
+  }
+  return { name: chk.name, label: chk.label, license: lic.id, parts, bytes: size };
+}
+
+/** 보관함의 폰트 목록 [{ name, label, license, bytes, parts, complete, updated_at }] */
+export async function listFonts(api) {
+  const res = await api.post('font_list', {});
+  const items = (res && res.data && Array.isArray(res.data.items)) ? res.data.items : [];
+  return items.filter((it) => it && it.name && it.complete !== false);
+}
+
+/** 폰트 한 벌 지우기. */
+export async function deleteFont(api, name) {
+  const res = await api.post('font_delete', { name });
+  return (res && res.data) || {};
+}
+
+/** 폰트 바이트 받기(화면 미리보기용) — 조각을 이어 붙여 Uint8Array 하나로. */
+export async function fetchFontBytes(api, item) {
+  const name = String((item && item.name) || '');
+  const parts = Math.max(1, Number(item && item.parts) || 1);
+  const chunks = [];
+  for (let i = 0; i < parts; i++) {
+    const res = await api.post('font_fetch', { name, index: i, parts });
+    const b64 = String((res && res.data && res.data.data) || '');
+    if (!b64) throw new Error('폰트 조각이 비어 있습니다(' + name + ' ' + i + '/' + parts + ')');
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    chunks.push(bytes);
+  }
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  chunks.forEach((c) => { out.set(c, at); at += c.length; });
+  return out;
 }
 
 /** 이 카드에 올라온 파일 목록 [{ name, kind:'photo'|'video'|'other', size, parts, parts_found, complete, mixed }] */

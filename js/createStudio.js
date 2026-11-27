@@ -14,18 +14,19 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261126v8';
-import { uploadPhoto, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64 } from './uploadVideo.js?v=20261126c';
+import { produceSection } from './produceView.js?v=20261127a';
+import { uploadPhoto, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64, uploadVideo, listUploads } from './uploadVideo.js?v=20261127a';
 import {
   FORMATS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS,
   normalizeMaterials, materialSummary, hasMaterial, autoOrderPhotos, photoRole,
   photoPlanFor, buildBlogKit, signKit, buildFeedCards, feedCaption, hashtagsOf, buildDraftRequest,
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio,
   errorText, orderLine, FEED_CARDS,
-  MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName
-} from './studioLogic.js?v=20261126c';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261126a';
-import { WATERMARK_POSITIONS } from './designModel.js?v=20261126c';
+  MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName,
+  MV_MAX_CLIPS, MV_VIDEO_EXT_RE, mvClipNames, mvMediaPlan
+} from './studioLogic.js?v=20261127a';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261127a';
+import { WATERMARK_POSITIONS } from './designModel.js?v=20261127a';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261124';
 import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
 import { lintAiTone } from './blogAiTone.js?v=20261123c';
@@ -535,7 +536,7 @@ function cardRow(ctx, format, ui) {
 async function ensureCard(ctx, format, ui) {
   const { api } = ctx;
   const m = mem.materials;
-  if (!m.place.name.trim() && !m.content.memo.trim() && !m.photos.length) {
+  if (!m.place.name.trim() && !m.content.memo.trim() && !m.photos.length && !(m.video && m.video.mv && m.video.mv.on)) {
     const e = new Error('가게 이름이나 메모, 사진 중 하나는 있어야 합니다'); e.code = 'ERR_VALIDATION_FAILED'; throw e;
   }
   if (!mem.cardId) {
@@ -1150,8 +1151,89 @@ function paintMvPanel(host, out, ctx, ui) {
   const photos = (m.photos || []).filter((p) => p.uploaded).map((p) => p.name);
   const save = () => { saveMaterials(); ui.refreshSummary && ui.refreshSummary(); };
 
-  host.appendChild(h('p', { class: 'st-hint', text: '노래가 목소리라서 내레이션(목소리)은 끄고, 자막 대신 가사를 카라오케처럼 띄웁니다. 사진만으로 비트에 맞춰 컷을 굽고, 사진이 컷보다 적으면 돌려 씁니다(같은 사진이 3컷 안에 다시 나오지 않게).' }));
-  host.appendChild(h('p', { class: 'st-hint', text: '사진 ' + photos.length + '장 올라감' + (photos.length < 3 ? ' — 최소 3장이 필요합니다' : '') }));
+  host.appendChild(h('p', { class: 'st-hint', text: '노래가 목소리라서 내레이션(목소리)은 끄고, 자막 대신 가사를 카라오케처럼 띄웁니다. 사진과 영상 컷을 번갈아 비트에 맞춰 굽고, 사진이 컷보다 적으면 돌려 씁니다(같은 사진이 3컷 안에 다시 나오지 않게).' }));
+  const mediaLine = h('p', { class: 'st-hint', text: '' });
+  host.appendChild(mediaLine);
+
+  /* ① 영상 컷(선택, 2026-11-27 P0) — 사진 전용이 아니다. 카드에 올라간 mp4·mov·m4v 를 고른다. */
+  host.appendChild(h('h3', { text: '① 영상 컷 (선택)' }));
+  const clipRows = h('div', { class: 'st-chips' });
+  const clipNote = h('p', { class: 'st-hint', text: '' });
+  const clipList = () => mvClipNames(mv.clips);
+  const setClips = (list) => {
+    mv.clips = mvClipNames(list);
+    save();
+    paintClips();
+    paintMediaLine();
+    if (ui && ui.repaintVideo) ui.repaintVideo();
+  };
+  function paintMediaLine() {
+    const plan = mvMediaPlan({ images: photos, clips: clipList() });
+    const bits = ['사진 ' + photos.length + '장', '영상 컷 ' + plan.videos + '개'];
+    mediaLine.textContent = bits.join(' · ') + (plan.ok ? ' — 이대로 렌더할 수 있습니다' : ' — 사진 3장 이상 또는 영상 컷 1개 이상이 필요합니다');
+  }
+  async function paintClips() {
+    const picked = clipList();
+    clipRows.replaceChildren();
+    const chip = (name, on, onClick) => {
+      const b = h('button', { class: 'st-chip' + (on ? ' on' : ''), type: 'button', text: (on ? '✓ ' : '+ ') + name });
+      b.addEventListener('click', onClick);
+      return b;
+    };
+    picked.forEach((n) => clipRows.appendChild(chip(n, true, () => setClips(picked.filter((x) => x !== n)))));
+    let items = [];
+    if (mem.cardId) {
+      try { items = (await listUploads(ctx.api, mem.cardId)).filter((it) => it && it.kind === 'video' && it.complete !== false); } catch (e) { items = []; }
+    }
+    items.filter((it) => picked.indexOf(it.name) < 0).forEach((it) => {
+      clipRows.appendChild(chip(it.name, false, () => {
+        if (picked.length >= MV_MAX_CLIPS) { toast('영상 컷은 ' + MV_MAX_CLIPS + '개까지입니다', 'err'); return; }
+        setClips(picked.concat([it.name]));
+      }));
+    });
+    if (!picked.length && !items.length) {
+      clipRows.appendChild(h('span', { class: 'st-hint', text: '카드에 올린 영상이 없습니다 — [🎬 영상 올리기]로 mp4·mov·m4v 를 올리면 사진과 함께 컷으로 들어갑니다(최대 ' + MV_MAX_CLIPS + '개).' }));
+    }
+  }
+  const clipInput = h('input', { type: 'file', accept: 'video/mp4,video/quicktime,video/x-m4v,.mp4,.mov,.m4v', multiple: true, style: 'display:none' });
+  const clipAdd = h('button', { class: 'btn sm', type: 'button', text: '🎬 영상 올리기 (mp4·mov·m4v)' });
+  clipAdd.addEventListener('click', () => clipInput.click());
+  clipInput.addEventListener('change', async () => {
+    const files = Array.from(clipInput.files || []);
+    clipInput.value = '';
+    if (!files.length) return;
+    clipAdd.disabled = true;
+    try {
+      const id = await ensureCard(ctx, 'video', ui);
+      for (const file of files) {
+        if (!MV_VIDEO_EXT_RE.test(String((file && file.name) || ''))) {
+          toast('mp4·mov·m4v 만 올릴 수 있습니다: ' + String((file && file.name) || '').slice(0, 30), 'err');
+          continue;
+        }
+        if (clipList().length >= MV_MAX_CLIPS) { toast('영상 컷은 ' + MV_MAX_CLIPS + '개까지입니다', 'err'); break; }
+        try {
+          const r = await uploadVideo({
+            api: ctx.api, contentId: id, file: file,
+            onProgress: (p) => { clipNote.textContent = '올리는 중… ' + p.index + '/' + p.parts; }
+          });
+          setClips(clipList().concat([r.name]));
+          clipNote.textContent = '';
+        } catch (err) {
+          clipNote.textContent = '';
+          toast('영상 ' + String((file && file.name) || '').slice(0, 20) + ' 을(를) 올리지 못했습니다 — ' + errorText(err && err.code), 'err');
+        }
+      }
+    } catch (err) {
+      toast(errorText(err && err.code) + (err && err.message ? ' — ' + err.message : ''), 'err');
+    } finally { clipAdd.disabled = false; }
+  });
+  host.appendChild(h('div', { class: 'row' }, clipAdd, clipInput));
+  host.appendChild(clipRows);
+  host.appendChild(clipNote);
+  host.appendChild(h('p', { class: 'st-hint', text: '영상 컷은 자기 길이만큼 그대로 들어가고, 모자라는 자리는 사진이 비트에 맞춰 채웁니다. 컷을 8개 넘게 쓰려면 나누어 렌더하세요.' }));
+  host.appendChild(h('p', { class: 'st-hint', text: '영상 컷은 이번에 새로 넣은 기능입니다 — 집 노트북 쪽 준비가 끝나기 전에는 렌더가 “아직 영상 컷은 못 받습니다”로 거절될 수 있어요(그때는 [일반 영상]으로 렌더하거나 사진만으로 보내면 됩니다).' }));
+  paintClips();
+  paintMediaLine();
 
   /* ② 음원 */
   host.appendChild(h('h3', { text: '② 음원' }));
@@ -1332,7 +1414,8 @@ function paintMvPanel(host, out, ctx, ui) {
   host.appendChild(h('p', { class: 'st-hint', text: '1080×1920 30fps · 하드컷(프레임 격자 스냅) · 가사 카라오케 · 음량 −14 LUFS. 노래는 이미 곡 길이 그대로 쓰고, 고른 길이까지만 자릅니다.' }));
   renderBtn.addEventListener('click', async () => {
     if (!mv.audio.name) { toast('음원을 먼저 고르세요', 'err'); return; }
-    if (photos.length < 3) { toast('사진이 ' + photos.length + '장입니다 — 최소 3장이 필요합니다', 'err'); return; }
+    const plan = mvMediaPlan({ images: photos, clips: clipList() });
+    if (!plan.ok) { toast('사진 ' + plan.missing + '장이 더 필요합니다 — 또는 영상 컷을 1개 이상 골라 주세요', 'err'); return; }
     renderBtn.disabled = true;
     const label = renderBtn.textContent;
     try {

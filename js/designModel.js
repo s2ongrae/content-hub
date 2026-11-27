@@ -68,6 +68,123 @@ export const PHOTO_WATERMARK_DEFAULT = { enabled: true, text: '@s2ongrae', opaci
 export const COLOR_SWATCHES = ['#FFFFFF', '#FFE84D', '#8FF5D2', '#FF7A1A', '#FF9ECD', '#B6F36B'];
 export const ROLE_LABELS = { caption: '자막', title: '구간 제목', badge: '구간 배지' };
 
+/* ────────────────────────── 폰트 (2026-11-27, P0) ──────────────────────────
+ * 레이 님 결정(부이 전달 Q-20261127-125239-4t3m): 커스텀 폰트는 **재배포 가능한 라이선스만**.
+ *  · 받은 폰트 파일을 허브 보관함(비공개 드라이브)에 두는 것 자체가 '재배포'다 —
+ *    상용 데스크톱 라이선스·개인용 무료 폰트는 파일을 올릴 수 없다(영상에 글자로 찍히는 것과 다르다).
+ *  · 역할의 font 값은 **파일 이름**이다: 기본은 'Pretendard', 커스텀은 'Miryung-Bold.otf' 처럼.
+ *    파일 이름을 그대로 쓰면 노트북이 폰트 파일을 찾기만 하면 되고, 이름이 어긋나지 않는다.
+ *  · gas/Upload.gs FONT_LICENSES_OK 와 같은 값이어야 한다(test/run.js·gas/test/run.js 가 대조).
+ */
+export const FONT_STACK = '"Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif';
+export const BUILTIN_FONT = 'Pretendard';
+export const FONT_MAX_BYTES = 20 * 1024 * 1024;          // 한 벌 20MB — 한글 전체 ttf 도 들어간다
+//  재배포 가능 라이선스만 — ok:false 는 화면에서 이유와 함께 막힌다.
+export const FONT_LICENSES = [
+  { id: 'OFL-1.1', label: 'SIL Open Font License 1.1 (OFL)', ok: true, note: '가장 흔합니다 — Pretendard·Noto·본고딕 계열' },
+  { id: 'Apache-2.0', label: 'Apache License 2.0', ok: true, note: '구글 폰트 일부' },
+  { id: 'MIT', label: 'MIT License', ok: true, note: '일부 오픈소스 폰트' },
+  { id: 'CC0-1.0', label: 'CC0 1.0 (퍼블릭 도메인 헌정)', ok: true, note: '출처 표기 필요 없음' },
+  { id: 'CC-BY-4.0', label: 'CC BY 4.0', ok: true, note: '영상·설명란에 출처를 적어야 합니다' },
+  { id: 'PD', label: '퍼블릭 도메인', ok: true, note: '저작권 만료·기증' },
+  { id: 'commercial-desktop', label: '상용·데스크톱 라이선스 (산돌·윤디자인 등)', ok: false, why: '파일을 보관·배포할 수 없습니다 — 영상에 글자로 찍어 쓰는 것만 허용됩니다. 폰트를 띄워 쓰려면 그 폰트를 깔린 PC에서 직접 렌더해야 합니다.' },
+  { id: 'free-personal', label: '개인용 무료 (상업·재배포 금지)', ok: false, why: '무료로 받았다고 재배포가 되는 것이 아닙니다 — 파일 보관은 허용되지 않습니다.' },
+  { id: 'unknown', label: '라이선스를 모름 / 기타', ok: false, why: '라이선스를 확인하지 못한 폰트는 받지 않습니다. 폰트 배포처의 라이선스 문구를 먼저 확인해 주세요.' }
+];
+export const FONT_LICENSES_OK = FONT_LICENSES.filter((l) => l.ok).map((l) => l.id);
+export const FONT_LICENSES_BLOCKED = FONT_LICENSES.filter((l) => !l.ok).map((l) => l.id);
+export const FONT_EXT = ['ttf', 'otf', 'woff2'];
+export const FONT_EXT_RE = /\.(ttf|otf|woff2)$/i;
+export const FONT_NAME_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,59}$/;
+
+/** 라이선스 한 줄 — 화면·보고에 쓸 이름. */
+export function fontLicenseLabel(id) {
+  const l = FONT_LICENSES.find((x) => x.id === String(id == null ? '' : id).trim());
+  return l ? l.label : '';
+}
+
+/** 라이선스 검사 — 받을 수 있는 것만 통과(이유를 그대로 돌려준다). */
+export function checkFontLicense(id) {
+  const v = String(id == null ? '' : id).trim();
+  const l = FONT_LICENSES.find((x) => x.id === v);
+  if (!l) return { ok: false, error: '라이선스를 골라 주세요(재배포 가능한 라이선스만 받습니다).' };
+  if (!l.ok) return { ok: false, error: l.why };
+  return { ok: true, id: l.id, label: l.label };
+}
+
+/** 파일 이름에서 화면에 보일 이름 — 확장자만 떼고 32자까지. */
+export function fontLabel(name) {
+  return String(name == null ? '' : name).replace(FONT_EXT_RE, '').slice(0, 32) || '내 폰트';
+}
+
+/** 기본 폰트인가(허브에 들어 있는 Pretendard). */
+export function isBuiltinFont(font) {
+  const f = String(font == null ? '' : font).trim();
+  return !f || f === BUILTIN_FONT || f === '기본';
+}
+
+/** 커스텀 폰트 파일 이름인가 — 확장자·안전한 글자만. */
+export function isCustomFontFile(name) {
+  const n = String(name == null ? '' : name).trim();
+  return !isBuiltinFont(n) && n.length <= 60 && n.indexOf('..') === -1 && n.charAt(0) !== '.' && FONT_NAME_RE.test(n) && FONT_EXT_RE.test(n);
+}
+
+/**
+ * 역할의 font 값 정리 — 모르는 값은 기본(Pretendard)으로 돌린다(렌더가 깨지지 않게).
+ *  · 기본 폰트 이름, 또는 안전한 폰트 파일 이름만 남긴다.
+ */
+export function normalizeFontRef(raw) {
+  const s = String(raw == null ? '' : raw).replace(CONTROL_RE, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (!s || s === BUILTIN_FONT || s === '기본') return BUILTIN_FONT;
+  return isCustomFontFile(s) ? s : BUILTIN_FONT;
+}
+
+/** 커스텀 폰트를 캔버스에 쓸 때의 별명 — 파일 이름이 달라도 서로 섞이지 않게. */
+export function customFontAlias(name) {
+  const n = String(name == null ? '' : name).trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) % 100000007;
+  return 'HubFont' + h;
+}
+
+/** 캔버스 font-family 값 — 기본이면 Pretendard 스택, 커스텀이면 별명 + 같은 폴백. */
+export function canvasFontFamily(font) {
+  if (isBuiltinFont(font)) return FONT_STACK;
+  return '"' + customFontAlias(font) + '", ' + FONT_STACK;
+}
+
+/**
+ * 올리기 전 폰트 파일 검사 — 확장자·크기·빈 파일.
+ *  반환: { ok, errors, name(다듬은 이름), label, ext }
+ *  · 파일 내용이 진짜 폰트인지는 서버(gas/Upload.gs)가 첫 4바이트로 본다.
+ */
+export function checkFontFile(file) {
+  const errors = [];
+  const raw = String((file && file.name) || '내 폰트.ttf');
+  const extM = raw.match(FONT_EXT_RE);
+  const ext = extM ? extM[0].toLowerCase() : '';
+  let base = raw.slice(0, raw.length - (extM ? extM[0].length : 0))
+    .replace(/[^A-Za-z0-9가-힣._ -]+/g, '_').replace(/_{2,}/g, '_').replace(/\s+/g, ' ').trim()
+    .replace(/^[^A-Za-z0-9가-힣]+/, '').trim();
+  if (base.length > 52) base = base.slice(0, 52).trim();
+  const name = (base || '내 폰트') + ext;
+  if (!file) errors.push('파일이 없습니다.');
+  else {
+    if (!ext) errors.push(FONT_EXT.join('·') + ' 파일만 올릴 수 있습니다: ' + raw.slice(0, 40));
+    if (Number(file.size) > FONT_MAX_BYTES) errors.push(raw.slice(0, 40) + ' 이(가) 너무 큽니다(한 벌 20MB까지).');
+    if (Number(file.size) <= 0) errors.push(raw.slice(0, 40) + ' 이(가) 비어 있습니다.');
+  }
+  return { ok: errors.length === 0, errors, name, label: fontLabel(name), ext: ext.replace('.', '') };
+}
+
+/** 폰트 파일 한 벌의 안내 — woff2 는 화면 미리보기용이고 MP4 렌더에는 ttf·otf 가 필요하다. */
+export function fontRenderNote(name) {
+  const n = String(name == null ? '' : name);
+  if (isBuiltinFont(n)) return '';
+  if (/\.woff2$/i.test(n)) return 'woff2 는 이 화면 미리보기용입니다 — MP4 에 굽으려면 같은 폰트의 ttf·otf 를 올려 주세요(노트북이 woff2 를 풀지 못합니다).';
+  return '';
+}
+
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
 const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}\u{2190}-\u{21FF}]/gu;
@@ -172,7 +289,7 @@ export function normalizeCaption(raw) {
   const presetRaw = String(o.preset == null ? 'base' : o.preset);
   return {
     preset: PRESET_IDS.indexOf(presetRaw) >= 0 ? presetRaw : 'custom',
-    font: cleanSegText(o.font || d.font, 32) || d.font,
+    font: normalizeFontRef(o.font === undefined || o.font === null || o.font === '' ? d.font : o.font),
     color: hexColor(o.color, d.color),
     outline: { color: hexColor(ol.color, d.outline.color), px: Math.round(clampNum(ol.px, 0, 10, d.outline.px)) },
     shadow: {
@@ -225,13 +342,13 @@ export function normalizeDesign(raw) {
   const b = roles.badge && typeof roles.badge === 'object' ? roles.badge : {};
   const caption = normalizeCaption(roles.caption);
   const title = {
-    font: cleanSegText(t.font || base.roles.title.font, 32) || base.roles.title.font,
+    font: normalizeFontRef(t.font === undefined || t.font === null || t.font === '' ? base.roles.title.font : t.font),
     color: hexColor(t.color, base.roles.title.color),
     size: Math.round(clampNum(t.size, 24, 120, base.roles.title.size)),
     pos: { x: Math.round(clampNum(t.pos && t.pos.x, -540, 540, 0)), y: Math.round(clampNum(t.pos && t.pos.y, 0, 1920, base.roles.title.pos.y)) }
   };
   const badge = {
-    font: cleanSegText(b.font || base.roles.badge.font, 32) || base.roles.badge.font,
+    font: normalizeFontRef(b.font === undefined || b.font === null || b.font === '' ? base.roles.badge.font : b.font),
     color: hexColor(b.color, base.roles.badge.color),
     size: Math.round(clampNum(b.size, 16, 80, base.roles.badge.size)),
     pos: { x: Math.round(clampNum(b.pos && b.pos.x, -540, 540, 0)), y: Math.round(clampNum(b.pos && b.pos.y, 0, 1920, base.roles.badge.pos.y)) },
@@ -332,6 +449,12 @@ export function designWarnings(raw, ctx) {
   if (cap.pos.y > SAFE_BOTTOM) out.push({ code: 'caption_low', level: 'warn', msg: '자막 밑단이 안전선(' + SAFE_BOTTOM + 'px)을 넘어 잘릴 수 있어요(Y' + cap.pos.y + ').' });
   if (Math.abs(cap.pos.x) > 540 - SAFE_SIDE) out.push({ code: 'caption_side', level: 'warn', msg: '자막이 좌우 여백(' + SAFE_SIDE + 'px)을 벗어날 수 있어요(X' + cap.pos.x + ').' });
   if (cap.preset === 'custom') out.push({ code: 'custom_preset', level: 'info', msg: '프리셋에서 벗어난 색·테두리 조합이에요 — 트랙 톤에서 멀어지지 않게 한 번 봐 주세요.' });
+  // 커스텀 폰트(2026-11-27) — woff2 는 화면 미리보기용이라 그대로 렌더하면 기본 폰트로 나온다(미리 알린다).
+  ['caption', 'title', 'badge'].forEach((k) => {
+    const f = d.roles[k].font;
+    const note = fontRenderNote(f);
+    if (note && out.every((w) => w.code !== 'font_woff2')) out.push({ code: 'font_woff2', level: 'warn', msg: ROLE_LABELS[k] + ': ' + note });
+  });
   const segs = d.segments;
   if (segs.length) {
     const t = d.roles.title;
@@ -396,7 +519,9 @@ export function designSummary(raw) {
   const d = normalizeDesign(raw);
   const p = presetById(d.roles.caption.preset);
   const name = p ? p.label : '내 조합';
-  return name + ' · Y' + d.roles.caption.pos.y + ' X' + d.roles.caption.pos.x + ' · 구간 ' + d.segments.length + '개';
+  const fonts = ['caption', 'title', 'badge'].map((k) => d.roles[k].font).filter((f, i, a) => !isBuiltinFont(f) && a.indexOf(f) === i);
+  return name + ' · Y' + d.roles.caption.pos.y + ' X' + d.roles.caption.pos.x + ' · 구간 ' + d.segments.length + '개'
+    + (fonts.length ? ' · 내 폰트 ' + fonts.map(fontLabel).join(', ') : '');
 }
 
 /** 카드 payload(studio.formats.video.design)에 넣을 값 — 기본값이면 null(키를 만들지 않는다). */

@@ -82,6 +82,12 @@ export const MV_LENGTHS = [15, 30, 60, 0];         // 0 = 곡 끝까지
 export const MV_AUDIO_EXT_RE = /\.(mp3|m4a|wav)$/i;
 export const MV_AUDIO_MAX_BYTES = 30 * 1024 * 1024;  // wav 3분이 30MB 안팎 — mp3·m4a 를 권한다
 export const MV_MAX_LYRICS = 8000;
+/* 영상 컷(2026-11-27, P0 — 레이 님 결정: 사진 전용이 아니라 영상 컷까지 허용).
+ *  · 영상 컷은 카드의 드라이브 폴더에 올라간 mp4·mov·m4v 의 **이름**만 오더에 실린다(파일은 허브가 받아 둔다).
+ *  · 상한 8개는 일반 영상 inputs 와 같다(gas/Orders.gs RENDER_MAX_INPUTS). 사진 25장과 별개로 센다.
+ */
+export const MV_MAX_CLIPS = 8;
+export const MV_VIDEO_EXT_RE = /\.(mp4|mov|m4v)$/i;
 
 /** 뮤직비디오 상태의 기본값 — payload.studio.formats.video.mv 에 그대로 저장된다. */
 export function defaultMv() {
@@ -94,7 +100,8 @@ export function defaultMv() {
     density: 'normal_4beat',
     effects: 'pulse',
     length_sec: 0,
-    bpm_hint: 0
+    bpm_hint: 0,
+    clips: []          // 영상 컷 파일 이름(사진 materials.photos 와 별개)
   };
 }
 
@@ -130,6 +137,25 @@ export function normalizeMv(raw) {
   const bpm = Number(o.bpm_hint);
   out.bpm_hint = Number.isFinite(bpm) && bpm > 0 && bpm <= 300 ? Math.round(bpm * 10) / 10 : 0;
   if (!out.audio.name) out.audio.source = 'file';
+  out.clips = mvClipNames(o.clips);
+  return out;
+}
+
+/**
+ * 영상 컷 이름 목록 — 서버 규칙(영문·숫자·한글·공백·._- , 80자)에 맞는 mp4·mov·m4v 만 남긴다.
+ *  · 중복은 버리고 순서는 지킨다. 8개를 넘으면 앞에서 8개(오더가 거절되지 않게 화면이 먼저 자른다).
+ *  · 폴더·경로(../, 앞의 .)는 버린다.
+ */
+export function mvClipNames(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const out = [];
+  list.forEach((x) => {
+    const n = String(x == null ? '' : x).trim();
+    if (!n || n.length > 80) return;
+    if (n.indexOf('..') !== -1 || n.charAt(0) === '.') return;
+    if (!/^[A-Za-z0-9가-힣._ -]+$/.test(n) || !MV_VIDEO_EXT_RE.test(n)) return;
+    if (out.indexOf(n) === -1 && out.length < MV_MAX_CLIPS) out.push(n);
+  });
   return out;
 }
 
@@ -163,15 +189,18 @@ export function mvSummary(mv) {
   const lines = m.lyric_mode === 'none' ? 0 : mvLyricLines(m.lyrics).length;
   return [
     m.audio.name ? (m.audio.title || m.audio.name) : '음원 고르기 전',
+    m.clips.length ? '영상 컷 ' + m.clips.length + '개' : '',
     mvDensityLabel(m.density),
     m.lyric_mode === 'none' ? '가사 없음(연주곡)' : '가사 ' + lines + '줄',
     m.effects === 'pulse' ? '다운비트 번쩍임' : '이펙트 없음'
-  ].join(' · ');
+  ].filter(Boolean).join(' · ');
 }
 
 /**
  * 뮤직비디오 content_render 오더 payload — GAS hubRenderMvPayload_ 와 같은 모양.
- *  · 사진 이름만 싣는다(파일은 허브 드라이브에 이미 올라가 있다).
+ *  · 사진·영상 컷은 이름만 싣는다(파일은 허브 드라이브에 이미 올라가 있다).
+ *  · 2026-11-27 P0: images(사진 25장까지) + inputs(영상 컷 8개까지)를 함께 실을 수 있다.
+ *    영상 컷이 있으면 사진이 0장이어도 되고, 사진만이면 3장 이상이어야 한다(GAS 가 최종 확인).
  *  · 가사가 길면 그대로 싣는다 — GAS 가 큐 한도를 보고 lyrics 를 빼고 payload_source:'drive' 로 보낸다.
  *  · 길이 0 = 곡 끝까지.
  */
@@ -179,6 +208,8 @@ export function mvOrderPayload(input) {
   const i = input || {};
   const mv = normalizeMv(i.mv);
   const images = (Array.isArray(i.images) ? i.images : []).map(String).filter(Boolean).slice(0, 25);
+  // 영상 컷 — 인자로 온 목록(i.inputs)을 우선하고, 없으면 저장된 mv.clips 를 쓴다. 사진과 같은 이름은 뺀다.
+  const clips = mvClipNames(i.inputs === undefined ? mv.clips : i.inputs).filter((n) => images.indexOf(n) === -1);
   const out = {
     type: 'content_render',
     content_id: String(i.contentId || ''),
@@ -196,8 +227,17 @@ export function mvOrderPayload(input) {
       lyric_mode: mv.lyric_mode
     }
   };
+  if (clips.length) out.inputs = clips;
   if (mv.lyric_mode !== 'none' && String(mv.lyrics).trim()) out.mv.lyrics = mv.lyrics;
   return out;
+}
+
+/** 사진·영상 컷 중 무엇으로 채울 수 있는지 — 화면 문구·오더 전 확인용. */
+export function mvMediaPlan(input) {
+  const i = input || {};
+  const photos = Array.isArray(i.images) ? i.images.length : 0;
+  const videos = mvClipNames(i.clips).length;
+  return { photos: photos, videos: videos, ok: videos > 0 || photos >= 3, missing: videos > 0 ? 0 : Math.max(0, 3 - photos) };
 }
 
 export function conceptKindLabel(id) {

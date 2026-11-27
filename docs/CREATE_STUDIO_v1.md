@@ -90,12 +90,15 @@ cd ../hub-agent && node gas/test/run.js              # 큐: content_draft LOW
 
 | 칸 | 입력 | 기본값 |
 |---|---|---|
+| ① 영상 컷 | 카드에 올린 mp4·mov·m4v 고르기(최대 8개) / `[🎬 영상 올리기]` → `upload_video_chunk` (2026-11-27 P0) | 없음 |
 | ② 음원 | `[내 파일]`(mp3·m4a 25MB · wav 30MB, `bgm_put` 2MB 조각) / `[보관함에서 고르기]`(무료 BGM·내 파일, `bgm_list`) | 내 파일 |
 | ③ 가사 | 여러 줄 붙여넣기 / 가사 없음(연주곡) | 내가 쓴 가사 |
 | ④ 분위기 | 신나는 팝 · 감성 발라드 · 코믹·병맛 · 밴드·락 (기록·보고용, 곡 생성은 Phase 3) | 신나는 팝 |
 | ⑤ 길이·컷 밀도 | 15·30·60초·곡 끝까지 × 2박·1마디·2마디 | 곡 끝까지 · 1마디 |
 | 이펙트 | 다운비트 번쩍임 on/off | on |
 
+- **사진 전용이 아니다(2026-11-27 레이 님 결정, P0)** — 영상 컷(`inputs`)을 사진과 함께 쓸 수 있다.
+  영상 컷은 자기 길이만큼 그대로 들어가고, 모자라는 자리는 사진이 비트에 맞춰 채운다.
 - **노래가 목소리라서 내레이션(TTS)·자막 레이어를 쓰지 않는다** — 가사 카라오케 레이어만.
 - 저장: `studio.formats.video.mv`(일반 템플릿과 격리). 카드가 없으면 다른 포맷과 같이 `create_content` 로 만든다.
 - 곡 파일은 큐로 오지 않는다 — `_bgm` 보관함에 올리고 **이름만** 오더에 싣는다. 노트북은 `bgm_fetch` 로 받는다.
@@ -105,12 +108,17 @@ cd ../hub-agent && node gas/test/run.js              # 큐: content_draft LOW
 ```json
 { "content_id": "...", "brand": "daejeon_youth", "profile": "captions", "mode": "mv",
   "images": ["사진01.jpg", "…"],
+  "inputs": ["첫 컷.mp4", "b.mov"],
   "mv": { "audio": "내 노래.mp3", "density": "normal_4beat", "bpm_hint": 0,
           "lyrics": "한 줄\n두 줄", "effects": "pulse", "mood": "pop",
           "length_sec": 0, "lyric_mode": "mine", "lines": 2 } }
 ```
 - `density` ∈ `fast_2beat | normal_4beat | slow_1bar` · `effects` ∈ `pulse | none` · `mood` ∈ `pop | ballad | comic | rock`.
 - `length_sec` 0 = 곡 끝까지. `lyric_mode:'none'` 이면 가사를 버린다(연주곡).
-- 사진은 3~25장. Phase 1 은 사진만(영상 입력은 다음 단계).
+- `images` 사진 0~25장 · `inputs` 영상 1~8개(일반 영상과 같은 상한). **사진만이면 3장 이상, 영상 컷이 하나라도 있으면 사진 0장부터 된다.**
+  둘 다 없으면 `ERR_VALIDATION_FAILED`(문구가 사진·영상 둘 다 알려 준다). 같은 파일 이름이 양쪽에 오면 거절한다.
+- `inputs` 칸은 영상 컷이 없으면 만들지 않는다(예전 오더와 모양이 같다). 파일은 카드의 드라이브 폴더에 이미 올라가 있고 이름만 싣는다.
 - 가사가 2,000자(또는 payload 3,500자)를 넘으면 `lyrics` 를 빼고 `payload_source:'drive'` 로 보낸다 — 노트북이 카드의 `studio.formats.video.mv` 에서 읽는다.
 - GAS 는 `isRealRenderOrder_` 가 `mode` 만 있어도 렌더 경로로 보내 검증에서 거절한다(옛 `claude_prompt` 경로로 새지 않게).
+- **노트북 측 미확인**: `lib/mv.js` 가 `inputs`(영상 컷)를 받아 실제 컷으로 잇는지는 아직 확인되지 않았다(포털 `Q-20261127-125239-4t3m` 에서 @노트북 확인 요청). 허브는 계약대로 보내고, 노트북이 받기 전에는 영상 컷이 무시되거나 렌더가 실패할 수 있다 — 그때는 일반 영상 모드로 렌더한다.
+- `Orders.gs` 를 고쳤으므로 **Apps Script 재배포가 필요하다**(프론트만으로는 안 된다).

@@ -403,10 +403,33 @@ console.log('\n[8h-mv] 뮤직비디오 payload (2026-11-21 Phase 1)');
     ['분위기 값', { images: mvPhotos, mv: { audio: 'a.mp3', mood: 'jazz' } }],
     ['길이 범위', { images: mvPhotos, mv: { audio: 'a.mp3', length_sec: 999 } }],
     ['BPM 범위', { images: mvPhotos, mv: { audio: 'a.mp3', bpm_hint: 900 } }],
-    ['영상까지 섞음', { images: mvPhotos, inputs: ['a.mp4'], mv: { audio: 'a.mp3' } }],
+    ['영상 컷 확장자', { images: mvPhotos, inputs: ['a.exe'], mv: { audio: 'a.mp3' } }],
+    ['영상 컷 9개', { images: mvPhotos, inputs: Array.from({ length: 9 }, (_, i) => 'v' + i + '.mp4'), mv: { audio: 'a.mp3' } }],
+    ['영상·사진 같은 이름', { images: mvPhotos, inputs: ['p1.jpg'], mv: { audio: 'a.mp3' } }],
     ['모르는 mode', { mode: 'mv2', images: mvPhotos, mv: { audio: 'a.mp3' } }]
   ].forEach(([name, pl]) => eq('거부: ' + name, callHandler(A.ctx, 'handleHubOrder_', null, Object.assign({ type: 'content_render', content_id: 'CH-20261121-MV1', brand: 'daejeon_youth', mode: 'mv' }, pl), { brand: 'daejeon_youth' }).code, 'ERR_VALIDATION_FAILED'));
   ok('거부된 뮤직비디오 오더는 큐를 부르지 않았다', A.env.fetched.length === nBeforeBad);
+
+  /* ── 2026-11-27 P0 — 레이 님 결정: 사진 전용이 아니라 영상 컷까지 허용 ── */
+  const mvWithCuts = A.ctx.hubRenderPayload_({
+    content_id: 'CH-20261127-MV2', brand: 'daejeon_youth', mode: 'mv', images: mvPhotos, inputs: ['첫 컷.mp4', 'b.mov'],
+    mv: { audio: '내 노래.mp3', density: 'fast_2beat' }
+  });
+  ok('영상 컷 + 사진을 함께 싣는다(inputs 이름 그대로·순서 보존)', mvWithCuts.mode === 'mv' && Array.isArray(mvWithCuts.inputs) && mvWithCuts.inputs.join() === ['첫 컷.mp4', 'b.mov'].join() && mvWithCuts.images.join() === mvPhotos.join(), mvWithCuts);
+  const mvCutsOnly = A.ctx.hubRenderPayload_({ content_id: 'CH-20261127-MV3', brand: 'daejeon_youth', mode: 'mv', inputs: ['a.mp4'], mv: { audio: 'a.mp3' } });
+  ok('영상 컷만 있어도 된다(사진 0장)', mvCutsOnly.inputs.length === 1 && mvCutsOnly.images.length === 0, mvCutsOnly);
+  ok('사진만이면 지금처럼 3장 이상 · inputs 키는 안 싣는다', (function () {
+    const r = A.ctx.hubRenderPayload_({ content_id: 'CH-20261127-MV4', brand: 'daejeon_youth', mode: 'mv', images: mvPhotos, mv: { audio: 'a.mp3' } });
+    return r.images.length === 4 && r.inputs === undefined;
+  })());
+  ok('같은 영상 이름을 두 번 보내면 한 번만 싣는다', A.ctx.hubRenderPayload_({ content_id: 'CH-20261127-MV5', brand: 'daejeon_youth', mode: 'mv', inputs: ['a.mp4', 'a.mp4'], mv: { audio: 'a.mp3' } }).inputs.join() === 'a.mp4');
+  ok('사진 2장 + 영상 1개는 통과(사진 3장 규칙은 사진만일 때)', (function () {
+    const r = A.ctx.hubRenderPayload_({ content_id: 'CH-20261127-MV6', brand: 'daejeon_youth', mode: 'mv', images: ['a.jpg', 'b.jpg'], inputs: ['v.mp4'], mv: { audio: 'a.mp3' } });
+    return r.images.length === 2 && r.inputs.length === 1;
+  })());
+  ok('사진·영상 모두 없으면 거절 문구가 둘 다 알려 준다', /영상 컷 1개/.test((function () {
+    try { A.ctx.hubRenderPayload_({ content_id: 'CH-20261127-MV7', brand: 'daejeon_youth', mode: 'mv', mv: { audio: 'a.mp3' } }); return ''; } catch (e) { return e.message; }
+  })()));
 }
 
 console.log('\n[8h-lock] 무음 보조 글자·첫 프레임 잠금 (2026-11-21)');
@@ -1828,6 +1851,89 @@ console.log('\n[U] 영상 올리기 (gas/Upload.gs) — 드라이브 조각 저�
     ok('삭제: 곡과 메타를 함께 휴지통으로', dd.ok && dd.data.removed === 2 && !blist2().data.items.some(x => x.name === '내 노래.mp3'), dd);
     const dd2 = bdel2({ name: 'voice memo.m4a' });
     ok('삭제: 한글·공백 이름도 된다', dd2.ok && dd2.data.removed === 2 && blist2().data.items.length === 0, dd2);
+  }
+
+  /* ── [V2b] 글꼴 보관함 (2026-11-27, P0 — gas/Upload.gs font_*) ── */
+  console.log('\n[V2b] 커스텀 폰트 보관함 (font_put·font_list·font_fetch·font_delete)');
+  {
+    const HMf = ev(U.ctx, 'M1_HANDLERS');
+    const FA = ['font_put', 'font_list', 'font_fetch', 'font_delete'];
+    ok('폰트 액션 4개가 화이트리스트·핸들러에 있다', FA.every(a => wl[a] && wl[a].m1 === true && typeof HMf[a] === 'function'));
+    ok('올리기는 쓰기(감사 행 없음)·목록/받기는 읽기 · 모두 라우터 락 없음', wl.font_put.mode === 'WRITE' && wl.font_put.noAudit === true && wl.font_list.mode === 'READ' && wl.font_fetch.mode === 'READ' && wl.font_delete.mode === 'WRITE' && FA.every(a => wl[a].longRunning === true));
+    const authOf = (action, token) => callHandler(U.ctx, 'authenticateRequest_', null, { action, auth_token: token, client_id: 'font-test' }, { allowAllBrand: true });
+    U.env.props.set('API_SECRET_TOKEN', 'test-secret-token-0123456789abcdef');
+    FA.forEach((a) => {
+      eq(a + ': 토큰이 없으면 거부', authOf(a, '').code, 'ERR_UNAUTHORIZED');
+      ok(a + ': 맞는 토큰이면 통과', authOf(a, 'test-secret-token-0123456789abcdef').ok);
+    });
+    const bigF = (action, n) => '{"action":"' + action + '","payload":{"data":"' + 'A'.repeat(n) + '"}}';
+    const sizeF = (raw) => callHandler(U.ctx, 'assertRequestSizeWithinLimit_', raw).code;
+    ok('font_put: 2.8MB 조각은 통과 · 3.6MB 는 거부(3.4MB 한도)', sizeF(bigF('font_put', 2800000)) === undefined && sizeF(bigF('font_put', 3600000)) === 'ERR_PAYLOAD_TOO_LARGE');
+
+    const put = (p) => callHandler(U.ctx, 'handleFontPut_', null, p);
+    const flist = () => callHandler(U.ctx, 'handleFontList_', null, {});
+    const ffetch = (p) => callHandler(U.ctx, 'handleFontFetch_', null, p);
+    const fdel = (p) => callHandler(U.ctx, 'handleFontDelete_', null, p);
+    const b64f = (buf) => Buffer.from(buf).toString('base64');
+    // 진짜 폰트 머리글(TrueType 1.0 / OTF 'OTTO' / woff2 'wOF2')
+    const ttf = Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.from(Array.from({ length: 300000 }, (_, i) => (i * 13) % 256))]);
+    const ttfParts = [ttf.subarray(0, 200000), ttf.subarray(200000)];
+    const r0 = put({ name: 'Miryung-Bold.ttf', license: 'OFL-1.1', index: 0, parts: 2, total_size: ttf.length, data: b64f(ttfParts[0]) });
+    ok('첫 조각: 이름·라이선스를 받는다(한 조각만으로는 아직 complete 아님)', r0.ok && r0.data.license === 'OFL-1.1' && r0.data.parts === 2, r0);
+    const r1 = put({ name: 'Miryung-Bold.ttf', license: 'OFL-1.1', index: 1, parts: 2, total_size: ttf.length, data: b64f(ttfParts[1]) });
+    ok('둘째 조각: 저장', r1.ok && r1.data.index === 1, r1);
+    const L = flist();
+    ok('목록: 이름·표시이름·라이선스·크기·조각 수·완성', L.ok && L.data.items.length === 1 && L.data.items[0].name === 'Miryung-Bold.ttf' && L.data.items[0].label === 'Miryung-Bold' && L.data.items[0].license === 'OFL-1.1' && L.data.items[0].bytes === ttf.length && L.data.items[0].complete === true, L.data);
+    const bytesBack = [0, 1].map(i => ffetch({ name: 'Miryung-Bold.ttf', index: i, parts: 2 }));
+    ok('받기: 조각을 이어 붙이면 원본과 같다(화면 미리보기·노트북이 같은 길로 받는다)', bytesBack.every(g => g.ok) && Buffer.compare(Buffer.concat(bytesBack.map(g => Buffer.from(g.data.data, 'base64'))), ttf) === 0, bytesBack.map(g => g.code));
+    const fontRoot = root.folders.find(f => f.name === 'ContentHubOS_Fonts');
+    ok('보관함은 ContentHubOS_Fonts 비공개 폴더 한 곳(카드와 별개)', !!fontRoot && fontRoot.shared === 'PRIVATE/NONE' && fontRoot.live().filter(f => !/\.part/.test(f.name)).map(f => f.name).sort().join() === '_fonts.json', fontRoot && fontRoot.live().map(f => f.name));
+    ok('루트 폴더 ID 를 스크립트 속성에 기억한다', U.env.props.get('FONT_ROOT_FOLDER_ID') === fontRoot.id);
+    ok('목록은 영상 조각·BGM 목록에 섞이지 않는다', list('C-001').data.items.length === 0 && callHandler(U.ctx, 'handleBgmList_', null, {}).data.items.length === 0);
+
+    // 라이선스 — 재배포 가능한 것만
+    const n0 = fontRoot.live().length;
+    eq('라이선스를 안 고르면 거부', put({ name: 'a.ttf', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('상용·데스크톱 라이선스는 거부', put({ name: 'Sandoll.ttf', license: 'commercial-desktop', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('개인용 무료(재배포 금지)는 거부', put({ name: 'Personal.ttf', license: 'free-personal', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('라이선스를 모르면 거부', put({ name: 'Unknown.ttf', license: 'unknown', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('모르는 라이선스 값은 거부', put({ name: 'Weird.ttf', license: 'free', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    ok('거부된 폰트는 폴더를 늘리지 않는다', fontRoot.live().length === n0);
+    ok('허용 라이선스 6종은 모두 받는다', (function () {
+      const ids = ev(U.ctx, 'FONT_LICENSES_OK');
+      const want = ['OFL-1.1', 'Apache-2.0', 'MIT', 'CC0-1.0', 'CC-BY-4.0', 'PD'];
+      return ids.join() === want.join() && want.every((id, i) => put({ name: 'ok' + i + '.otf', license: id, index: 0, parts: 1, total_size: ttf.length, data: b64f(Buffer.concat([Buffer.from('OTTO'), ttf.subarray(4)])) }).ok);
+    })());
+    ok('읽힌 라이선스가 목록에 그대로 남는다', flist().data.items.filter(x => /^ok\d\.otf$/.test(x.name)).map(x => x.license).sort().join() === ['Apache-2.0', 'CC-BY-4.0', 'CC0-1.0', 'MIT', 'OFL-1.1', 'PD'].sort().join());
+
+    // 파일 자체
+    eq('ttf·otf·woff2 가 아닌 확장자 거부', put({ name: 'a.zip', license: 'OFL-1.1', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('경로가 든 이름 거부', put({ name: '../a.ttf', license: 'OFL-1.1', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('점으로 시작 거부', put({ name: '.a.ttf', license: 'OFL-1.1', index: 0, parts: 1, total_size: ttf.length, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('허브가 정한 20MB 를 넘으면 거부', put({ name: 'big.ttf', license: 'OFL-1.1', index: 0, parts: 1, total_size: 20 * 1024 * 1024 + 1, data: b64f(ttf) }).code, 'ERR_VALIDATION_FAILED');
+    eq('빈 조각 거부', put({ name: 'a.ttf', license: 'OFL-1.1', index: 0, parts: 1, total_size: ttf.length, data: '' }).code, 'ERR_VALIDATION_FAILED');
+    ok('확장자만 폰트인 엉뚱한 파일은 첫 4바이트로 거부', ['<htm', 'RIFF', 'GIF8', 'PK\u0003\u0004'].every((tag) => put({ name: 'fake' + Math.random().toString(36).slice(2, 6) + '.ttf', license: 'OFL-1.1', index: 0, parts: 1, total_size: 200000, data: b64f(Buffer.concat([Buffer.from(tag, 'binary'), Buffer.alloc(199996, 1)])) }).code === 'ERR_VALIDATION_FAILED'));
+    ok('woff2(wOF2)·ttcf 머리글도 폰트로 인정', put({ name: 'web.woff2', license: 'OFL-1.1', index: 0, parts: 1, total_size: 200000, data: b64f(Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(199996, 1)])) }).ok && put({ name: 'bundle.ttc', license: 'OFL-1.1', index: 0, parts: 1, total_size: 200000, data: b64f(Buffer.concat([Buffer.from('ttcf'), Buffer.alloc(199996, 1)])) }).code === 'ERR_VALIDATION_FAILED');
+
+    // 다시 올리기 · 지우기
+    const n1 = fontRoot.live().filter(f => f.name.indexOf('Miryung-Bold.ttf') === 0).length;
+    const reUp = put({ name: 'Miryung-Bold.ttf', index: 0, parts: 1, total_size: 100000, data: b64f(Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.alloc(99996, 2)])) });
+    ok('같은 이름을 다시 올리면 옛 조각을 치우고 라이선스를 유지한다', reUp.ok && reUp.data.license === 'OFL-1.1' && fontRoot.live().filter(f => f.name.indexOf('Miryung-Bold.ttf') === 0 && !f.trashed).length === 1 && flist().data.items.find(x => x.name === 'Miryung-Bold.ttf').bytes === 100000, reUp);
+    ok('다시 올려도 목록에 한 번만 나온다', flist().data.items.filter(x => x.name === 'Miryung-Bold.ttf').length === 1);
+    const del = fdel({ name: 'Miryung-Bold.ttf' });
+    ok('지우기: 조각과 목록 항목이 함께 사라진다', del.ok && del.data.removed === 1 && !flist().data.items.some(x => x.name === 'Miryung-Bold.ttf'), del);
+    eq('지우기: 올린 적 없으면 0개', fdel({ name: 'none.ttf' }).data.removed, 0);
+    eq('지우기: 이름 검사', fdel({ name: '../x.ttf' }).code, 'ERR_VALIDATION_FAILED');
+
+    // 화면(js)과 같은라이선스 목록 · 상수
+    const designSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'designModel.js'), 'utf8');
+    ok('허브 화면(designModel.js)의 허용 라이선스 목록이 서버와 같다', (function () {
+      const want = ev(U.ctx, 'FONT_LICENSES_OK');
+      const block = (designSrc.match(/FONT_LICENSES = \[([\s\S]*?)\n\];/) || [])[1] || '';
+      const jsIds = (block.match(/id: '([^']+)', label: [^\n]*?ok: true/g) || []).map((m) => (m.match(/id: '([^']+)'/) || [])[1]);
+      return jsIds.join() === want.join();
+    })(), 'js/designModel.js FONT_LICENSES 의 ok:true 목록');
+    ok('허브 화면의 폰트 상한(20MB · ttf/otf/woff2)이 서버와 같다', ev(U.ctx, 'FONT_MAX_BYTES') === 20 * 1024 * 1024 && ev(U.ctx, 'FONT_EXT_RE').source === '\\.(ttf|otf|woff2)$' && /FONT_MAX_BYTES = 20 \* 1024 \* 1024/.test(designSrc) && /FONT_EXT_RE = \/\\\.\(ttf\|otf\|woff2\)\$\/i/.test(designSrc));
   }
 
   /* ── [V3] 내 육성 녹음 (2026-11-23, gas/Bgm.gs voice_put·fetch·delete) ── */

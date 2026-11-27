@@ -29,7 +29,7 @@ import {
   dedupState, dedupKey, urlHash
 } from './productShorts.js?v=20261124v3';
 import { copyButton } from './clipboard.js?v=20261126a';
-import { uploadPhoto, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261126c';
+import { uploadPhoto, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261127a';
 import {
   BRAND_TRACKS, trackById, normalizeBrandTrack, brandOfTrack, channelsOfTrack, channelLabelOf,
   channelPlan, trackSwitchPlan, trackTagList, readBrandTrack, writeBrandTrack

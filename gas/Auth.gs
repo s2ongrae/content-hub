@@ -52,6 +52,11 @@ const ACTION_WHITELIST = {
   asset_get:            { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   upload_video_list:    { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   upload_video_fetch:   { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  // 글꼴 보관함 (2026-11-27, P0) — 2MB 조각이라 큰 본문(noAudit) · 드라이브 외부 호출(라우터 락 없음)
+  font_put:             { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true, noAudit: true },
+  font_delete:          { mode: 'WRITE', allowDegraded: false, m1: true, longRunning: true },
+  font_list:            { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
+  font_fetch:           { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   // 무료 BGM 찾기·보관 (2026-11-21, gas/Bgm.gs) — 외부(Openverse·Jamendo)·드라이브 호출이라 라우터 락 없음
   bgm_search:          { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
   bgm_list:            { mode: 'READ',  allowDegraded: true,  m1: true, longRunning: true },
@@ -115,7 +120,7 @@ const RATE_LIMIT_WINDOW_SEC_ = 60;
 const RATE_LIMIT_MAX_REQ_ = 120;        // 1인 사용 + 피클 병렬 호출 여유
 const MAX_REQUEST_BYTES_ = 524288;      // 512KB
 const MAX_PAYLOAD_BYTES_ = 204800;      // 200KB (Drive payload 1개)
-const MAX_UPLOAD_REQUEST_BYTES_ = 3565158;   // 3.4MB — upload_video_chunk·result_put·bgm_put 만(2MB 조각의 base64 약 2.8MB + 봉투)
+const MAX_UPLOAD_REQUEST_BYTES_ = 3565158;   // 3.4MB — upload_video_chunk·result_put·bgm_put·voice_put·font_put 만(2MB 조각의 base64 약 2.8MB + 봉투)
 
 /** 비밀번호·쿠키·2FA·카드·주민번호 등은 저장 자체를 막는다 (C7) */
 const SENSITIVE_KEY_PATTERN_ = /(passwd|password|pwd|secret|cookie|session(id)?|otp|2fa|auth_?code|cvc|cvv|card_?num|account_?num|rrn|resident|주민|계좌비번|api_?key|private_?key|access_?token|refresh_?token)/i;
@@ -314,7 +319,7 @@ function assertRequestSizeWithinLimit_(rawBody) {
   // 영상 조각 업로드만 더 큰 본문을 받는다. 액션 이름은 본문 앞부분에서 가볍게 확인하고(api.js 가 action 을 맨 앞에 쓴다),
   // 진짜 액션은 인증 단계에서 다시 확인된다 — 여기서 속여도 얻는 것은 '큰 본문을 파싱해 보는 것'뿐이다.
   const head120 = String(rawBody || '').slice(0, 120);
-  const isUpload = head120.indexOf('"action":"upload_video_chunk"') !== -1 || head120.indexOf('"action":"result_put"') !== -1 || head120.indexOf('"action":"bgm_put"') !== -1 || head120.indexOf('"action":"voice_put"') !== -1;   // 2MB 조각을 보내는 액션만
+  const isUpload = head120.indexOf('"action":"upload_video_chunk"') !== -1 || head120.indexOf('"action":"result_put"') !== -1 || head120.indexOf('"action":"bgm_put"') !== -1 || head120.indexOf('"action":"voice_put"') !== -1 || head120.indexOf('"action":"font_put"') !== -1;   // 2MB 조각을 보내는 액션만
   const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES_ : MAX_REQUEST_BYTES_;
   const bytes = Utilities.newBlob(rawBody || '').getBytes().length;
   if (bytes > limit) {

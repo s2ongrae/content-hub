@@ -99,9 +99,40 @@ kind: doc
 - 허브 `node test/run.js` [15] — 프리셋이 시드·노트북과 같은가, 정규화·겹침·타임라인, 미리보기 좌표 환산, `design` 오더가 `payload_source:'drive'` 만 싣는가, design 없을 때 payload 가 지금과 같은가.
 - 노트북 `node test/design.js` (또는 `node test/run.js`) — 기본값 회귀(스타일 줄·이벤트), 프리셋 ASS, 박스 레이어·둥글기·alpha, 구간 이벤트 시간·좌표, 2줄 제목 자동 끔, 가짜 도구로 렌더 통합 + `report.design`.
 
+## 커스텀 폰트 (2026-11-27, P0 — 레이 님 결정)
+
+레이 님이 두 가지를 정했다(부이 전달 `Q-20261127-125239-4t3m`): **커스텀 폰트 업로드**와 **재배포 가능한 라이선스만 허용**.
+
+### 어디에 저장하나
+
+- 드라이브 `ContentHubOS_Fonts/` **비공개** 폴더 한 곳(영상·사진의 `ContentHubOS_Uploads/<content_id>/` 와 별개 — 모든 카드가 같이 쓴다).
+- 올리기는 영상과 같은 2MB 조각 경로다: `font_put`(조각) · `font_list`(목록) · `font_fetch`(조각 받기 — 화면 미리보기·노트북) · `font_delete`.
+- 목록·라이선스는 폴더 안 `_fonts.json` 한 파일에 모은다(`{name, label, license, bytes, parts, updated_at}`).
+- 같은 이름으로 다시 올리면 옛 조각을 지우고 새로 시작한다(멱등). 보관함 40종·한 벌 20MB 까지.
+
+### 허용 규칙 (서버가 최종 판정)
+
+| 라이선스 | 받나 | 비고 |
+|---|---|---|
+| OFL-1.1 · Apache-2.0 · MIT · CC0-1.0 · CC-BY-4.0 · PD | 받는다 | CC BY 는 영상·설명란 출처 표기 |
+| 상용·데스크톱 라이선스(산돌·윤디자인 등) | 받지 않는다 | 파일 보관 자체가 재배포 — 영상에 글자로 찍는 것만 허용 |
+| 개인용 무료(상업·재배포 금지) · 라이선스 모름 | 받지 않는다 | 무료로 받았다고 재배포가 되는 것이 아니다 |
+
+- 확장자 `ttf`·`otf`·`woff2` 만. **첫 4바이트 서명**(`\x00\x01\x00\x00`·`true`·`OTTO`·`wOF2`·`ttcf`)으로 폰트 파일인지 확인한다 — 확장자만 바꾼 파일은 거절.
+- 화면은 라이선스를 고르고 "다시 배포해도 된다" 확인에 체크해야 올리기가 열린다(`js/designModel.js` `checkFontLicense`).
+- 두 벌의 상수가 갈라지지 않게 `test/run.js` [15b] 와 `gas/test/run.js` [V2b] 가 목록·상한을 대조한다.
+
+### 값 · 미리보기 · 노트북
+
+- 역할의 `font` 값은 **파일 이름**이다: 기본 `"Pretendard"`, 커스텀 `"Miryung-Bold.otf"`. 이름이 그대로라 노트북이 파일만 찾으면 된다.
+- 모르는 값(경로·다른 확장자·이상한 글자)은 `normalizeFontRef` 가 `Pretendard` 로 되돌린다 — 렌더가 깨지지 않게.
+- 미리보기는 `font_fetch` 로 바이트를 받아 `FontFace` 에 `customFontAlias()` 별명으로 등록해 그린다(파일마다 별명이 달라 섞이지 않는다).
+- **woff2 는 화면 미리보기용**이다 — ffmpeg/freetype 이 woff2 를 풀지 못하므로 MP4 에 굽고 싶으면 같은 폰트의 ttf·otf 를 올려야 한다(화면 경고 `font_woff2`).
+- 노트북 `lib/design.js` 는 아직 `font` 값을 Pretendard 로만 다룬다 — 커스텀 폰트 굽기(`RENDER_FONTS_DIR`·`fontfile=`)는 @노트북 몫으로 남아 있다.
+
 ## Phase 2 로 남긴 것
 
-1. 제목/배지/자막 **폰트 개별 선택** + `+내 폰트 추가`(Drive `_fonts` → `RENDER_FONTS_DIR`, family 대조표, 윈도우 fontsdir 폴백).
+1. ~~제목/배지/자막 폰트 개별 선택 + 내 폰트 추가~~ → 2026-11-27 P0 로 올렸다(위 '커스텀 폰트'). 남은 것: 노트북이 보관함 폰트로 실제 ASS/MP4 를 굽는 일(`RENDER_FONTS_DIR`·`fontfile=`), 윈도우 fontsdir 폴백.
 2. **노트북 1프레임 미리보기**(지정 초 프레임만 ASS 굽기 — 훅 뒤 시각으로).
 3. **컷 순서(sequence) 타임라인 UI** — 구간 제목을 컷 그룹에 스냅.
 4. 내 프리셋 저장·트랙 기본값 잠그기·프리셋별 성과 비교(쇼츠 3지표).

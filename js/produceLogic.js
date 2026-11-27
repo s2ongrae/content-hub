@@ -10,9 +10,9 @@
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261126c';
+import { tcToSec } from './yt/edl.js?v=20261127a';
 import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261126c';
-import { hasDesign, normalizeDesign, defaultDesign } from './designModel.js?v=20261126c';
+import { hasDesign, normalizeDesign, defaultDesign } from './designModel.js?v=20261127a';
 import { isDeployGap } from './uiState.js?v=20261126a';
 
 export const CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;   // 첫 글자는 영문·숫자(포털 큐·노트북과 같은 규칙)

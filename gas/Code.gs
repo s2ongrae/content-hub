@@ -245,6 +245,11 @@ const M1_HANDLERS = {
   upload_video_list: handleUploadVideoList_,
   upload_video_fetch: handleUploadVideoFetch_,
   upload_video_delete: handleUploadVideoDelete_,
+  // 글꼴 보관함 (2026-11-27, P0) — 재배포 가능 라이선스만. gas/Upload.gs
+  font_put: handleFontPut_,
+  font_list: handleFontList_,
+  font_fetch: handleFontFetch_,
+  font_delete: handleFontDelete_,
   bgm_search: handleBgmSearch_,
   bgm_pick: handleBgmPick_,
   bgm_list: handleBgmList_,

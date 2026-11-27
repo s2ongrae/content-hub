@@ -2015,6 +2015,93 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('글자 디자인 시험', false, (err && err.stack) || err);
   }
 
+  /* ────────────────────────── [15b] 커스텀 폰트 · MV 영상 컷 (2026-11-27, P0 — 레이 님 결정 Q-20261127-125239-4t3m) ──────────────────────────
+     ① MV inputs 스키마 — 사진 전용이 아니라 영상 컷까지 ② 커스텀 폰트 업로드 ③ 폰트 허용 규칙(재배포 가능 라이선스만).
+     서버(gas) 쪽 같은 규칙은 gas/test/run.js [8h-mv]·[V2b] 가 본다. */
+  console.log('[15b] 커스텀 폰트 · MV 영상 컷 (P0)');
+  try {
+    const dm = await import('file://' + path.join(ROOT, 'js', 'designModel.js') + '?v=p0font');
+    const SL2 = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=p0mv');
+    const UV = await import('file://' + path.join(ROOT, 'js', 'uploadVideo.js') + '?v=p0font');
+
+    /* ③ 폰트 허용 규칙 */
+    eq('허용 라이선스 6종(OFL·Apache·MIT·CC0·CC BY·PD)', dm.FONT_LICENSES_OK.join(), 'OFL-1.1,Apache-2.0,MIT,CC0-1.0,CC-BY-4.0,PD');
+    eq('막지 않는 라이선스 3종(상용·개인용·모름)', dm.FONT_LICENSES_BLOCKED.join(), 'commercial-desktop,free-personal,unknown');
+    ok('OFL 은 통과', dm.checkFontLicense('OFL-1.1').ok === true && /Open Font/.test(dm.checkFontLicense('OFL-1.1').label));
+    ok('상용 데스크톱은 이유와 함께 막힌다(파일 보관 불가)', (() => { const r = dm.checkFontLicense('commercial-desktop'); return r.ok === false && /보관·배포/.test(r.error); })());
+    ok('개인용 무료·라이선스 모름도 막힌다', !dm.checkFontLicense('free-personal').ok && !dm.checkFontLicense('unknown').ok && !dm.checkFontLicense('').ok);
+    eq('허브가 허용하는 폰트 확장자', dm.FONT_EXT.join(), 'ttf,otf,woff2');
+    eq('폰트 한 벌 상한 20MB', dm.FONT_MAX_BYTES, 20 * 1024 * 1024);
+    ok('ttf·otf·woff2 만 통과(대소문자 무시)', ['a.ttf', 'a.OTF', 'a.Woff2'].every((n) => dm.checkFontFile({ name: n, size: 1000 }).ok) && !dm.checkFontFile({ name: 'a.zip', size: 1000 }).ok);
+    ok('20MB 를 넘거나 빈 파일이면 거절', !dm.checkFontFile({ name: 'a.ttf', size: 20 * 1024 * 1024 + 1 }).ok && !dm.checkFontFile({ name: 'a.ttf', size: 0 }).ok);
+    ok('파일 이름을 서버 규칙으로 다듬는다(위험 문자는 _ · 확장자 유지)', dm.checkFontFile({ name: '../내 폰트<b>.OTF', size: 900 }).name === '내 폰트_b_.otf', dm.checkFontFile({ name: '../내 폰트<b>.OTF', size: 900 }).name);
+    eq('표시 이름은 확장자를 떼고 32자', dm.fontLabel('NotoSansKR-Bold.otf'), 'NotoSansKR-Bold');
+    eq('기본 폰트는 Pretendard 하나', dm.BUILTIN_FONT, 'Pretendard');
+    ok('기본과 커스텀을 가른다', dm.isBuiltinFont('') && dm.isBuiltinFont('Pretendard') && !dm.isBuiltinFont('A.otf') && dm.isCustomFontFile('A.otf') && !dm.isCustomFontFile('A.exe'));
+    ok('모르는 font 값은 기본으로 돌린다(렌더가 깨지지 않게)', ['', 'Pretendard', 'NotoSansKR-Bold.otf', '../x.ttf', 'a.exe', 'Javascript:alert(1)', 'x'.repeat(80) + '.ttf'].every((v) => { const f = dm.normalizeFontRef(v); return f === 'Pretendard' || f === 'NotoSansKR-Bold.otf'; }));
+    eq('정상 파일 이름은 그대로 지킨다', dm.normalizeFontRef('Miryung-Bold.otf'), 'Miryung-Bold.otf');
+    ok('역할의 font 가 정규화를 지나 카드에 남는다', (() => { const d = dm.normalizeDesign({ roles: { caption: { font: 'Miryung-Bold.otf' }, title: { font: 'A.ttf' }, badge: { font: 'bad.exe' } } }); return d.roles.caption.font === 'Miryung-Bold.otf' && d.roles.title.font === 'A.ttf' && d.roles.badge.font === 'Pretendard'; })());
+    ok('커스텀 폰트만 캔버스 벌명을 붙인다(기본은 Pretendard 스택 그대로)', dm.canvasFontFamily('Pretendard') === dm.FONT_STACK && dm.canvasFontFamily('A.otf').indexOf(dm.customFontAlias('A.otf')) >= 0 && dm.canvasFontFamily('A.otf').indexOf('Pretendard') > 0);
+    ok('벌명은 파일마다 다르고 같은 파일은 같다', dm.customFontAlias('A.otf') === dm.customFontAlias('A.otf') && dm.customFontAlias('A.otf') !== dm.customFontAlias('B.otf'));
+    ok('woff2 는 미리알림이 있고 otf 는 없다', /MP4/.test(dm.fontRenderNote('A.woff2')) && dm.fontRenderNote('A.otf') === '' && dm.fontRenderNote('Pretendard') === '');
+    ok('woff2 를 고르면 디자인 경고에 한 번만 나온다', (() => { const w = dm.designWarnings({ roles: { caption: { font: 'A.woff2' }, title: { font: 'A.woff2' } } }, {}).filter((x) => x.code === 'font_woff2'); return w.length === 1 && /자막/.test(w[0].msg); })());
+    ok('한 줄 요약에 내 폰트가 나온다', /내 폰트 Miryung-Bold/.test(dm.designSummary({ roles: { caption: { font: 'Miryung-Bold.otf' } } })));
+    ok('내 폰트를 쓰면 카드에 디자인을 쓴다(기본값이 아니라서 null 이 아니다)', dm.designForCard({ roles: { caption: { font: 'Miryung-Bold.otf' } } }) !== null);
+    ok('업로드 없이 이미 있는 Pretendard 는 OFL 파일로 허브에 들어 있다', fs.existsSync(path.join(ROOT, 'font', 'Pretendard-Bold.woff2')) && /SIL OPEN FONT LICENSE|Open Font License/i.test(fs.readFileSync(path.join(ROOT, 'font', 'OFL.txt'), 'utf8')));
+
+    /* ③-b 업로드 클라이언트(uploadVideo.js) — 올리기·목록·받기·지우기 */
+    ok('uploadVideo: 폰트 판이 있다(ttf·otf·woff2)', UV.isFontFile('a.woff2') && !UV.isFontFile('a.mp4'));
+    eq('uploadVideo: 폰트 상한은 designModel 과 같다', UV.FONT_MAX_BYTES, dm.FONT_MAX_BYTES);
+    ok('uploadVideo: 폰트가 아닌 파일은 보내기 전에 거부', (await (async () => { try { await UV.uploadFont({ api: { post: async () => ({}) }, file: { name: 'a.exe', size: 10, slice: () => ({}) }, license: 'OFL-1.1' }); return false; } catch (e) { return e.code === 'ERR_VALIDATION_FAILED'; } })()));
+    ok('uploadVideo: 라이선스가 막힌 것이면 서버를 부르지 않는다', (await (async () => { let n = 0; try { await UV.uploadFont({ api: { post: async () => { n++; return {}; } }, file: { name: 'a.ttf', size: 10, slice: () => ({}) }, license: 'commercial-desktop' }); } catch (e) { return e.code === 'ERR_VALIDATION_FAILED' && n === 0; } return false; })()));
+    {
+      const data = new Uint8Array(3000000).map((_, i) => i % 251);
+      const file = { name: 'Miryung Bold.ttf', size: data.length, slice: (a, b) => { const part = data.slice(a, b); return { size: part.length, arrayBuffer: async () => part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) }; } };
+      const posts = [];
+      const r = await UV.uploadFont({ api: { post: async (a, p) => { posts.push({ action: a, ...p }); return { ok: true }; } }, file, license: 'CC-BY-4.0' });
+      ok('uploadFont: 2MB 조각으로 나누어 font_put 에 라이선스를 함께 보낸다', posts.length === 2 && r.parts === 2 && posts.every((p) => p.action === 'font_put' && p.license === 'CC-BY-4.0' && p.name === 'Miryung Bold.ttf' && p.parts === 2 && p.total_size === data.length) && posts[0].index === 0 && posts[1].index === 1, posts.map((p) => [p.action, p.index, p.license]));
+      let n = 0;
+      const flaky = { post: async (a, p) => { if (p.index === 1 && ++n < 3) { const e = new Error('끊김'); e.code = 'ERR_NETWORK'; throw e; } return { ok: true }; } };
+      const r2 = await UV.uploadFont({ api: flaky, file, license: 'OFL-1.1' });
+      ok('uploadFont: 네트워크가 끊기면 그 조각만 다시 보낸다', r2.parts === 2 && n === 3);
+      ok('listFonts: 완성된 폰트만 고를 수 있다', (await UV.listFonts({ post: async () => ({ data: { items: [{ name: 'A.ttf', complete: true }, { name: 'B.ttf', complete: false }, null] } }) })).length === 1);
+      const fetchCalls = [];
+      const bytes = await UV.fetchFontBytes({ post: async (a, p) => { fetchCalls.push(p); return { data: { data: Buffer.from([p.index, 7, 7]).toString('base64') } }; } }, { name: 'A.ttf', parts: 2 });
+      ok('fetchFontBytes: 조각을 이어 붙여 바이트 하나로(미리보기용)', fetchCalls.length === 2 && bytes.length === 6 && bytes[0] === 0 && bytes[3] === 1);
+      const dels = [];
+      await UV.deleteFont({ post: async (a, p) => { dels.push([a, p]); return { ok: true }; } }, 'A.ttf');
+      ok('deleteFont: font_delete 로 보낸다', dels.length === 1 && dels[0][0] === 'font_delete' && dels[0][1].name === 'A.ttf');
+    }
+
+    /* ① MV — 영상 컷 허용 */
+    ok('기본값에 영상 컷 목록이 있다(빈 배열)', Array.isArray(SL2.defaultMv().clips) && SL2.defaultMv().clips.length === 0);
+    ok('영상 컷 목록을 다듬는다(확장자·경로·중복·8개)', (() => { const c = SL2.mvClipNames(['a.mp4', 'a.mp4', '../b.mp4', '.c.mp4', 'd.exe', 'e.mov', 'f.m4v']); return c.join() === 'a.mp4,e.mov,f.m4v'; })());
+    eq('영상 컷은 8개까지', SL2.mvClipNames(Array.from({ length: 12 }, (_, i) => 'v' + i + '.mp4')).length, 8);
+    eq('영상 컷 상한은 일반 영상과 같다', SL2.MV_MAX_CLIPS, 8);
+    ok('normalizeMv 가 저장된 컬을 지킨다', SL2.normalizeMv({ clips: ['집.mp4', 'bad.avi'] }).clips.join() === '집.mp4');
+    const pMv2 = SL2.mvOrderPayload({ contentId: 'CH-9', brand: 'daejeon_youth', images: ['a.jpg', 'b.jpg', 'c.jpg'], mv: { audio: { name: 'x.mp3' }, clips: ['v1.mp4', 'v2.mov'] } });
+    ok('오더: images 와 inputs(영상 컷)를 같이 싣는다', pMv2.mode === 'mv' && pMv2.images.length === 3 && pMv2.inputs.join() === 'v1.mp4,v2.mov' && pMv2.type === 'content_render', pMv2);
+    ok('오더: 사진과 같은 이름은 영상 칸에서 뺀다(서버 거절 방지)', (() => { const p = SL2.mvOrderPayload({ contentId: 'C', brand: 'daejeon_youth', images: ['a.jpg'], mv: { audio: { name: 'x.mp3' }, clips: ['a.jpg', 'b.mp4'] } }); return p.inputs.join() === 'b.mp4'; })());
+    ok('오더: 영상 컷이 없으면 inputs 칸을 만들지 않는다(예전과 같은 모양)', !('inputs' in SL2.mvOrderPayload({ contentId: 'C', brand: 'daejeon_youth', images: ['a.jpg'], mv: { audio: { name: 'x.mp3' } } })));
+    ok('오더: 인자로 준 영상 목록이 저장값보다 우선한다', SL2.mvOrderPayload({ contentId: 'C', brand: 'daejeon_youth', images: ['a.jpg'], inputs: ['new.mp4'], mv: { audio: { name: 'x.mp3' }, clips: ['old.mp4'] } }).inputs.join() === 'new.mp4');
+    ok('사진 3장 이상 또는 영상 1개 이상 — 어느 쪽이든 렌더 가능', (() => { const a = SL2.mvMediaPlan({ images: ['a.jpg', 'b.jpg', 'c.jpg'], clips: [] }); const b = SL2.mvMediaPlan({ images: [], clips: ['a.mp4'] }); const c = SL2.mvMediaPlan({ images: ['a.jpg'], clips: [] }); return a.ok && b.ok && !c.ok && c.missing === 2; })());
+    ok('한 줄 요약에 영상 컷 개수가 들어간다', /영상 컷 2개/.test(SL2.mvSummary({ audio: { name: 's.mp3' }, clips: ['a.mp4', 'b.mov'] })) && SL2.mvSummary({ audio: { name: 's.mp3' } }).indexOf('영상 컷') < 0);
+
+    /* 화면 */
+    const dgSrc = fs.readFileSync(path.join(ROOT, 'js', 'designView.js'), 'utf8');
+    const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('화면: 역할마다 폰트 칸이 있고 올리기 버튼이 있다', /fontBlock\('caption'/.test(dgSrc) && /fontBlock\('title'/.test(dgSrc) && /fontBlock\('badge'/.test(dgSrc) && /내 폰트 올리기/.test(dgSrc));
+    ok('화면: 올리기는 라이선스 선택 + 확인 체크가 있어야 보낸다', /checkFontLicense\(licSel\.value\)/.test(dgSrc) && /라이선스 확인에 체크/.test(dgSrc) && /uploadFont\(/.test(dgSrc) && /font_put|uploadFont/.test(dgSrc));
+    ok('화면: 라이선스 목록은 허용한 것만 보여 준다(막힌 것은 고를 수 없다)', /FONT_LICENSES\.filter\(\(l\) => l\.ok\)/.test(dgSrc));
+    ok('화면: 미리보기는 고른 폰트 파일로 그린다(canvasFontFamily)', /canvasFontFamily\(cap\.font\)/.test(dgSrc) && /canvasFontFamily\(t\.font\)/.test(dgSrc) && /canvasFontFamily\(b\.font\)/.test(dgSrc) && /new FontFace\(customFontAlias/.test(dgSrc));
+    ok('화면: MV 에 영상 컷 칸과 영상 올리기가 있다', /① 영상 컷/.test(csSrc) && /영상 올리기/.test(csSrc) && /mvMediaPlan\(/.test(csSrc) && /MV_MAX_CLIPS/.test(csSrc));
+    ok('화면: 사진만 있을 때는 예전처럼 3장을 본다(로직은 mvMediaPlan)', /mvMediaPlan\(\{ images: photos, clips: clipList\(\) \}\)/.test(csSrc));
+    ok('화면: 새 코드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=/.test(dgSrc) && !/\.innerHTML\s*=/.test(csSrc));
+    ok('새 코드에 주소·토큰 값이 없다', !/script\.google\.com\/macros/.test(dgSrc.replace(/\/\*[\s\S]*?\*\//g, '')) && !/script\.google\.com\/macros/.test(fs.readFileSync(path.join(ROOT, 'js', 'designModel.js'), 'utf8')) && !/99090545329f/.test(dgSrc + csSrc));
+  } catch (err) {
+    ok('커스텀 폰트·MV 영상 컷 시험', false, (err && err.stack) || err);
+  }
+
   /* ────────────────────────── [16] 성래 님 스타일 DNA (2026-11-25, #50347) ──────────────────────────
      발행글 4편 실측으로 박은 문법(인용구 섹션·▲ 캡션·📌 정보카드·⭐ 총평·펀치라인·해시태그 2줄)을
      뼈대 조립(0토큰) → 빈 자리 채우기 → 목소리 린터 순서로 검사한다.
@@ -2790,7 +2877,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261126v11/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -2995,7 +3082,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js v11 · studio.css b)', /js\/app\.js\?v=20261126v11/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css b)', /js\/app\.js\?v=20261127a/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3269,8 +3356,8 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('quickApprove: 승인·반려를 전용 액션으로 보낸다', /igCardApprove\(/.test(qaSrc2) && /igCardReject\(/.test(qaSrc2));
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
-    ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261126a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js v11 · style.css m2-33)', /js\/app\.js\?v=20261126v11/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m58/.test(html2));
+    ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-33)', /js\/app\.js\?v=20261127a/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m59/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);
