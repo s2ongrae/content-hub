@@ -120,5 +120,5 @@ cd ../hub-agent && node gas/test/run.js              # 큐: content_draft LOW
 - `inputs` 칸은 영상 컷이 없으면 만들지 않는다(예전 오더와 모양이 같다). 파일은 카드의 드라이브 폴더에 이미 올라가 있고 이름만 싣는다.
 - 가사가 2,000자(또는 payload 3,500자)를 넘으면 `lyrics` 를 빼고 `payload_source:'drive'` 로 보낸다 — 노트북이 카드의 `studio.formats.video.mv` 에서 읽는다.
 - GAS 는 `isRealRenderOrder_` 가 `mode` 만 있어도 렌더 경로로 보내 검증에서 거절한다(옛 `claude_prompt` 경로로 새지 않게).
-- **노트북 측 미확인**: `lib/mv.js` 가 `inputs`(영상 컷)를 받아 실제 컷으로 잇는지는 아직 확인되지 않았다(포털 `Q-20261127-125239-4t3m` 에서 @노트북 확인 요청). 허브는 계약대로 보내고, 노트북이 받기 전에는 영상 컷이 무시되거나 렌더가 실패할 수 있다 — 그때는 일반 영상 모드로 렌더한다.
+- **노트북 측 확인됨(2026-11-27)**: `hub-agent` PR #15(`243d87c`)로 노트북 `lib/mv.js` 가 `inputs`(영상 1~8개)를 받아 사진과 함께 비트 컷으로 굽는다 — 검증 규칙(`validateMv`)이 GAS `hubRenderMvPayload_` 와 같고, 영상은 제 길이만큼 들어가며 모자라는 자리는 사진이 채운다. 그래서 화면에 "노트북 준비 전에는 거절될 수 있다"는 안내를 두지 않는다. 노트북에 `FFMPEG_SKILL_DIR`(ffmpeg-skill ≥ 3.x, `probe.py` 포함)이 없으면 영상 컷 길이를 읽지 못해 이유를 알려 주며 거절한다.
 - `Orders.gs` 를 고쳤으므로 **Apps Script 재배포가 필요하다**(프론트만으로는 안 된다).

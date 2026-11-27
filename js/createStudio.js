@@ -1231,7 +1231,6 @@ function paintMvPanel(host, out, ctx, ui) {
   host.appendChild(clipRows);
   host.appendChild(clipNote);
   host.appendChild(h('p', { class: 'st-hint', text: '영상 컷은 자기 길이만큼 그대로 들어가고, 모자라는 자리는 사진이 비트에 맞춰 채웁니다. 컷을 8개 넘게 쓰려면 나누어 렌더하세요.' }));
-  host.appendChild(h('p', { class: 'st-hint', text: '영상 컷은 이번에 새로 넣은 기능입니다 — 집 노트북 쪽 준비가 끝나기 전에는 렌더가 “아직 영상 컷은 못 받습니다”로 거절될 수 있어요(그때는 [일반 영상]으로 렌더하거나 사진만으로 보내면 됩니다).' }));
   paintClips();
   paintMediaLine();
 

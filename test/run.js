@@ -2095,6 +2095,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 라이선스 목록은 허용한 것만 보여 준다(막힌 것은 고를 수 없다)', /FONT_LICENSES\.filter\(\(l\) => l\.ok\)/.test(dgSrc));
     ok('화면: 미리보기는 고른 폰트 파일로 그린다(canvasFontFamily)', /canvasFontFamily\(cap\.font\)/.test(dgSrc) && /canvasFontFamily\(t\.font\)/.test(dgSrc) && /canvasFontFamily\(b\.font\)/.test(dgSrc) && /new FontFace\(customFontAlias/.test(dgSrc));
     ok('화면: MV 에 영상 컷 칸과 영상 올리기가 있다', /① 영상 컷/.test(csSrc) && /영상 올리기/.test(csSrc) && /mvMediaPlan\(/.test(csSrc) && /MV_MAX_CLIPS/.test(csSrc));
+    ok('화면: 노트북 미지원 안내 문구가 없다(hub-agent #15 로 영상 컷 렌더 확정)', !/준비가 끝나기 전에는/.test(csSrc) && !/아직 영상 컷은 못 받습니다/.test(csSrc));
     ok('화면: 사진만 있을 때는 예전처럼 3장을 본다(로직은 mvMediaPlan)', /mvMediaPlan\(\{ images: photos, clips: clipList\(\) \}\)/.test(csSrc));
     ok('화면: 새 코드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=/.test(dgSrc) && !/\.innerHTML\s*=/.test(csSrc));
     ok('새 코드에 주소·토큰 값이 없다', !/script\.google\.com\/macros/.test(dgSrc.replace(/\/\*[\s\S]*?\*\//g, '')) && !/script\.google\.com\/macros/.test(fs.readFileSync(path.join(ROOT, 'js', 'designModel.js'), 'utf8')) && !/99090545329f/.test(dgSrc + csSrc));
@@ -2939,7 +2940,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127b/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -3144,7 +3145,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css b)', /js\/app\.js\?v=20261127a/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css b)', /js\/app\.js\?v=20261127b/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3419,7 +3420,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
     ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-33)', /js\/app\.js\?v=20261127a/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m59/.test(html2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-33)', /js\/app\.js\?v=20261127b/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m60/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);

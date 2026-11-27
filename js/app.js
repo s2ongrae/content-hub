@@ -18,11 +18,11 @@ import { loadDaangnSeed } from './daangnView.js?v=20261123k';
 import { getAnalytics } from './analyticsView.js?v=20261126c';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123k';
 import { renderCreateView } from './create-view.js?v=20261126c';
-import { renderCreateStudio } from './createStudio.js?v=20261127a';
+import { renderCreateStudio } from './createStudio.js?v=20261127b';
 import { renderProductView } from './productView.js?v=20261127a';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261126c';
 import { draftSection, draftPreview } from './draftView.js?v=20261126c';
-import { produceSection } from './produceView.js?v=20261127a';
+import { produceSection } from './produceView.js?v=20261127b';
 import {
   LINK_CHANNELS, LINK_LABEL, parseLinkText, identifyChannel, matchesChannel,
   auditLinks, auditSummary, linkPatch, publishGuard
