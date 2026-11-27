@@ -14,11 +14,21 @@ import {
   PRESETS, COLOR_SWATCHES, ROLE_LABELS, MAX_SEGMENTS, MAX_SEG_TITLE, MAX_SEG_BADGE,
   normalizeDesign, defaultDesign, applyPreset, applyTimeline, designWarnings, captionLayout, designSummary,
   snapSegmentToCues, SAFE_TOP, SAFE_BOTTOM, SAFE_SIDE, CAPTION_DEFAULT_Y, W, H,
-  WATERMARK_POSITIONS, watermarkPoint
-} from './designModel.js?v=20261126c';
+  WATERMARK_POSITIONS, watermarkPoint,
+  FONT_STACK, BUILTIN_FONT, FONT_LICENSES, checkFontLicense, fontLabel, fontRenderNote,
+  isBuiltinFont, canvasFontFamily, customFontAlias
+} from './designModel.js?v=20261127a';
+import { listFonts, uploadFont, fetchFontBytes, isFontFile } from './uploadVideo.js?v=20261127a';
 import { wrapText } from './wrapKo.js?v=20261125k';
 
-const FONT_STACK = '"Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif';
+/* ⑥ 글자 디자인 — 폰트(2026-11-27, P0)
+ *  · 기본은 Pretendard(허브에 들어 있는 OFL 폰트). 내 폰트는 _fonts 보관함에 올린 것만 고를 수 있다.
+ *  · 올리기는 재배포 가능한 라이선스(OFL·Apache·MIT·CC0·CC BY·퍼블릭 도메인)만 — 화면에서 라이선스를 고르고 확인을 받은 뒤
+ *    서버(font_put)가 다시 검사한다. 상용·개인용 라이선스는 목록에 없다(파일 보관 불가).
+ *  · 고른 폰트는 역할의 font 값(파일 이름)으로 카드에 저장되고, 미리보기는 FontFace 로 같은 파일을 읽어 그린다.
+ */
+let FONT_ITEMS = [];          // 보관함에 올라온 폰트 [{ name, label, license, parts, ... }]
+const FONT_READY = {};        // 파일 이름 → true(불러옴) | 'loading' | 'failed'
 
 export function designPanel(ctx) {
   const { h, state, change, toast } = ctx;
@@ -35,6 +45,117 @@ export function designPanel(ctx) {
 
   const d = () => normalizeDesign(state.design);
   const save = (next) => change((s) => { s.design = next; });
+
+  /* ── 내 폰트(2026-11-27) ─────────────────────────────────── */
+  const FONT_UI = { showUpload: false, agree: false, note: '', loaded: false };
+  let fontListPromise = null;
+  function loadFontList() {
+    if (fontListPromise || !ctx.api || typeof listFonts !== 'function') return;
+    fontListPromise = listFonts(ctx.api)
+      .then((items) => { FONT_ITEMS = items; FONT_UI.loaded = true; paintRole(); draw(); })
+      .catch(() => { FONT_UI.loaded = true; });
+  }
+  /** 내 폰트를 이 화면에서 쓸 수 있게 불러온다(FontFace). 실패해도 렌더는 계속된다(MP4 는 노트북이 읽는다). */
+  function ensureFont(name) {
+    const n = String(name == null ? '' : name);
+    if (isBuiltinFont(n) || FONT_READY[n]) return;
+    if (!ctx.api || typeof fetchFontBytes !== 'function') return;
+    if (typeof FontFace !== 'function' || typeof document === 'undefined' || !document.fonts) return;
+    const item = FONT_ITEMS.find((f) => f.name === n);
+    if (!item) return;
+    FONT_READY[n] = 'loading';
+    fetchFontBytes(ctx.api, item)
+      .then((bytes) => new FontFace(customFontAlias(n), bytes.buffer).load())
+      .then((face) => { document.fonts.add(face); FONT_READY[n] = true; draw(); })
+      .catch(() => { FONT_READY[n] = 'failed'; paintRole(); draw(); });
+  }
+  function fontOptions(cur) {
+    const opts = [h('option', { value: BUILTIN_FONT, selected: isBuiltinFont(cur) ? '' : null, text: 'Pretendard (기본)' })];
+    FONT_ITEMS.forEach((f) => {
+      opts.push(h('option', { value: f.name, selected: cur === f.name ? '' : null, text: fontLabel(f.name) + ' · ' + (f.license || '') }));
+    });
+    if (!isBuiltinFont(cur) && !FONT_ITEMS.some((f) => f.name === cur)) {
+      opts.push(h('option', { value: cur, selected: '', text: fontLabel(cur) + ' · 보관함에 없음' }));
+    }
+    return opts;
+  }
+  /** 올리기 판 — 라이선스를 고르고 확인을 받은 뒤에만 보낸다(서버도 같은 규칙으로 다시 본다). */
+  function fontUploadBlock(roleKey) {
+    const fileEl = h('input', { type: 'file', accept: '.ttf,.otf,.woff2,font/ttf,font/otf,font/woff2', 'aria-label': '내 폰트 파일' });
+    const fileName = h('span', { class: 'pr-check-s', text: FONT_UI.note });
+    fileEl.addEventListener('change', () => {
+      const f = fileEl.files && fileEl.files[0];
+      fileName.textContent = f ? (f.name + ' · ' + Math.max(1, Math.round(Number(f.size) / 1024)) + 'KB') : '';
+    });
+    const fileBtn = h('label', { class: 'btn sm dg-filebtn' }, fileEl, h('span', { text: '폰트 파일 고르기 (ttf·otf·woff2)' }));
+    const licSel = h('select', { class: 'pr-sel', 'aria-label': '내 폰트 라이선스' },
+      ...FONT_LICENSES.filter((l) => l.ok).map((l) => h('option', { value: l.id, selected: l.id === 'OFL-1.1' ? '' : null, text: l.label })));
+    const agree = h('input', { type: 'checkbox' });
+    const prog = h('span', { class: 'pr-check-s', text: '' });
+    const up = h('button', { class: 'btn primary', type: 'button', text: '보관함에 올리기' });
+    up.addEventListener('click', async () => {
+      const file = fileEl.files && fileEl.files[0];
+      if (!file) { toast('폰트 파일을 고르세요', 'err'); return; }
+      if (!isFontFile(file.name)) { toast('ttf·otf·woff2 파일만 올릴 수 있습니다', 'err'); return; }
+      const lic = checkFontLicense(licSel.value);
+      if (!lic.ok) { toast(lic.error, 'err'); return; }
+      if (!agree.checked) { toast('라이선스 확인에 체크해 주세요', 'err'); return; }
+      up.disabled = true;
+      FONT_UI.note = '';
+      try {
+        const r = await uploadFont({ api: ctx.api, file: file, license: licSel.value, onProgress: (p) => { prog.textContent = '올리는 중… ' + p.index + '/' + p.parts; } });
+        FONT_ITEMS = await listFonts(ctx.api).catch(() => FONT_ITEMS);
+        // 목록을 못 불러왔어도 방금 올린 폰트는 바로 고를 수 있게 둔다(미리보기·선택지).
+        if (!FONT_ITEMS.some((f) => f.name === r.name)) FONT_ITEMS = FONT_ITEMS.concat([{ name: r.name, label: r.label, license: r.license, parts: r.parts, complete: true }]);
+        FONT_UI.showUpload = false;
+        const design = d();
+        design.roles[roleKey].font = r.name;
+        save(design);
+        paintRole(); refresh();
+        ensureFont(r.name);
+        toast('폰트를 보관함에 올렸어요: ' + r.label, 'ok');
+      } catch (err) {
+        prog.textContent = '';
+        FONT_UI.note = String((err && err.message) || '').slice(0, 120);
+        toast('올리지 못했어요 — ' + ((err && err.message) || '연결 확인'), 'err');
+        paintRole();
+      } finally { up.disabled = false; }
+    });
+    return h('div', { class: 'pr-field dg-fontup' },
+      h('span', { class: 'pr-check-s', text: '재배포 가능한 라이선스만 — 라이선스를 고르고 확인에 체크해야 올라갑니다.' }),
+      h('div', { class: 'pr-row' }, fileBtn, licSel, up),
+      fileName,
+      h('label', { class: 'pr-check' }, agree, h('span', null,
+        h('span', { class: 'pr-check-t', text: '이 폰트를 다시 배포해도 된다는 것을 확인했어요' }),
+        h('span', { class: 'pr-check-s', text: 'OFL·Apache·MIT·CC0·CC BY·퍼블릭 도메인만 해당합니다. 상용·개인용 라이선스는 파일 보관이 안 됩니다.' }))),
+      prog);
+  }
+  function fontBlock(roleKey, cur) {
+    const kids = [
+      h('span', { class: 'pr-label', text: '폰트' }),
+      h('div', { class: 'pr-row' },
+        h('select', {
+          class: 'pr-sel', 'aria-label': ROLE_LABELS[roleKey] + ' 폰트',
+          onchange: (e) => {
+            const design = d();
+            design.roles[roleKey].font = e.target.value;
+            save(design);
+            refresh();
+            ensureFont(e.target.value);
+          }
+        }, ...fontOptions(cur)),
+        h('button', {
+          class: 'btn sm', type: 'button', text: FONT_UI.showUpload ? '닫기' : '＋ 내 폰트 올리기',
+          onclick: () => { FONT_UI.showUpload = !FONT_UI.showUpload; paintRole(); }
+        })),
+      isBuiltinFont(cur) ? h('span', { class: 'pr-check-s', text: '기본 Pretendard(OFL) — 허브에 들어 있어 따로 올리지 않아도 됩니다.' }) : null,
+      !isBuiltinFont(cur) && fontRenderNote(cur) ? h('span', { class: 'pr-check-s', text: fontRenderNote(cur) }) : null,
+      !isBuiltinFont(cur) && FONT_READY[cur] === 'failed' ? h('span', { class: 'pr-check-s', text: '이 기기에서 미리보기를 못 불러왔어요 — MP4 에는 노트북이 보관함에서 받아 넣습니다.' }) : null,
+      FONT_UI.showUpload ? fontUploadBlock(roleKey) : null,
+      h('span', { class: 'pr-check-s', text: '내 폰트는 보관함(비공개 드라이브)에 올린 것만 고를 수 있어요 — 모든 카드가 같이 씁니다.' })
+    ];
+    return h('div', { class: 'pr-field dg-font' }, ...kids.filter((k) => k != null));
+  }
 
   /* ── 미리보기 캔버스 ─────────────────────────────────────────── */
   const canvas = h('canvas', { class: 'dg-canvas', width: String(W), height: String(H), 'aria-label': '글자 디자인 미리보기' });
@@ -86,7 +207,7 @@ export function designPanel(ctx) {
       g.restore();
     }
     g.save();
-    g.font = '700 ' + styleSize + 'px ' + FONT_STACK;
+    g.font = '700 ' + styleSize + 'px ' + canvasFontFamily(cap.font);
     g.textAlign = 'center';
     g.textBaseline = 'bottom';
     g.lineJoin = 'round';
@@ -120,7 +241,7 @@ export function designPanel(ctx) {
     const badgeText = (seg && seg.badge) || (role === 'badge' ? '구간 배지' : '');
     if (titleText) {
       g.save();
-      g.font = '700 ' + t.size + 'px ' + FONT_STACK;
+      g.font = '700 ' + t.size + 'px ' + canvasFontFamily(t.font);
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.lineJoin = 'round';
@@ -133,7 +254,7 @@ export function designPanel(ctx) {
     }
     if (badgeText) {
       g.save();
-      g.font = '700 ' + b.size + 'px ' + FONT_STACK;
+      g.font = '700 ' + b.size + 'px ' + canvasFontFamily(b.font);
       const tw = g.measureText(badgeText).width;
       const bw = Math.max(120, tw + 48);
       const bh = b.size + 24;
@@ -171,6 +292,8 @@ export function designPanel(ctx) {
   function draw() {
     if (!g) return;
     const design = d();
+    // 내 폰트가 고른 역할에 있으면 먼저 불러온다 — 아직이면 폴백(Pretendard)으로 그리고, 불러오면 다시 그린다.
+    ['caption', 'title', 'badge'].forEach((k) => ensureFont(design.roles[k] && design.roles[k].font));
     drawBackground();
     drawCaptionSample(design);
     drawSegmentSample(design);
@@ -318,6 +441,7 @@ export function designPanel(ctx) {
     const put = (...kids) => roleBox.append(...kids.filter((k) => k != null && k !== false));
     if (role === 'caption') {
       put(
+        fontBlock('caption', cap.font),
         h('span', { class: 'pr-check-s', text: '프리셋을 고르면 색·외곽선·그림자·박스가 한 번에 바뀌어요. 아래에서 하나씩 미세 조정할 수 있어요.' }),
         colorRow('글자색', cap.color, (c) => { design.roles.caption.color = c; design.roles.caption.preset = 'custom'; save(design); }),
         h('div', { class: 'pr-two' },
@@ -349,6 +473,7 @@ export function designPanel(ctx) {
           })));
     } else if (role === 'title') {
       put(
+        fontBlock('title', t.font),
         h('span', { class: 'pr-check-s', text: '구간마다 같은 자리에 노란 제목을 놓아요. 구간 제목을 하나라도 쓰면 상단 2줄 임팩트 제목은 자동으로 꺼져요.' }),
         colorRow('제목 색', t.color, (c) => { design.roles.title.color = c; save(design); }),
         range('글자 크기(px)', t.size, 24, 120, 2, (v) => { design.roles.title.size = v; save(design); }),
@@ -358,6 +483,7 @@ export function designPanel(ctx) {
         h('span', { class: 'pr-check-s', text: '기본 Y372 는 상단 브랜드 뱃지(y 244~322) 바로 아래예요. 더 올리면 겹칠 수 있어요.' }));
     } else {
       put(
+        fontBlock('badge', b.font),
         h('span', { class: 'pr-check-s', text: '구간 배지는 검정 알약 위 흰 글씨예요. 제목 바로 아래(Y454)에 놓입니다.' }),
         colorRow('배지 글자색', b.color, (c) => { design.roles.badge.color = c; save(design); }),
         range('글자 크기(px)', b.size, 16, 80, 1, (v) => { design.roles.badge.size = v; save(design); }),
@@ -557,6 +683,9 @@ export function designPanel(ctx) {
   paintTabs();
   paintRole();
   refresh();
+  loadFontList();
+  // 고른 역할이 내 폰트면 미리보기에 쓸 파일을 미리 받아 둔다.
+  ['caption', 'title', 'badge'].forEach((k) => ensureFont(d().roles[k].font));
   if (document.fonts && document.fonts.load) {
     try { document.fonts.load('700 ' + styleSize + 'px Pretendard').then(() => { if (canvas.isConnected) draw(); }).catch(() => {}); } catch (e) { /* 폰트 API 없음 */ }
   }

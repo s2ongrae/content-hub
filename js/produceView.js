@@ -19,8 +19,8 @@
 
 import { api } from './api.js';
 import { openSeriesTab } from './seriesView.js?v=20261126c';
-import { buildEDL } from './yt/edl.js?v=20261126c';
-import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261126c';
+import { buildEDL } from './yt/edl.js?v=20261127a';
+import { uploadVideo, listUploads, deleteUpload, uploadVoice } from './uploadVideo.js?v=20261127a';
 import {
   STEPS, PROFILES, MAX_INPUTS, MAX_CUTS, finishOf, reviewSteps, normalizeState, parseInputs, buildRenderPayload,
   parseReport, reportIsFresh, compareStandard, stepStatus, orderStatusLabel, normalizeCues, SUB_STYLES, MAX_CUES_INLINE,
@@ -29,12 +29,12 @@ import {
   buildStagePayload, ORDER_KEY_OF_STEP, BGM_NAME_RE, BGM_QUICK_TERMS, fmtDuration, cleanBgmQuery, RESULT_NAME_RE,
   MOTION_IDS, MOTION_LABELS, buildRecordingCard, checkVoiceFile, voiceLengthGap, VOICE_LONG_WARN_S,
   PACE_IDS, PACE_LABELS, PACE_NOTES
-} from './produceLogic.js?v=20261126c';
+} from './produceLogic.js?v=20261127a';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261126c';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261126c';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261127a';
 import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261126c';
-import { designPanel } from './designView.js?v=20261126c';
-import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261126c';
+import { designPanel } from './designView.js?v=20261127a';
+import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261127a';
 import { copyText } from './clipboard.js?v=20261126a';
 import { errorInfo } from './uiState.js?v=20261126a';
 
@@ -936,7 +936,7 @@ export function produceSection(ctx) {
     const repDur = Number(state.render && state.render.report && state.render.report.duration) || 0;
     const lastCueEnd = capRes.cues.length ? Number(capRes.cues[capRes.cues.length - 1].end) || 0 : 0;
     const designCtx = {
-      h, state, change, toast, contentId,
+      h, state, change, toast, contentId, api,   // api — ⑥ 내 폰트 보관함(font_list·font_put)을 함께 본다
       cues: capRes.cues,
       size: state.sub_style === 'long' ? 56 : 68,
       duration: repDur || lastCueEnd || 0,

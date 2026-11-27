@@ -8,7 +8,7 @@
  *  · 개별 PNG 로 내려받는다. 인스타 업로드는 지금은 수동(설계 §5③).
  */
 
-import { PHOTO_WATERMARK_DEFAULT, watermarkPoint } from './designModel.js?v=20261126c';
+import { PHOTO_WATERMARK_DEFAULT, watermarkPoint } from './designModel.js?v=20261127a';
 
 export const CARD_W = 1080;
 export const CARD_H = 1350;

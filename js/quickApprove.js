@@ -15,7 +15,7 @@
 
 import { api } from './api.js';
 import { friendlyError } from './uiState.js?v=20261126a';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, cardsFromSlides, cardPreset, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261126a';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, cardsFromSlides, cardPreset, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261127a';
 
 const BRAND_EMOJI = { daejeon_youth: '🍺 대전 청년', ppiyak_kimmary: '🐱 김메리' };
 const BRAND_NAME = { daejeon_youth: '대전 청년', ppiyak_kimmary: '삐약 김메리' };

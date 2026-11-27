@@ -284,11 +284,30 @@ function hubRenderImages_(raw) {
   return out;
 }
 
+/** 영상 파일 이름 목록 — 없으면 []. 배열이 아니거나 1~8개를 벗어나면 거절한다. 중복은 버리고 순서는 지킨다. */
+function hubRenderInputs_(raw) {
+  const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
+  if (raw === undefined || raw === null || raw === '') return [];
+  if (!Array.isArray(raw)) throw bad('inputs 는 영상 파일 이름 목록(배열)이어야 합니다.');
+  if (!raw.length || raw.length > RENDER_MAX_INPUTS) throw bad('inputs 는 1~' + RENDER_MAX_INPUTS + '개여야 합니다.');
+  const names = [];
+  for (let i = 0; i < raw.length; i++) {
+    const n = raw[i];
+    if (typeof n !== 'string' || !RENDER_FILE_RE.test(n) || n.indexOf('..') !== -1 || n.charAt(0) === '.' || !RENDER_EXT_RE.test(n)) {
+      throw bad('inputs 에는 파일 이름(mp4·mov·m4v)만 넣을 수 있습니다: ' + String(n).slice(0, 40));
+    }
+    if (names.indexOf(n) === -1) names.push(n);
+  }
+  return names;
+}
+
 /**
- * 뮤직비디오 모드 payload(2026-11-21, Phase 1) — 사진 + 음원 이름 + 가사 + 컷 밀도.
+ * 뮤직비디오 모드 payload(2026-11-21, Phase 1 · 영상 컷 허용 2026-11-27 P0).
  *
  *  계약(허브 js/createStudio.js · 노트북 lib/mv.js 와 같은 모양)
- *   { content_id, brand, profile:'captions', mode:'mv', images:[…], mv:{ audio, density, bpm_hint, lyrics, effects, mood, length_sec, lyric_mode } }
+ *   { content_id, brand, profile:'captions', mode:'mv', images:[…], inputs:[…], mv:{ audio, density, bpm_hint, lyrics, effects, mood, length_sec, lyric_mode } }
+ *  · 2026-11-27 레이 님 결정: 사진 전용이 아니라 영상 컷까지 받는다 — inputs(영상 1~8개)를 images 와 같이 실을 수 있다.
+ *    사진만이면 지금처럼 3장 이상, 영상 컷이 있으면 사진은 0장부터 된다(둘 다 없으면 거절).
  *  · 유료 API 없음 — 음원은 _bgm 보관함(내 파일·무료 BGM) 이름만 실린다. 곡 파일 자체는 큐로 오지 않는다.
  *  · 가사가 길면 큐 4,000자 한도에 걸리므로 그때만 lyrics 를 빼고 payload_source:'drive' 로 보낸다
  *    (노트북이 카드 payload 의 studio.formats.video.mv 에서 읽는다 — 새 경로 없음).
@@ -296,12 +315,11 @@ function hubRenderImages_(raw) {
 function hubRenderMvPayload_(payload, contentId, brand) {
   const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
   const images = hubRenderImages_(payload.images);
-  if (images.length < RENDER_MV_MIN_IMAGES) {
-    throw bad('뮤직비디오는 사진이 ' + RENDER_MV_MIN_IMAGES + '장 이상 필요합니다(지금 ' + images.length + '장).');
-  }
-  // Phase 1 은 사진만 — 영상 컷을 섬는 것은 다음 단계다(모르는 입력을 조용히 버리지 않고 알린다).
-  if (payload.inputs !== undefined && payload.inputs !== null && payload.inputs !== '' && Array.isArray(payload.inputs) && payload.inputs.length) {
-    throw bad('뮤직비디오 모드는 지금 사진만 씁니다 — 영상은 [일반 영상]으로 렌더하세요.');
+  const inputs = hubRenderInputs_(payload.inputs);
+  // 사진과 영상에 같은 이름이 두 번 오면 거절한다(서로 다른 파일이 같은 자리에 풍기는 것 방지) — 일반 영상과 같은 규칙.
+  images.forEach(function (n) { if (inputs.indexOf(n) !== -1) throw bad('같은 파일이 영상·사진 양쪽에 있습니다: ' + n); });
+  if (!inputs.length && images.length < RENDER_MV_MIN_IMAGES) {
+    throw bad('뮤직비디오는 사진 ' + RENDER_MV_MIN_IMAGES + '장 이상 또는 영상 컷 1개 이상이 필요합니다(지금 사진 ' + images.length + '장).');
   }
   const mvIn = payload.mv && typeof payload.mv === 'object' ? payload.mv : {};
   const audio = String(mvIn.audio || '').trim();
@@ -334,6 +352,7 @@ function hubRenderMvPayload_(payload, contentId, brand) {
   const mv = { audio: audio, density: density, bpm_hint: bpmHint, effects: effects, mood: mood, length_sec: lengthSec, lyric_mode: lyricMode, lines: lyrics ? lyrics.split('\n').filter(function (s) { return s.trim(); }).length : 0 };
   if (lyrics.length <= RENDER_MV_MAX_LYRICS) mv.lyrics = lyrics;
   const out = { content_id: contentId, brand: brand, profile: 'captions', mode: 'mv', images: images, mv: mv };
+  if (inputs.length) out.inputs = inputs;
   if (lyrics.length > RENDER_MV_MAX_LYRICS) out.payload_source = 'drive';
   if (JSON.stringify(out).length > RENDER_MAX_PAYLOAD_CHARS) {
     delete out.mv.lyrics;
@@ -384,18 +403,8 @@ function hubRenderPayload_(payload) {
   }
   const inputs = payload.inputs;
   const images = hubRenderImages_(payload.images);
-  if (!inputs && !images.length) throw bad('inputs(영상 1~' + RENDER_MAX_INPUTS + '개) 또는 images(사진 1~' + RENDER_MAX_IMAGES + '장)가 필요합니다.');
-  if (inputs && (!inputs.length || inputs.length > RENDER_MAX_INPUTS)) throw bad('inputs 는 1~' + RENDER_MAX_INPUTS + '개여야 합니다.');
-  const names = [];
-  if (inputs) {
-    for (let i = 0; i < inputs.length; i++) {
-      const n = inputs[i];
-      if (typeof n !== 'string' || !RENDER_FILE_RE.test(n) || n.indexOf('..') !== -1 || n.charAt(0) === '.' || !RENDER_EXT_RE.test(n)) {
-        throw bad('inputs 에는 파일 이름(mp4·mov·m4v)만 넣을 수 있습니다: ' + String(n).slice(0, 40));
-      }
-      if (names.indexOf(n) === -1) names.push(n);
-    }
-  }
+  if ((inputs === undefined || inputs === null || inputs === '') && !images.length) throw bad('inputs(영상 1~' + RENDER_MAX_INPUTS + '개) 또는 images(사진 1~' + RENDER_MAX_IMAGES + '장)가 필요합니다.');
+  const names = hubRenderInputs_(inputs);
   // 사진과 영상에 같은 이름이 두 번 오면 거절한다(서로 다른 파일이 같은 자리에 풍기는 것 방지)
   images.forEach(function (n) { if (names.indexOf(n) !== -1) throw bad('같은 파일이 영상·사진 양쪽에 있습니다: ' + n); });
   const profile = payload.profile === undefined || payload.profile === null || payload.profile === '' ? 'captions' : String(payload.profile);
