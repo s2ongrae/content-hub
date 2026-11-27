@@ -12,9 +12,9 @@
  */
 
 import { splitUserBlocks, sha256Hex, userBodyText } from './slot-engine.js?v=20261123c';
-import { rhythmStats, lintRhythm, splitLongBlock } from './blogTone.js?v=20261124';
+import { rhythmStats, lintRhythm, splitLongBlock } from './blogTone.js?v=20261127c';
 import { analyzeCompliance, withDisclosureNote, stripProfitLinks, nativeSteps, mergePasteSteps, DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
-import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf, titleOptions as styleTitleOptions, clipChars, clipLine, STYLE_DNA } from './blogStyle.js?v=20261126a';
+import { buildStyleSkeleton, lintVoice as lintVoiceOf, lintQuality as lintQualityOf, kindOf as styleKindOf, titleOptions as styleTitleOptions, clipChars, clipLine, STYLE_DNA } from './blogStyle.js?v=20261127c';
 import { shortErrorText } from './uiState.js?v=20261126a';
 
 /* ────────────────────────── 포맷 ────────────────────────── */
@@ -582,7 +582,7 @@ export function buildBlogKit(input) {
     preset: (materials.concept && materials.concept.tone) || 'plain'
   };
 
-  /* 성래 님 스타일 DNA 뼈대(2026-11-25, #50347) — 0토큰. kit.text(평문 키트)는 그대로 두고 따로 담는다.
+  /* 레이 님 스타일 DNA 뼈대(2026-11-25, #50347) — 0토큰. kit.text(평문 키트)는 그대로 두고 따로 담는다.
      화면은 이 본문을 먼저 보여 주고, 예전 평문 키트는 '접어 두기'로 남긴다. */
   const styleOfKit = (function () {
     try {

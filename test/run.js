@@ -1552,7 +1552,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('📍⏰🚗 는 한 덩어리로 붙는다', infoFixed.groups.length === 1 && infoFixed.groups[0].length === 3, infoFixed.groups);
     ok('정보 줄이 끊긴 원문은 lint 가 잡는다', tone.lintRhythm(infoSplit).some((i) => i.code === 'info_gap'));
 
-    /* 설명란 5블록 — 성래 님이 손으로 고친 클립 문안 그대로 */
+    /* 설명란 5블록 — 레이 님이 손으로 고친 클립 문안 그대로 */
     const runon = '대전 괴정동 손 까딱 안 하고 먹는 진미오겹살 | 계란찜까지 두툼한 제주 오겹살을 처음부터 끝까지 직원이 다 구워주는 괴정동 진미오겹살 본점입니다. 매일 15:00~24:00, 대전 서구 용문로 41-80 103·104호. 부풀어 오른 계란찜까지 꼭 같이 주문해 보세요. 저장해 두고 오늘 밤 달려가세요! #오늘클립챌린지 #대전맛집 #괴정동맛집 #진미오겹살 #대전오겹살';
     const clip = desc.normalizeDesc(runon, 'clip');
     const clipBlocks = tone.toGroups(clip);
@@ -2165,7 +2165,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('커스텀 폰트·MV 영상 컷 시험', false, (err && err.stack) || err);
   }
 
-  /* ────────────────────────── [16] 성래 님 스타일 DNA (2026-11-25, #50347) ──────────────────────────
+  /* ────────────────────────── [16] 레이 님 스타일 DNA (2026-11-25, #50347) ──────────────────────────
      발행글 4편 실측으로 박은 문법(인용구 섹션·▲ 캡션·📌 정보카드·⭐ 총평·펀치라인·해시태그 2줄)을
      뼈대 조립(0토큰) → 빈 자리 채우기 → 목소리 린터 순서로 검사한다.
      시드(seeds/blog_style_dna_2026w48.json) · 허브 모듈(js/blogStyle.js) · 노트북(draft.js) 세 곳이 같은 값이어야 한다. */
@@ -2406,7 +2406,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
       ok('노트북이 사진 메모를 받는다(없는 사진은 키 없음)', argsM.media[0].memo === '메뉴 12종, 냉삼 15,000원' && argsM.media[1].memo === undefined, argsM.media);
       const pM = D.buildPrompt(argsM, [{ id: 'U01', text: '원문', sha256: 'x' }], { place_name: '미미삼겹' }, argsM.media);
       ok('노트북 프롬프트가 메모를 사실로 넣는다', /1\. 2\.jpg\(메뉴판\) — 메모: 메뉴 12종/.test(pM) && /메모가 있는 사진은 그 메모가 사실/.test(pM));
-      ok('노트북 프롬프트가 제목 3안 문법을 요구한다', /제목 3안 — 성래 님 제목 문법/.test(pM) && /1안\(검색형\)/.test(pM));
+      ok('노트북 프롬프트가 제목 3안 문법을 요구한다', /제목 3안 — 레이 님 제목 문법/.test(pM) && /1안\(검색형\)/.test(pM));
       const dBad = D.normalizeDraft(argsM, { titles: ['[대전 봉명동] 미미삼겹 — 솔직 후기', '미미삼겹 총정리', '[대전 봉명동 고기집] 미미삼겹 : "고기는 죄가 없다"'] },
         [{ id: 'U01', text: '원문', sha256: 'x' }]);
       ok('노트북: 옛 틀·상투어 제목은 경고로 남는다(막지 않는다)', dBad.warnings.some((w) => /인용형 문법/.test(w)) && dBad.titles.length === 3, dBad.warnings);
@@ -2940,7 +2940,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127b/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127c/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -3145,7 +3145,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css b)', /js\/app\.js\?v=20261127b/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127c/.test(idxSrc) && /css\/studio\.css\?v=20261126b/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3420,7 +3420,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
     ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-33)', /js\/app\.js\?v=20261127b/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m60/.test(html2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-33)', /js\/app\.js\?v=20261127c/.test(html2) && /css\/style\.css\?v=m2-33/.test(html2) && /v2-m61/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);

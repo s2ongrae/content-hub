@@ -13,7 +13,7 @@
 
 import { getAnalytics } from './analyticsView.js?v=20261126c';
 import { trackChannelsOf, CHANNEL_LABEL } from './trackChannels.js?v=20261123c';
-import { renderInstagramAudit, autoFactsFromRows } from './igAudit.js?v=20261123c';
+import { renderInstagramAudit, autoFactsFromRows } from './igAudit.js?v=20261127c';
 
 /* 소스별로 이 화면이 다루는 표면 */
 const SOURCE_SURFACES = { youtube: ['shorts'], instagram: ['reels', 'feed'] };

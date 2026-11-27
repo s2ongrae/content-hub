@@ -19,7 +19,7 @@ import {
   isBuiltinFont, canvasFontFamily, customFontAlias
 } from './designModel.js?v=20261127a';
 import { listFonts, uploadFont, fetchFontBytes, isFontFile } from './uploadVideo.js?v=20261127a';
-import { wrapText } from './wrapKo.js?v=20261125k';
+import { wrapText } from './wrapKo.js?v=20261127c';
 
 /* ⑥ 글자 디자인 — 폰트(2026-11-27, P0)
  *  · 기본은 Pretendard(허브에 들어 있는 OFL 폰트). 내 폰트는 _fonts 보관함에 올린 것만 고를 수 있다.

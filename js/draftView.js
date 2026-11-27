@@ -11,8 +11,8 @@
  */
 
 import { api } from './api.js';
-import { applyBlogRhythm } from './blogTone.js?v=20261124';
-import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261123c';
+import { applyBlogRhythm } from './blogTone.js?v=20261127c';
+import { normalizeDesc, lintDesc } from './channelDesc.js?v=20261127c';
 import { copyText } from './clipboard.js?v=20261126a';
 
 /** 복사 문구 — 화면마다 새로 쓰던 것을 한 곳(js/clipboard.js)으로 모았다. */
@@ -298,7 +298,7 @@ export function draftSection(ctx) {
 
     const row = h('div', { class: 'da-row' });
     if (body || title) {
-      /* 복사할 때 줄바꿈을 성래 님 기준으로 접는다(2026-11-22).
+      /* 복사할 때 줄바꿈을 레이 님 기준으로 접는다(2026-11-22).
          블로그 = 2~5줄 덩어리 · 빈 줄은 덩어리 사이에만 / 클립·쇼츠·릴스 = 제목·요약·정보·행동·해시태그 5블록 */
       row.appendChild(h('button', {
         class: 'btn sm primary', type: 'button', text: '본문 복사',

@@ -14,8 +14,8 @@
  * 판정은 기계적으로 센 값만 쓴다. 사람이 봐야 하는 것은 이 린터가 판정하지 않는다.
  */
 
-import { AI_TONE_DEFAULTS, lintAiTone } from './blogAiTone.js?v=20261123c';
-import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261124';
+import { AI_TONE_DEFAULTS, lintAiTone } from './blogAiTone.js?v=20261127c';
+import { toGroups, groupKind, RHYTHM } from './blogTone.js?v=20261127c';
 
 const RULES_URL = 'seeds/blog_lint_rules_2026w48.json';
 
@@ -49,7 +49,7 @@ const DEFAULT_RULES = [
   { id: 'first_screen', label: '첫 화면 정보', weight: 12, fix: '도입 3줄 뒤에 위치·영업·주차 정보 카드를 붙이세요.' },
   { id: 'body_len', label: '본문 분량', weight: 11, fix: '1,700~2,300자로 덜어내세요.' },
   { id: 'photo_density', label: '사진 밀도', weight: 12, fix: '사진 18~22장 · 장당 95~120자.' },
-  { id: 'line_rhythm', label: '문단 호흡', weight: 11, fix: '문단 하나를 모바일 2줄(22~44자)로 끊으세요 — 20자 한 줄보다 "2줄 호흡"이 성래 님 실제 문체입니다.' },
+  { id: 'line_rhythm', label: '문단 호흡', weight: 11, fix: '문단 하나를 모바일 2줄(22~44자)로 끊으세요 — 20자 한 줄보다 "2줄 호흡"이 레이 님 실제 문체입니다.' },
   { id: 'short_lines', label: '짧은 호흡', weight: 11, fix: '2줄(44자) 이하 문단을 60개 이상으로.' },
   { id: 'hashtags', label: '해시태그', weight: 11, fix: '8~14개 유지 + 핵심 3개 포함.' },
   { id: 'line_layout', label: '줄바꿈 배치', weight: 10, fix: '한 줄 54자 이내 · 2~5줄을 빈 줄 없이 붙여 덩어리로 · 빈 줄은 덩어리 사이에만 · 📍⏰🚗 정보 줄은 붙여서.' }
@@ -221,7 +221,7 @@ function judgeLineRhythm(m, t) {
   if (!lines.length) return st('warn', '—', '본문을 넣어 주세요');
   const total = lines.reduce((s, l) => s + chars(l), 0);
   /* 문단 호흡 v5(2026-11-21): 한 문단이 모바일에서 몇 줄로 보이는지(20자/줄)로 환산한다.
-     32~44자 문단 = 2줄 — 성래 님 발행글 실측(평균 33~42자)과 제미니 확정안 A. */
+     32~44자 문단 = 2줄 — 레이 님 발행글 실측(평균 33~42자)과 제미니 확정안 A. */
   const wrap = lines.reduce((s, l) => s + Math.max(1, Math.ceil(chars(l) / RHYTHM_WRAP)), 0);
   const avg = Math.round((total / wrap) * 10) / 10;
   if (avg <= t.avg_line_max) return st('pass', avg + '자', '모바일 줄 환산 평균 ' + avg + '자 · 문단 ' + lines.length + '개');
@@ -340,7 +340,7 @@ const DISCLOSURE_RULES = [
 
 
 /**
- * 줄바꿈 배치 (2026-11-22) — 성래 님 실측: 한 줄 22~44자 · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만.
+ * 줄바꿈 배치 (2026-11-22) — 레이 님 실측: 한 줄 22~44자 · 2~5줄을 붙여 덩어리 · 빈 줄은 덩어리 사이에만.
  * 종전 자동화는 모든 줄 사이에 빈 줄을 넣어 모바일에서 두 배로 벌어졌다.
  *
  * 2026-11-24 보정 — 글자 길이·고아 판정에서 **구조 줄을 뺀다**:

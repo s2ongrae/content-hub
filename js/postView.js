@@ -12,7 +12,7 @@
  * 렌더링은 createElement/textContent 만 쓴다(CSP — HTML 문자열을 끼워 넣지 않는다).
  */
 
-import { postHref } from './channelView.js?v=20261123c';
+import { postHref } from './channelView.js?v=20261127c';
 import { CHANNEL_LABEL, DONE_STATES, NO_METRIC_CHANNELS, trackChannelsOf } from './trackChannels.js?v=20261123c';
 import { loadingPanel, errorPanel, isDeployGap } from './uiState.js?v=20261126a';
 
