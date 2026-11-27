@@ -18,7 +18,7 @@ import {
   FONT_STACK, BUILTIN_FONT, FONT_LICENSES, checkFontLicense, fontLabel, fontRenderNote,
   isBuiltinFont, canvasFontFamily, customFontAlias
 } from './designModel.js?v=20261127a';
-import { listFonts, uploadFont, fetchFontBytes, isFontFile } from './uploadVideo.js?v=20261127a';
+import { listFonts, uploadFont, fetchFontBytes, isFontFile } from './uploadVideo.js?v=20261127b';
 import { wrapText } from './wrapKo.js?v=20261127c';
 
 /* ⑥ 글자 디자인 — 폰트(2026-11-27, P0)

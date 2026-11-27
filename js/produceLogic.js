@@ -7,10 +7,13 @@
  * 2026-11-20: ① 영상 올리기(구글 드라이브 조각 업로드의 계산)와 ③ 컷 목록 → ④ 오더의 cuts 를 더했다.
  * 2026-11-20(2): ④ 오더에 fit(프레이밍)을 더했다 — crop · blur · pad, 비우면 노트북이 원본 방향으로 정한다.
  * 2026-11-20(3): ⑤ 자막(AI 초안 → 사람 확정) · ⑥ 마무리(자막 굽기·BGM·커버) 단계와 그 오더(stage)를 더했다.
+ * 2026-11-27: ③ 시각 타임라인 작업공간(A단계) — 컷마다 클립(파일번호)을 고를 수 있다.
+ *   저장 모양은 cut_list 의 clip(0부터, inputs 순서) 하나이고, 오더는 지금까지의 cuts [from,to,파일번호] 그대로다(새 키 0).
+ *   clip 이 없는 지금까지의 카드는 예전과 글자 하나 다르지 않게 나간다.
  * 영상 바이트를 읽거나 보내는 일은 js/uploadVideo.js 가 한다(여기는 계산만).
  */
 
-import { tcToSec } from './yt/edl.js?v=20261127a';
+import { tcToSec } from './yt/edl.js?v=20261127b';
 import { buildTemplateFields, TEMPLATE_IDS } from './videoTemplate.js?v=20261126c';
 import { hasDesign, normalizeDesign, defaultDesign } from './designModel.js?v=20261127a';
 import { isDeployGap } from './uiState.js?v=20261126a';
@@ -143,7 +146,11 @@ export function normalizeState(raw) {
   if (Array.isArray(raw.cut_list)) {
     s.cut_list = raw.cut_list.map((c) => {
       const o = c && typeof c === 'object' ? c : {};
-      return { type: ['DEAD', 'FILLER', 'REPEAT'].indexOf(o.type) >= 0 ? o.type : 'DEAD', from: Number(o.from), to: Number(o.to), on: o.on !== false, text: String(o.text || '').slice(0, 60) };
+      const row = { type: ['MANUAL', 'DEAD', 'FILLER', 'REPEAT'].indexOf(o.type) >= 0 ? o.type : 'DEAD', from: Number(o.from), to: Number(o.to), on: o.on !== false, text: String(o.text || '').slice(0, 60) };
+      // 컷마다 클립(2026-11-27) — 0부터의 파일번호. 없거나 범위 밖이면 키를 만들지 않는다(기본 영상).
+      const clip = Number(o.clip);
+      if (Number.isInteger(clip) && clip >= 0 && clip < MAX_INPUTS) row.clip = clip;
+      return row;
     }).filter((c) => Number.isFinite(c.from) && Number.isFinite(c.to) && c.from >= 0 && c.to > c.from).slice(0, MAX_CUTS);
   }
   if (typeof raw.cut_input === 'string') s.cut_input = raw.cut_input.slice(0, 80);
@@ -263,7 +270,8 @@ export function cutSummary(list, sourceSeconds) {
 
 /**
  * 켜진 컷 → 오더에 싣는 짧은 모양. 영상이 하나면 [from,to], 둘 이상이면 [from,to,파일번호].
- * 영상이 여럿인데 어느 영상의 컷인지 정하지 않았으면 오류.
+ *  · 파일번호는 컷마다 고른 clip(③ 타임라인)을 먼저 쓰고, 없으면 예전처럼 cut_input 하나를 쓴다.
+ *  · 영상이 여럿인데 어느 영상의 컷인지(컷의 clip 도, cut_input 도) 정하지 못한 컷이 있으면 오류.
  */
 export function cutsForOrder(state, inputs) {
   const s = normalizeState(state);
@@ -271,16 +279,23 @@ export function cutsForOrder(state, inputs) {
   if (!on.length) return { ok: true, cuts: [] };
   const names = Array.isArray(inputs) ? inputs : s.inputs;
   if (on.length > MAX_CUTS) return { ok: false, error: '컷은 ' + MAX_CUTS + '곳까지예요(지금 ' + on.length + '곳). 덜 중요한 것을 꺼 주세요.' };
-  let idx = null;
+  let dflt = null;
   if (names.length > 1) {
-    idx = names.indexOf(s.cut_input);
-    if (idx < 0) return { ok: false, error: '컷이 어느 영상의 것인지 ③에서 골라 주세요(영상이 ' + names.length + '개예요).' };
+    dflt = names.indexOf(s.cut_input);
+    // 컷마다 클립을 골랐으면 cut_input 이 없어도 된다(2026-11-27). 정말 아무것도 못 정한 컷만 막는다.
+    const missing = on.some((c) => {
+      const idx = Number.isInteger(c.clip) && c.clip >= 0 && c.clip < names.length ? c.clip : null;
+      return idx === null && dflt < 0;
+    });
+    if (missing) return { ok: false, error: '컷이 어느 영상의 것인지 ③에서 골라 주세요(영상이 ' + names.length + '개예요).' };
   } else if (names.length === 0) {
     return { ok: false, error: '컷을 자를 영상이 없어요. ①에서 영상을 먼저 정해 주세요.' };
   }
   const cuts = on.map((c) => {
     const f = Math.round(c.from * 100) / 100, t = Math.round(c.to * 100) / 100;
-    return idx === null ? [f, t] : [f, t, idx];
+    if (names.length <= 1) return [f, t];
+    const own = Number.isInteger(c.clip) && c.clip >= 0 && c.clip < names.length ? c.clip : null;
+    return [f, t, own === null ? dflt : own];
   });
   for (const c of cuts) {
     if (!(c[1] > c[0]) || c[1] - c[0] > MAX_CUT_SPAN_S) return { ok: false, error: '컷 구간이 올바르지 않아요(' + c[0] + '~' + c[1] + '초).' };

@@ -2941,7 +2941,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127e/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127f/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -3146,7 +3146,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127e/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127f/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3421,7 +3421,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
     ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-34)', /js\/app\.js\?v=20261127e/.test(html2) && /css\/style\.css\?v=m2-35/.test(html2) && /v2-m63/.test(html2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-36 · v2-m64)', /js\/app\.js\?v=20261127f/.test(html2) && /css\/style\.css\?v=m2-36/.test(html2) && /v2-m64/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);
@@ -3524,6 +3524,193 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('Contents 스키마는 40칸 그대로(새 열 없음)', /'photo_clip_status', 'photo_clip_url', 'photo_clip_uploaded_at'\s*\]/.test(setupS) && setupS.indexOf('alerts_') < 0);
   } catch (err) {
     ok('카드뉴스 2단계 · 발행/경보 규정 시험', false, (err && err.stack) || err);
+  }
+
+  /* ═════════════════════════════════════════════════════════════════
+     [22] 시각 타임라인 작업공간 v1 (2026-11-27, A단계 · 프런트만)
+     - 컷 목록 하나로 타임라인 ↔ 표가 양방향으로 맞물린다(값의 원본은 state.cut_list)
+     - 컷마다 클립(파일번호) — 오더는 지금까지의 cuts [from,to,파일번호] 그대로(새 키·GAS 변경 0)
+     - 자막 트랙은 확정 자막(⑤)을 읽어 재생 위치에 맞춰 겹쳐 보여 준다
+     ═════════════════════════════════════════════════════════════════ */
+  console.log('\n[22] 시각 타임라인 작업공간 v1');
+  try {
+    const TL = await import('file://' + path.join(ROOT, 'js', 'timeline.js'));
+    const L2 = await import('file://' + path.join(ROOT, 'js', 'produceLogic.js'));
+    const assert = require('assert');
+    const same = (a, b) => { try { assert.deepStrictEqual(a, b); return true; } catch (e) { return false; } };
+
+    /* ① 컷 정리 · 저장값 방어 */
+    ok('컷 정리: from 순으로 세우고 깨진 줄은 버린다', same(TL.sortCuts([{ from: 5, to: 6 }, { from: 1, to: 2 }, { from: 3, to: 2 }, null]).map((c) => c.from), [1, 5]));
+    ok('컷 정리: 손으로 그은 컷(MANUAL)과 파일번호가 남는다', (() => { const c = TL.normalizeCut({ type: 'MANUAL', from: 1, to: 2, clip: 1 }); return c.type === 'MANUAL' && c.clip === 1 && c.on === true; })());
+    ok('컷 정리: 모르는 종류는 DEAD · clip 이 소수·음수면 싣지 않는다', (() => { const a = TL.normalizeCut({ type: 'X', from: 1, to: 2, clip: 1.5 }); const b = TL.normalizeCut({ from: 1, to: 2, clip: -1 }); return a.type === 'DEAD' && !('clip' in a) && !('clip' in b); })());
+    ok('indexedCuts: 원래 자리(i)를 들고 from 순으로', (() => { const r = TL.indexedCuts([{ from: 5, to: 6 }, { from: 1, to: 2 }]); return r[0].i === 1 && r[1].i === 0; })());
+
+    /* ② 시간 축 · 좌표 */
+    ok('영상이 없으면 빈 구간', TL.viewSpan(0, 1, 0).empty === true && TL.viewSpan(0, 1, 0).to === 0);
+    ok('1배는 전체 구간', (() => { const s = TL.viewSpan(10, 1, 4); return s.from === 0 && s.to === 10 && s.zoom === 1; })());
+    ok('4배는 1/4 창을 재생 위치 가운데에', (() => { const s = TL.viewSpan(10, 4, 5); return s.from === 3.75 && s.to === 6.25 && s.zoom === 4; })());
+    ok('창은 영상 밖으로 나가지 않는다(앞·뒤 끝)', (() => { const a = TL.viewSpan(10, 4, 0); const b = TL.viewSpan(10, 4, 10); return a.from === 0 && a.to === 2.5 && b.from === 7.5 && b.to === 10; })());
+    ok('확대는 1~40배로만', (() => { const s = TL.viewSpan(100, 999, 50); return s.zoom === TL.MAX_ZOOM; })());
+    ok('비율 ↔ 초 왕복 · 픽셀 → 초', TL.ratioOf(3.75, { from: 0, to: 10 }) === 0.375 && TL.timeOfRatio(0.375, { from: 0, to: 10 }) === 3.75 && TL.timeAtPx(180, 360, { from: 0, to: 10 }) === 5);
+    ok('손잡이 여유는 화면 폭에 맞춰 초로 바뀐다', (() => { const g = TL.grabSeconds(360, { from: 0, to: 10 }, 9); return Math.abs(g - 0.25) < 1e-9; })());
+    ok('자막 경계에 붙는다(가까울 때만)', TL.snapTime(1.95, [{ start: 2, end: 3 }], 0.12) === 2 && TL.snapTime(1.9, [{ start: 2, end: 3 }], 0.05) === 1.9);
+
+    /* ③ 컷 찾기 · 끌기 */
+    const rows3 = TL.indexedCuts([{ from: 1, to: 2, on: true }, { from: 5, to: 6, on: true }]);
+    ok('그 시각을 덮는 컷을 찾는다', TL.cutAt(rows3, 1.5).i === 0 && TL.cutAt(rows3, 3) === null);
+    ok('가까운 손잡이 — 시작·끝이 같게 가까우면 끝을 잡는다', TL.edgeNear(rows3, 1.5, 0.6).edge === 'to' && TL.edgeNear(rows3, 1.02, 0.2).edge === 'from');
+    ok('끝을 뒤로 늘리되 뒤 컷과 겹치지 않는다', (() => { const r = TL.dragEdge([{ from: 1, to: 2, on: true }, { from: 5, to: 6, on: true }], 0, 'to', 6, { duration: 10 }); return r.ok && r.to === 5 && r.list[0].to === 5; })());
+    ok('시작을 당겨도 최소 0.2초는 남는다', (() => { const r = TL.dragEdge([{ from: 1, to: 2, on: true }], 0, 'from', 1.95, { duration: 10 }); return r.ok && r.from === 1.8; })());
+    ok('앞 컷 끝보다 앞으로는 못 간다', (() => { const r = TL.dragEdge([{ from: 1, to: 2 }, { from: 5, to: 6 }], 1, 'from', 1, { duration: 10 }); return r.ok && r.from === 2; })());
+    ok('영상 길이 밖으로는 못 간다', (() => { const r = TL.dragEdge([{ from: 8, to: 9 }], 0, 'to', 100, { duration: 10 }); return r.ok && r.to === 10; })());
+    ok('붙어 있어 더 못 옮기면 이유를 말한다', (() => { const r = TL.dragEdge([{ from: 1, to: 2 }, { from: 1.1, to: 3 }], 0, 'to', 3, { duration: 10 }); return r.ok === false && /붙어/.test(r.error); })());
+    ok('끌기는 원본 목록을 건드리지 않는다', (() => { const src = [{ from: 1, to: 2 }]; TL.dragEdge(src, 0, 'to', 3, { duration: 10 }); return src[0].to === 2; })());
+
+    /* ④ 새 컷 · 합치기 */
+    ok('빈 목록에 새 컷 — 직접(MANUAL)으로 들어간다', (() => { const r = TL.newCut([], 1, 3, { duration: 10 }); return r.ok && r.list.length === 1 && r.list[0].type === 'MANUAL' && r.list[0].from === 1 && r.list[0].to === 3; })());
+    ok('0.2초보다 짧으면 거절', TL.newCut([], 1, 1.1, { duration: 10 }).ok === false);
+    ok('겹치면 하나로 합친다', (() => { const r = TL.newCut([{ from: 1, to: 2 }], 2, 4, { duration: 10 }); return r.ok && r.merged === 1 && r.list.length === 1 && r.from === 1 && r.to === 4; })());
+    ok('새 컷은 자막 경계에 붙는다', (() => { const r = TL.newCut([], 1.95, 4, { cues: [{ start: 2, end: 3 }] }); return r.from === 2; })());
+    ok('합친 구간의 영상이 하나면 그 파일번호를 지킨다', (() => { const r = TL.newCut([{ from: 1, to: 2, clip: 1 }], 1.5, 3, { duration: 10 }); return r.list[0].clip === 1; })());
+    ok('합친 구간에 다른 영상이 섞이면 파일번호를 비운다(기본 영상)', (() => { const r = TL.newCut([{ from: 1, to: 2, clip: 0 }, { from: 2.5, to: 3, clip: 1 }], 1, 3.5, { duration: 10 }); return r.ok && r.list.length === 1 && !('clip' in r.list[0]); })());
+    ok('새 컷의 자리(index)는 정리 뒤 목록에서 찾은 자리', (() => { const r = TL.newCut([{ from: 5, to: 6 }], 1, 2, { duration: 10 }); return r.index === 0 && r.list[0].from === 1; })());
+    ok('영상 길이를 넘는 구간은 잘라 담는다', (() => { const r = TL.newCut([], 1, 99, { duration: 10 }); return r.ok && r.to === 10; })());
+
+    /* ⑤ 켜기·끼우기·빼기 */
+    ok('한 컷 끄기 — 그 자리만 바뀐다', (() => { const r = TL.setCutOn([{ from: 1, to: 2 }, { from: 5, to: 6 }], 1, false); return r.list[1].on === false && r.list[0].on === true; })());
+    ok('컷 하나의 영상 바꾸기 · 비우기', (() => { const a = TL.setCutClip([{ from: 1, to: 2 }], 0, 1, 2); const b = TL.setCutClip(a.list, 0, null, 2); return a.list[0].clip === 1 && !('clip' in b.list[0]); })());
+    ok('범위 밖 파일번호는 받지 않는다', (() => { const r = TL.setCutClip([{ from: 1, to: 2 }], 0, 5, 2); return !('clip' in r.list[0]); })());
+    ok('모든 컷의 영상 한 번에 바꾸기 · 비우기', (() => { const a = TL.setAllClips([{ from: 1, to: 2 }, { from: 5, to: 6, clip: 0 }], 1, 2); const b = TL.setAllClips(a.list, null, 2); return a.list.every((c) => c.clip === 1) && b.list.every((c) => !('clip' in c)); })());
+    ok('컷 빼기 — 자리가 맞을 때만', (() => { const r = TL.removeCut([{ from: 1, to: 2 }, { from: 5, to: 6 }], 0); return r.ok && r.list.length === 1 && r.list[0].from === 5 && TL.removeCut([], 0).ok === false; })());
+    ok('켜진 컷만 세는 요약', (() => { const t = TL.cutTotals([{ from: 1, to: 2 }, { from: 5, to: 7, on: false }]); return t.count === 1 && t.seconds === 1 && TL.cutTotals([{ from: 1, to: 2 }, { from: 5, to: 7, on: false }], false).seconds === 3; })());
+    ok('영상별로 몇 곳·몇 초를 자르는지', (() => { const r = TL.clipTotals([{ from: 1, to: 2, clip: 1 }, { from: 3, to: 4 }], ['a.mp4', 'b.mp4'], 'a.mp4'); const b = r.find((x) => x.name === 'b.mp4'); const a = r.find((x) => x.name === 'a.mp4'); return b.count === 1 && b.seconds === 1 && a.count === 1; })());
+
+    /* ⑥ 자막 트랙 · 미리보기 겹치기 */
+    ok('카드 자막(배열)·확정 자막(객체)을 한 모양으로', (() => { const r = TL.cueList([[0, 1, '가'], { start: 1, end: 2, text: '나\n다' }]); return r.length === 2 && r[0].text === '가' && same(r[1].lines, ['나', '다']); })());
+    ok('자막은 시간 순 · 깨진 큐는 버린다', (() => { const r = TL.cueList([{ start: 3, end: 4, text: '뒤' }, { start: 0, end: 1, text: '앞' }, { start: 2, end: 2, text: '없음' }]); return r.length === 2 && r[0].text === '앞'; })());
+    ok('그 시각의 자막 — 끝 시각은 다음 자막의 시작', (() => { const cues = TL.cueList([[0, 1, '가'], [1, 2, '나']]); return TL.cueAt(cues, 0.5).index === 0 && TL.cueAt(cues, 1).index === 1 && TL.cueAt(cues, 2) === null; })());
+    ok('구간 제목·배지는 그 구간 안에서만', (() => { const d = { segments: [{ start: 2, end: 4, title: '제목', badge: '배지' }] }; return TL.segmentAt(d, 3).title === '제목' && TL.segmentAt(d, 1) === null; })());
+    ok('재생 위치의 글자 한 번에 — 자막·제목·배지', (() => { const o = TL.overlayAt({ design: { segments: [{ start: 0, end: 4, title: 'T', badge: 'B' }] }, cues: TL.cueList([[1, 2, '가']]), t: 1.5 }); return o.caption.text === '가' && o.title === 'T' && o.badge === 'B' && TL.overlayAt({ cues: [], design: {}, t: 0 }).caption === null; })());
+    ok('미리보기 줄은 2줄까지 · 빈 줄은 뺀다', same(TL.captionLines({ lines: [' 가 ', '', '나', '다'] }), ['가', '나']));
+    ok('미리보는 영상에 걸린 켜진 컷만 고른다(영상 여럿)', (() => {
+      const l = [{ from: 1, to: 2, clip: 1 }, { from: 3, to: 4 }, { from: 5, to: 6, clip: 0 }, { from: 7, to: 8, clip: 0, on: false }];
+      const a = TL.cutsForLane(l, ['a.mp4', 'b.mp4'], 'a.mp4', 'a.mp4').map((c) => c.from);
+      const b = TL.cutsForLane(l, ['a.mp4', 'b.mp4'], 'b.mp4', 'a.mp4').map((c) => c.from);
+      return same(a, [3, 5]) && same(b, [1]);
+    })());
+    ok('결과 영상 시간 ↔ 원본 시간(컷을 건너뛰어 당긴다)', (() => {
+      const cuts = TL.cutsForLane([{ from: 1, to: 2 }, { from: 5, to: 6, on: false }], ['a.mp4'], 'a.mp4', '');
+      return TL.toOutputTime(cuts, 0.5) === 0.5 && TL.toOutputTime(cuts, 1.5) === 1 && TL.toOutputTime(cuts, 3) === 2
+        && TL.toSourceTime(cuts, 0.5) === 0.5 && TL.toSourceTime(cuts, 1) === 2 && TL.toSourceTime(cuts, 4) === 5;
+    })());
+    ok('잘려 나가는 자리인지 — 자막을 얹지 않을 곳', TL.cutAwayAt([{ from: 1, to: 2 }], 1.5) === true && TL.cutAwayAt([{ from: 1, to: 2 }], 2) === false && TL.cutAwayAt([{ from: 1, to: 2 }], 0.5) === false);
+
+    /* ⑦ 눈금 · 시간 글자 */
+    ok('눈금은 6개 이하로 고른다', (() => { const tk = TL.timeTicks({ from: 0, to: 10 }, 6); return tk.length <= 7 && tk[0].t === 0 && tk[1].t === 2; })());
+    ok('시간 글자 — 분:초.소수', TL.formatTime(372.5) === '6:12.5' && TL.formatTime(65.24, true) === '1:05.2' && TL.formatTime(0) === '0:00.0');
+
+    /* ⑧ 저장값 · 오더 계약 — 문 앞은 그대로, 컷마다 영상만 더한다 */
+    ok('저장값: cut_list 의 clip(정수·범위 안)만 남긴다', (() => { const s = L2.normalizeState({ inputs: ['a.mp4', 'b.mp4'], cut_list: [{ from: 1, to: 2, clip: 1 }, { from: 3, to: 4, clip: 9 }, { from: 5, to: 6, clip: 1.5 }] }); return s.cut_list[0].clip === 1 && !('clip' in s.cut_list[1]) && !('clip' in s.cut_list[2]); })());
+    ok('저장값: 직접 그은 컷(MANUAL)이 살아남는다', L2.normalizeState({ cut_list: [{ type: 'MANUAL', from: 1, to: 2 }] }).cut_list[0].type === 'MANUAL');
+    ok('오더: 컷마다 다른 영상 — [from,to,파일번호] 그대로', (() => {
+      const st = { inputs: ['a.mp4', 'b.mp4'], cut_input: 'a.mp4', cut_list: [{ from: 1, to: 2, on: true, clip: 1 }, { from: 3, to: 4, on: true }] };
+      const r = L2.cutsForOrder(st, st.inputs);
+      return r.ok && same(r.cuts, [[1, 2, 1], [3, 4, 0]]);
+    })());
+    ok('오더: 컷마다 영상을 골랐으면 기본 영상(cut_input)이 없어도 된다', (() => {
+      const st = { inputs: ['a.mp4', 'b.mp4'], cut_input: '', cut_list: [{ from: 1, to: 2, clip: 0 }, { from: 3, to: 4, clip: 1 }] };
+      const r = L2.cutsForOrder(st, st.inputs);
+      return r.ok && same(r.cuts, [[1, 2, 0], [3, 4, 1]]);
+    })());
+    ok('오더: 아무것도 못 정한 컷은 예전처럼 막는다', (() => {
+      const st = { inputs: ['a.mp4', 'b.mp4'], cut_input: '', cut_list: [{ from: 1, to: 2 }] };
+      const r = L2.cutsForOrder(st, st.inputs);
+      return r.ok === false && /어느 영상/.test(r.error);
+    })());
+    ok('오더: 영상이 하나면 지금까지와 똑같이 [from,to]', (() => {
+      const st = { inputs: ['a.mp4'], cut_list: [{ from: 1, to: 2, clip: 0 }] };
+      const r = L2.cutsForOrder(st, st.inputs);
+      return r.ok && same(r.cuts, [[1, 2]]);
+    })());
+    ok('오더: 파일번호가 붙어도 buildRenderPayload 계약을 통과한다', (() => {
+      const b = L2.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4', 'b.mp4'], cuts: [[1, 2, 1], [3, 4, 0]] });
+      return b.ok && same(b.payload.cuts, [[1, 2, 1], [3, 4, 0]]);
+    })());
+    ok('오더: clip 이 없던 카드의 payload 는 글자까지 그대로(회귀)', (() => {
+      const oldCard = { inputs: ['a.mp4'], cut_list: [{ type: 'DEAD', from: 1, to: 2, on: true }] };
+      const r = L2.cutsForOrder(oldCard, oldCard.inputs);
+      const p = L2.buildRenderPayload({ contentId: 'CH-1', brand: 'daejeon_youth', inputs: ['a.mp4'], cuts: r.cuts, motion: 'auto' });
+      return same(p.payload.cuts, [[1, 2]]) && JSON.stringify(p.payload).indexOf('clip') < 0;
+    })());
+
+    /* ⑨ 화면 연결(정적) — 새 모듈이 실제로 붙었나 · GAS 는 손대지 않았나 */
+    const pvT = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
+    const tvT = fs.readFileSync(path.join(ROOT, 'js', 'timelineView.js'), 'utf8');
+    const tlT = fs.readFileSync(path.join(ROOT, 'js', 'timeline.js'), 'utf8');
+    ok('③ 이 타임라인 패널을 붙이고 목록이 바뀔 때 다시 그린다', /timelinePanel\(\{/.test(pvT) && /tl\.el/.test(pvT) && (pvT.match(/tl\.refresh\(\)/g) || []).length >= 4);
+    ok('타임라인은 값의 원본을 cut_list 하나로 쓴다(새 저장 키 0)', /s\.cut_list = list/.test(tvT) && !/s\.timeline\b/.test(tvT) && !/s\.cut_clips/.test(tvT));
+    ok('타임라인 화면도 innerHTML 0건 · document 직접 접근 0건', !/innerHTML|outerHTML|insertAdjacentHTML/.test(tvT + tlT) && !/document\./.test(tvT + tlT));
+    ok('순수 계산 모듈은 DOM 을 만들지 않는다(노드 시험 가능)', !/document\.|createElement/.test(tlT));
+    ok('새 모듈은 버전 쿼리로 부른다(캐시 어긋남 방지)', /from '\.\/timelineView\.js\?v=\d+[a-z]'/.test(pvT) && /from '\.\/timeline\.js\?v=\d+[a-z]'/.test(tvT) && /from '\.\/designModel\.js\?v=\d+[a-z]'/.test(tvT));
+    ok('GAS·시트는 손대지 않았다(orders 는 cuts 만 안다)', !/MANUAL|cut_clip/.test(fs.readFileSync(path.join(ROOT, 'gas', 'Orders.gs'), 'utf8')));
+    const cssT = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
+    ok('폰 360px: 막대는 100% 폭 · 손가락 끌기는 브라우저 스크롤을 막는다', /\.tl-bar \{[^}]*width: 100%/.test(cssT) && /\.tl-bar \{[^}]*touch-action: none/.test(cssT));
+    ok('폰 360px: 9:16 무대는 300px 까지 · 고정 px 폭을 쓰지 않는다', /\.tl-stage \{[^}]*max-width: 300px/.test(cssT) && !/\.tl-(bar|stage|lane)[^{]*\{[^}]*width: (3[7-9]\d|4\d\d)px/.test(cssT));
+    ok('index.html 캐시 버전·빌드 라벨을 올렸다(style m2-36 · v2-m64)', /css\/style\.css\?v=m2-36/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /v2-m64/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+
+    /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 영상 없이도 컷·자막 트랙이 그려지나 */
+    {
+      class N {
+        constructor(tag) { this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.style = {}; this.className = ''; this._text = ''; this.value = ''; this.checked = false; this.isConnected = true; }
+        set textContent(v) { this._text = String(v); this.children = []; }
+        get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+        setAttribute(k, v) { this.attrs[k] = String(v); }
+        removeAttribute(k) { delete this.attrs[k]; }
+        getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+        addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+        removeEventListener() {}
+        append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { tag: '#text', textContent: String(k), children: [] }; this.children.push(n); }); }
+        appendChild(k) { this.append(k); return k; }
+        replaceChildren(...kids) { this.children = []; this.append(...kids); }
+        querySelector() { return null; }
+        querySelectorAll() { return []; }
+        getContext() { return new Proxy({}, { get: (t, k) => (k === 'measureText' ? () => ({ width: 10 }) : () => {}) }); }
+        getBoundingClientRect() { return { left: 0, top: 0, width: 360, height: 640 }; }
+        setPointerCapture() {}
+        closest() { return null; }
+        remove() {}
+        focus() {}
+        click() { (this.listeners.click || []).forEach((f) => f({ target: this })); }
+      }
+      const hh = (tag, attrs, ...kids) => {
+        const n = new N(tag);
+        if (attrs) for (const [k, v] of Object.entries(attrs)) {
+          if (v == null || v === false) continue;
+          if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'style') n.setAttribute('style', v);
+          else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v); else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+        }
+        n.append(...kids.flat(4).filter((k) => k != null && k !== false)); return n;
+      };
+      const walk = (n, f) => { f(n); (n.children || []).forEach((c) => c && c.tag && walk(c, f)); };
+      const TV = await import('file://' + path.join(ROOT, 'js', 'timelineView.js'));
+      const state = L2.normalizeState({ inputs: ['a.mp4', 'b.mp4'], cut_input: 'a.mp4', srt: { confirmed: true, cues: 1 }, cut_list: [{ from: 1, to: 2, clip: 1 }, { from: 5, to: 6, on: false }] });
+      const panel = TV.timelinePanel({
+        h: hh, state, change: () => {}, toast: () => {}, inputs: state.inputs, cues: [[0, 1, '카드 자막']],
+        loadCueText: async () => '1\n00:00:01,000 --> 00:00:02,000\n확정 자막\n\n2\n00:00:02,000 --> 00:00:03,000\n둘째'
+      });
+      const cls = (root, name) => { const out = []; walk(root, (n) => { if ((n.className || '').split(/\s+/).indexOf(name) >= 0) out.push(n); }); return out; };
+      ok('타임라인 패널이 그려진다(영상 없이도)', panel.el.className === 'tl' && cls(panel.el, 'tl-bar').length === 1);
+      ok('영상 없이도 컷 블록은 그려진다(켜짐/꺼짐 구분)', (() => { const cuts = cls(panel.el, 'tl-cut'); return cuts.length === 2 && cuts.some((c) => /(^| )off( |$)/.test(c.className)); })());
+      ok('재생 위치·눈금이 있다', cls(panel.el, 'tl-play').length === 1 && cls(panel.el, 'tl-tick').length >= 2);
+      ok('카드 자막이 처음부터 트랙에 있다', cls(panel.el, 'tl-cue').length >= 1);
+      await new Promise((r) => setTimeout(r, 0));
+      ok('확정 자막(⑤)을 읽어 트랙·미리보기에 쓴다', panel.cues().length === 2 && panel.cues()[0].text === '확정 자막', JSON.stringify(panel.cues()));
+      const before = JSON.stringify(state.cut_list);
+      panel.refresh();
+      ok('refresh 는 목록을 건드리지 않고 다시 그린다', JSON.stringify(state.cut_list) === before && cls(panel.el, 'tl-cut').length === 2);
+    }
+  } catch (err) {
+    ok('시각 타임라인 작업공간 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

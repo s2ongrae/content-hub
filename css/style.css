@@ -1734,3 +1734,47 @@ a.cmp-card:hover { border-color: var(--accent); }
 .cht-note { margin: 4px 0 0; font-size: 11px; line-height: 1.4; color: var(--tx-3); overflow-wrap: anywhere; }
 .cht-note.err { color: var(--danger); }
 .guard-sheet .gate { margin-top: 8px; }
+
+/* ── ③ 시각 타임라인 작업공간 (2026-11-27, A단계 v1) ─────────────────
+ * 폰 360px 에서 가로 스크롤이 생기지 않게: 모든 줄은 flex-wrap, 막대는 100% 폭, 글자는 12px 이하. */
+.tl { display: grid; gap: 10px; min-width: 0; }
+.tl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.tl-status { flex: 1 1 100%; font-size: 11.5px; color: var(--tx-3); line-height: 1.5; word-break: break-all; }
+.tl-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.tl-time { font-family: var(--mono); font-size: 12px; color: var(--tx-2); }
+.tl-zoom { font-size: 11.5px; color: var(--tx-3); min-width: 2.2em; text-align: center; }
+.tl-filebtn { position: relative; overflow: hidden; }
+.tl-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.tl-stage { position: relative; width: 100%; max-width: 300px; margin: 0 auto; aspect-ratio: 9 / 16; background: #000; border-radius: 12px; overflow: hidden; }
+.tl-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.tl-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.tl-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; font-size: 12px; line-height: 1.6; color: rgba(255,255,255,.72); }
+.tl-bar { position: relative; width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); overflow: hidden; touch-action: none; cursor: crosshair; padding-bottom: 16px; }
+.tl-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tl-lane { position: relative; height: 34px; }
+.tl-lane-t { position: absolute; left: 6px; top: 3px; font-size: 10px; color: var(--tx-3); pointer-events: none; z-index: 2; }
+.tl-cut { position: absolute; top: 16px; height: 15px; border-radius: 4px; background: rgba(255,122,26,.45); border: 1px solid var(--accent); box-sizing: border-box; min-width: 2px; }
+.tl-cut.off { background: rgba(255,255,255,.06); border-color: var(--line); }
+.tl-cut.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tl-cut-t { position: absolute; left: 3px; top: 0; font-size: 9px; line-height: 13px; color: var(--tx); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tl-cue { position: absolute; top: 10px; height: 14px; border-radius: 3px; background: rgba(143,245,210,.35); border: 1px solid rgba(143,245,210,.8); box-sizing: border-box; min-width: 2px; }
+.tl-ticks { position: absolute; left: 0; right: 0; bottom: 0; height: 16px; border-top: 1px solid var(--line-soft); }
+.tl-tick { position: absolute; top: 1px; font-size: 9px; color: var(--tx-3); transform: translateX(-50%); white-space: nowrap; }
+.tl-band { position: absolute; top: 0; bottom: 16px; background: rgba(255,255,255,.16); border-left: 1px dashed var(--accent-2); border-right: 1px dashed var(--accent-2); pointer-events: none; }
+.tl-play { position: absolute; top: 0; bottom: 16px; width: 2px; margin-left: -1px; background: var(--ok); pointer-events: none; z-index: 3; }
+.tl-mark-pin { position: absolute; top: 0; bottom: 16px; width: 1px; pointer-events: none; }
+.tl-mark-a { background: #8FF5D2; }
+.tl-mark-b { background: #FFE84D; }
+.tl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.tl-mark { flex: 1 1 100%; font-size: 11.5px; color: var(--tx-3); line-height: 1.5; }
+.tl-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px; font-size: 13px; min-width: 0; }
+.tl-box strong { font-size: 13px; }
+.tl-clipbox { background: var(--bg-soft); }
+.tl-sum { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11.5px; color: var(--tx-2); }
+.tl-sum-i { color: var(--tx-3); word-break: break-all; }
+.tl-cuerow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tl-cue-t { font-size: 12px; color: var(--tx-2); word-break: break-word; }
+.tl-sel:empty, .tl-clips:empty, .tl-cues:empty { display: none; }
+.tl-lanebox { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; flex: 1 1 100%; }
+.tl-lanebox .pr-sel { flex: 1 1 150px; min-width: 0; }
+.tl-len { font-size: 11.5px; color: var(--tx-2); flex: 1 1 100%; }

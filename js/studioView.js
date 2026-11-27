@@ -12,7 +12,7 @@
 
 import { loadFormulas, rankHooks, band } from './yt/hookscore.js';
 import { lintPackage } from './yt/titlelint.js';
-import { buildEDL, edlToText } from './yt/edl.js?v=20261127a';
+import { buildEDL, edlToText } from './yt/edl.js?v=20261127b';
 import { analyze, parseRows } from './yt/viral.js';
 import { loadPreset, pickPreset, buildScript, scriptToText } from './yt/preset.js';
 import { api } from './api.js';

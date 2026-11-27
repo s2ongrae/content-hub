@@ -14,8 +14,8 @@
  * 렌더링은 createElement/textContent 만(h()). 폰 360px 에서 가로 스크롤이 없어야 한다(css/studio.css).
  */
 
-import { produceSection } from './produceView.js?v=20261127c';
-import { uploadPhoto, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64, uploadVideo, listUploads } from './uploadVideo.js?v=20261127a';
+import { produceSection } from './produceView.js?v=20261127f';
+import { uploadPhoto, deleteUpload, isPhotoFile, PHOTO_MAX_COUNT, bytesToBase64, uploadVideo, listUploads } from './uploadVideo.js?v=20261127b';
 import {
   FORMATS, TRACK_B_NOTE, formatsFor, formatLabel, CONCEPT_KINDS, TONES, VIDEO_LENGTHS,
   normalizeMaterials, materialSummary, hasMaterial, autoOrderPhotos, photoRole,
