@@ -26,6 +26,7 @@ import {
   MV_MAX_CLIPS, MV_VIDEO_EXT_RE, mvClipNames, mvMediaPlan
 } from './studioLogic.js?v=20261127c';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261127a';
+import { saveCardsInOrder, exportHintText, exportProgressText, exportResultText, exportGapMs, isIosLike, CARD_EXPORT_GAP_MS } from './cardExport.js?v=20261127a';
 import { WATERMARK_POSITIONS } from './designModel.js?v=20261127a';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261127c';
 import { DISCLOSURE_TEXT } from './blogCompliance.js?v=20261124b';
@@ -1536,9 +1537,12 @@ function paintFeed(actions, out, ctx, ui) {
   const caption = feedCaption(m) + '\n\n' + hashtagsOf(m).join(' ');
 
   actions.appendChild(h('p', { class: 'st-hint', text: '사진 → 1080×1350 카드 6장. 보정은 캔버스 필터로만(원본 파일은 그대로). PNG 로 내려받아 인스타에 직접 올립니다.' }));
+  const saveAllBtn = h('button', { class: 'btn primary', type: 'button', text: '⬇ 카드 6장 PNG 저장', onclick: () => saveCards() });
   actions.appendChild(h('div', { class: 'row' },
-    h('button', { class: 'btn primary', type: 'button', text: '⬇ 카드 6장 PNG 저장', onclick: () => saveCards() }),
+    saveAllBtn,
     copyTextBtn(h, caption, toast, '캡션·해시태그 복사')));
+  // 5~8장을 순서대로 저장한다 — 아이폰·사파리가 여러 장을 막을 수 있어 폴백(카드마다 저장)을 함께 알린다.
+  actions.appendChild(h('p', { class: 'st-hint', id: 'st-card-save-hint', text: exportHintText(cards.length, { ios: isIosLike(uaText()) }) }));
 
   const filters = h('div', { class: 'st-chips' });
   FILTER_PRESETS.forEach((f) => {
@@ -1582,25 +1586,61 @@ function paintFeed(actions, out, ctx, ui) {
       const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
       const holder = h('div', { class: 'st-card' },
         canvas || h('div', { class: 'st-card-fallback', text: '카드를 그리지 못했습니다' }),
-        h('span', { class: 'st-card-cap', text: '0' + card.no + ' ' + card.kicker + ' — ' + card.headline }));
+        h('span', { class: 'st-card-cap', text: '0' + card.no + ' ' + card.kicker + ' — ' + card.headline }),
+        h('button', { class: 'ghost-btn sm st-card-save', type: 'button', text: '저장', onclick: () => saveOneCard(card) }));
       grid.appendChild(holder);
     }
   }
   paintCards();
 
-  async function saveCards() {
+  /** 카드 한 장만 저장 — 여러 장 저장이 막힐 때 쓰는 폴백. */
+  async function saveOneCard(card) {
     const theme = CARD_THEME[ctx.state.brand] || CARD_THEME.daejeon_youth;
-    let n = 0;
-    for (const card of cards) {
-      const photo = (m.photos || []).find((p) => p.name === card.photo);
-      const bank = photo ? mem.photos[photo.id] : null;
-      const img = bank && bank.previewUrl ? await loadImageSafe(bank.previewUrl) : null;
-      const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
-      const blob = await canvasToPng(canvas);
-      if (blob && downloadBlob(blob, cardFileName(m.place.name, card.no))) n++;
-    }
-    toast(n ? '카드 ' + n + '장을 내려받았습니다' : '카드를 내려받지 못했습니다 — 브라우저를 확인하세요', n ? 'ok' : 'err');
+    const photo = (m.photos || []).find((p) => p.name === card.photo);
+    const bank = photo ? mem.photos[photo.id] : null;
+    const img = bank && bank.previewUrl ? await loadImageSafe(bank.previewUrl) : null;
+    const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
+    const blob = canvas ? await canvasToPng(canvas) : null;
+    const name = cardFileName(m.place.name, card.no);
+    if (blob && downloadBlob(blob, name)) toast(name + ' 저장을 시작했습니다', 'ok');
+    else toast('카드를 내려받지 못했습니다 — 브라우저를 확인하세요', 'err');
   }
+
+  /* 카드 6장 저장 — 장 사이 간격을 두고 순서대로(js/cardExport.js). 한 장이 막혀도 나머지를 계속한다. */
+  let savingCards = false;
+  async function saveCards() {
+    if (savingCards) return;
+    savingCards = true;
+    const label = saveAllBtn ? saveAllBtn.textContent : '';
+    if (saveAllBtn) { saveAllBtn.disabled = true; saveAllBtn.textContent = exportProgressText(1, cards.length); }
+    let res = null;
+    try {
+      const theme = CARD_THEME[ctx.state.brand] || CARD_THEME.daejeon_youth;
+      res = await saveCardsInOrder({
+        cards: cards.map((card) => Object.assign({}, card, { name: cardFileName(m.place.name, card.no) })),
+        render: async (card) => {
+          const photo = (m.photos || []).find((p) => p.name === card.photo);
+          const bank = photo ? mem.photos[photo.id] : null;
+          const img = bank && bank.previewUrl ? await loadImageSafe(bank.previewUrl) : null;
+          const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
+          return canvas ? canvasToPng(canvas) : null;
+        },
+        save: (blob, name) => downloadBlob(blob, name),
+        gapMs: exportGapMs(CARD_EXPORT_GAP_MS),
+        onProgress: (p) => { if (saveAllBtn) saveAllBtn.textContent = exportProgressText(p.index, p.total); },
+        isCancelled: () => !!(saveAllBtn && saveAllBtn.isConnected === false)
+      });
+    } finally {
+      savingCards = false;
+      if (saveAllBtn) { saveAllBtn.disabled = false; saveAllBtn.textContent = label || '⬇ 카드 6장 PNG 저장'; }
+    }
+    toast(exportResultText(res), res && res.saved > 0 ? 'ok' : 'err');
+  }
+}
+
+/** 이 브라우저의 사용자 에이전트 — 아이폰·사파리면 카드 저장 안내를 더 분명히 한다. */
+function uaText() {
+  try { return (typeof navigator !== 'undefined' && navigator && navigator.userAgent) || ''; } catch (e) { return ''; }
 }
 
 /** 사진 한 장을 카드에 그릴 수 있는 이미지로. 실패하면 null(글자만 그린다). */

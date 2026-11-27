@@ -11,11 +11,16 @@
  *   🖼️ 인스타 카드뉴스 N장 · 요약 · 드라이브 링크 · 3:4/4:5 미리보기 카드로 바뀌고,
  *   승인은 human_approved, 다시 쓰기는 queued 로 api.igCardApprove/igCardReject 가 보낸다.
  *   인스타 게시는 사람이 직접 한다(자동 발행 없음).
+ *
+ * 카드뉴스 2단계 (2026-11-27) — 미리보기 아래 [전체 저장]이 5~8장을 간격을 두고 순서대로
+ *   PNG 로 내려받고, 카드마다 [저장]도 늘 남긴다(사파리가 여러 장을 막을 때의 폴백).
+ *   저장 규칙은 js/cardExport.js 한 곳 — 스튜디오 피드도 같은 것을 쓴다.
  */
 
 import { api } from './api.js';
 import { friendlyError } from './uiState.js?v=20261126a';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, cardsFromSlides, cardPreset, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261127a';
+import { saveCardsInOrder, exportHintText, exportProgressText, exportResultText, exportGapMs, isIosLike, CARD_EXPORT_GAP_MS } from './cardExport.js?v=20261127a';
 
 const BRAND_EMOJI = { daejeon_youth: '🍺 대전 청년', ppiyak_kimmary: '🐱 김메리' };
 const BRAND_NAME = { daejeon_youth: '대전 청년', ppiyak_kimmary: '삐약 김메리' };
@@ -40,6 +45,7 @@ export class QuickApproveView {
     this.items = [];
     this.index = 0;
     this.busy = false;
+    this.saving = false;            // 카드 PNG 전체 저장 중인가(중복 클릭 방지)
     this.onChanged = opts.onChanged || function () {};
     this.toast = opts.toast || function () {};
     this._keyHandler = null;
@@ -307,11 +313,13 @@ export class QuickApproveView {
     const theme = CARD_THEME[item.brand] || CARD_THEME.daejeon_youth;
     const head = el('div', 'row qa-ig-head');
     head.appendChild(el('span', 'qa-meta', `${preset.label} · ${preset.width}×${preset.height} 미리보기`));
-    const saveBtn = el('button', 'ghost-btn sm', 'PNG로 저장');
+    const saveBtn = el('button', 'ghost-btn sm', '전체 저장');
     saveBtn.type = 'button';
-    saveBtn.addEventListener('click', () => this.savePreview(cards, item, preset, theme));
+    saveBtn.addEventListener('click', () => this.savePreview(cards, item, preset, theme, saveBtn));
     head.appendChild(saveBtn);
     host.appendChild(head);
+    // 아이폰·사파리는 여러 장 저장을 막을 수 있다 — 시작 전에 폴백을 알려 준다.
+    host.appendChild(el('p', 'qa-meta qa-ig-hint', exportHintText(cards.length, { ios: isIosLike(uaText()) })));
 
     const grid = el('div', 'qa-ig-cards');
     cards.forEach((c) => {
@@ -321,22 +329,59 @@ export class QuickApproveView {
       const holder = el('div', 'qa-ig-card');
       holder.appendChild(canvas || el('div', 'qa-ig-card-fallback', '카드를 그리지 못했어요'));
       holder.appendChild(el('span', 'qa-ig-cap', `0${c.no} ${c.headline}`));
+      // 폴백 — 한 장씩 저장. 여러 장이 막히는 브라우저에서도 이 버튼은 남는다.
+      const one = el('button', 'ghost-btn sm qa-ig-save', '저장');
+      one.type = 'button';
+      one.addEventListener('click', () => this.saveOne(c, item, preset, theme));
+      holder.appendChild(one);
       grid.appendChild(holder);
     });
     host.appendChild(grid);
   }
 
-  async savePreview(cards, item, preset, theme) {
-    let n = 0;
-    for (const c of cards) {
-      const canvas = drawCard(c, null, {
-        theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+  /** 카드 한 장만 저장 — 여러 장이 막힐 때 쓰는 폴백. */
+  async saveOne(card, item, preset, theme) {
+    const canvas = drawCard(card, null, {
+      theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+    });
+    const blob = canvas ? await canvasToPng(canvas) : null;
+    const name = cardFileName(item.place_name, `${card.no}_${preset.id.replace(':', 'x')}`);
+    if (blob && downloadBlob(blob, name)) this.toast(name + ' 저장을 시작했습니다', 'ok');
+    else this.toast('저장하지 못했어요 — 브라우저를 확인하세요', 'err');
+  }
+
+  /**
+   * 카드 전체 저장 — 간격을 두고 순서대로(cardExport.saveCardsInOrder).
+   *  한 장이 막혀도 나머지를 계속하고, 끝나면 시도 결과만 말한다(브라우저가 저장 여부를 알려 주지 않는다).
+   */
+  async savePreview(cards, item, preset, theme, btn) {
+    if (this.saving) { this.toast('카드를 저장하는 중입니다', 'ok'); return; }
+    this.saving = true;
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = exportProgressText(1, cards.length); }
+    let res = null;
+    try {
+      res = await saveCardsInOrder({
+        cards: cards.map((c) => Object.assign({}, c, {
+          name: cardFileName(item.place_name, `${c.no}_${preset.id.replace(':', 'x')}`)
+        })),
+        render: (c) => {
+          const canvas = drawCard(c, null, {
+            theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+          });
+          return canvas ? canvasToPng(canvas) : null;
+        },
+        save: (blob, name) => downloadBlob(blob, name),
+        gapMs: exportGapMs(CARD_EXPORT_GAP_MS),
+        onProgress: (p) => { if (btn) btn.textContent = exportProgressText(p.index, p.total); },
+        isCancelled: () => !!(btn && btn.isConnected === false)
       });
-      if (!canvas) continue;
-      const blob = await canvasToPng(canvas);
-      if (blob && downloadBlob(blob, cardFileName(item.place_name, `${c.no}_${preset.id.replace(':', 'x')}`))) n += 1;
+    } finally {
+      this.saving = false;
+      if (btn) { btn.disabled = false; btn.textContent = label || '전체 저장'; }
     }
-    this.toast(n ? `카드 ${n}장을 ${preset.label} PNG 로 저장했습니다` : '저장하지 못했어요 — 브라우저를 확인하세요', n ? 'ok' : 'err');
+    const text = exportResultText(res);
+    this.toast(text, res && res.saved > 0 ? 'ok' : 'err');
   }
 
   async approve() {
@@ -445,6 +490,11 @@ function el(tag, cls, text) {
   if (cls) node.className = cls;
   if (text != null) node.textContent = text;   // innerHTML 금지
   return node;
+}
+
+/** 이 브라우저의 사용자 에이전트 — 아이폰·사파리면 저장 안내를 더 분명히 한다. */
+function uaText() {
+  try { return (typeof navigator !== 'undefined' && navigator && navigator.userAgent) || ''; } catch (e) { return ''; }
 }
 
 /** 목록을 못 읽었을 때 — 사람 말로 사유를 보여 주고 [다시 시도]를 붙인다. */
