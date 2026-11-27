@@ -1285,6 +1285,12 @@ a.lrow { text-decoration: none; min-width: 0; }
 .kv { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
 .kv span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .kv strong { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+/* .kv-grid(연재·노하우) 안의 값 칸은 줄바꿈을 허용한다 (2026-11-27, 360px 가로 넘침)
+   위 .kv(채널 드릴다운용 한 줄 요약) 규칙이 두 칸 격자용 .kv 까지 덮어써 값이 nowrap 이 되면,
+   긴 문장이 들어간 칸이 한 줄 폭만큼 늘어나 격자 칸이 화면보다 넓어진다.
+   360px 실측: #/series 문서 폭 973px(뷰포트 345) → 값 칸을 풀면 345px. 1400px 에서는 차이 없음. */
+.kv-grid > .kv { min-width: 0; }
+.kv-grid > .kv > span { overflow: visible; text-overflow: clip; white-space: normal; }
 
 /* 채널 비교 — PC 는 3열 카드 그리드, 폰은 가로 표 대신 채널별 세로 행(채널·상태·핵심지표 2개) */
 .cmp-grid { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
