@@ -864,6 +864,19 @@ export function hashtagsOf(materials) {
 
 export const DRAFT_PAYLOAD_LIMIT = 3500;   // 큐 한도 4,000자 — 넘으면 payload_source:'drive'
 
+/* 초안 모드 (2026-11-28, docs/REWRITE_MODE_v1.md)
+ *  · preserve(기본): 원문 문단을 **글자 그대로** 두고 사이 문장만 받는다. 모드를 안 보내면 예전과 100% 같다.
+ *  · rewrite: 원문은 재료로만 쓰고 문장·호흡·말맛을 새로 쓴다. 사실(숫자·가격·장소)은 사실 대조로 잠근다.
+ *    rewrite 는 지금 블로그만 — 영상 대본은 장면·비트 검사와 엇갈릴 수 있어 다음 단계다. */
+export const DRAFT_MODES = ['preserve', 'rewrite'];
+
+/** 화면·오더의 모드 값을 계약 범위로 좁힌다(모르는 값·영상은 preserve). */
+export function normalizeDraftMode(mode, format) {
+  const f = format === 'video' ? 'video' : 'blog';
+  const m = String(mode || '').toLowerCase();
+  return (m === 'rewrite' && f === 'blog') ? 'rewrite' : 'preserve';
+}
+
 export function payloadChars(obj) {
   try { return JSON.stringify(obj || {}).length; } catch (e) { return 0; }
 }
@@ -912,6 +925,8 @@ export async function buildDraftRequest(input) {
     })()
   };
   if (i.format === 'video') base.length_sec = materials.video.length_sec;
+  /* 모드(2026-11-28) — rewrite 일 때만 필드를 싣는다. preserve 는 필드 자체가 없어 예전 payload 와 같다. */
+  if (normalizeDraftMode(i.mode, base.format) === 'rewrite') base.mode = 'rewrite';
   const inline = Object.assign({}, base, { facts: factsOf(materials), blocks: withHash });
   if (payloadChars(inline) <= DRAFT_PAYLOAD_LIMIT) return inline;
   const light = Object.assign({}, base, { payload_source: 'drive', user_body_sha256: await sha256Hex(userBodyText(blocks)) });
@@ -923,14 +938,50 @@ export async function buildDraftRequest(input) {
 }
 
 /**
+ * 재작성(rewrite) 초안의 새 본문 문단 — [{id, text}]. rewrite 가 아니거나 본문이 비면 빈 배열이다
+ * (그때는 부르는 쪽이 preserve 조립으로 안전하게 돌아간다).
+ */
+export function rewriteBodyOf(draft) {
+  const d = draft && typeof draft === 'object' ? draft : {};
+  if (String(d.mode || '') !== 'rewrite') return [];
+  const src = Array.isArray(d.body) ? d.body : [];
+  return src.map((x, n) => ({
+    id: String((x && x.id) || 'P' + String(n + 1).padStart(2, '0')),
+    text: String(typeof x === 'string' ? x : ((x && x.text) || '')).replace(/\r\n?/g, '\n').trim()
+  })).filter((p) => p.text);
+}
+
+/**
+ * 승인 카드 한 줄 — 사실 대조·경고 (2026-11-28 rewrite).
+ *  · ok:true  → '사실 12개 대조 통과 · 경고 3건'
+ *  · ok:false → '사실 12개 대조 · 원문에 없는 숫자 2건 — 사실만 써야 합니다'
+ * fact_check 가 없으면(예전 preserve 초안) 경고 수만 알린다.
+ */
+export function factCheckLine(factCheck, warnings) {
+  const f = factCheck && typeof factCheck === 'object' ? factCheck : null;
+  const warns = Array.isArray(warnings) ? warnings.length : 0;
+  if (!f) return warns ? '경고 ' + warns + '건' : '';
+  const checked = Number(f.checked) || 0;
+  const invented = Array.isArray(f.invented) ? f.invented.length : 0;
+  const missing = Array.isArray(f.missing) ? f.missing.length : 0;
+  const head = invented
+    ? '사실 ' + checked + '개 대조 · 원문에 없는 숫자 ' + invented + '건'
+    : '사실 ' + checked + '개 대조 통과' + (missing ? ' · 원문 숫자 ' + missing + '개 빠짐' : '');
+  return head + (warns ? ' · 경고 ' + warns + '건' : '');
+}
+
+/**
  * AI 초안 결과와 내 원문을 합쳐 '붙일 수 있는 본문'을 만든다.
- *  · USER 블록은 손대지 않는다. AI 문장은 블록 **사이**와 빈 캡션에만 들어간다.
- *  · 결과의 USER 블록이 원문과 다르면(해시 불일치) AI 문장을 버리고 원문만 남긴다 — 덮어쓰지 않는다.
+ *  · preserve: USER 블록은 손대지 않는다. AI 문장은 블록 **사이**와 빈 캡션에만 들어간다.
+ *    결과의 USER 블록이 원문과 다르면(해시 불일치) AI 문장을 버리고 원문만 남긴다 — 덮어쓰지 않는다.
+ *  · rewrite: draft.body 문단이 곧 본문이다(원문 블록을 앞에 깔지 않는다). 원문은 화면의 '재료' 영역으로 간다.
  */
 export function composeBlogWithDraft(kit, draft) {
   const k = kit || {};
   const d = draft && typeof draft === 'object' ? draft : {};
   const blocks = Array.isArray(k.blocks) ? k.blocks : [];
+  const rewritten = rewriteBodyOf(d);
+  if (rewritten.length) return composeRewriteBlog(k, d, rewritten);
   const aiBlocks = Array.isArray(d.blocks) ? d.blocks : [];
   const aiByUser = {};
   aiBlocks.forEach((b) => {
@@ -941,13 +992,7 @@ export function composeBlogWithDraft(kit, draft) {
   const bridges = Array.isArray(d.bridges) ? d.bridges : (Array.isArray(d.bridge) ? d.bridge : []);
   const lines = [];
   lines.push('■ 제목 후보 3');
-  const draftTitles = (Array.isArray(d.titles) && d.titles.length ? d.titles : k.titles || []).slice(0, 3);
-  // 추천 제목으로 시작한 작업은 AI 초안이 와도 그 제목을 1안에 남긴다.
-  const seedTitle = String(k.title_seed || '');
-  const shownTitles = seedTitle && draftTitles.indexOf(seedTitle) < 0
-    ? [seedTitle].concat(draftTitles).slice(0, 3)
-    : draftTitles;
-  shownTitles.forEach((t, n) => lines.push((n + 1) + ') ' + t));
+  draftTitlesOf(k, d).forEach((t, n) => lines.push((n + 1) + ') ' + t));
   lines.push('');
   lines.push('■ 본문');
   if (k.compliance && k.compliance.paid) lines.push(DISCLOSURE_TEXT, '');
@@ -975,10 +1020,69 @@ export function composeBlogWithDraft(kit, draft) {
   }
   return {
     text: lines.join('\n'),
+    mode: 'preserve',
     verified: verified,
     titles: (Array.isArray(d.titles) ? d.titles : k.titles || []).slice(0, 3),
     outro: d.outro || k.outro || '',
     captions: caps
+  };
+}
+
+/**
+ * 화면에 보일 제목 3안 — AI 제목이 있으면 그것, 없으면 키트 제목.
+ * 추천 제목으로 시작한 작업은 AI 초안이 와도 그 제목을 1안에 남긴다(두 모드 같은 규칙).
+ */
+function draftTitlesOf(kit, draft) {
+  const k = kit || {};
+  const d = draft || {};
+  const titles = (Array.isArray(d.titles) && d.titles.length ? d.titles : k.titles || []).slice(0, 3);
+  const seed = String(k.title_seed || '');
+  return seed && titles.indexOf(seed) < 0 ? [seed].concat(titles).slice(0, 3) : titles;
+}
+
+/**
+ * rewrite 초안 조립 — 제목·본문·마무리·캡션은 AI 것을 쓰고, 원문은 재료로만 돌려준다.
+ *  · 본문 문단 안의 줄바꿈(두 줄 호흡)은 그대로 살린다.
+ *  · 사진 위치표([사진] …)는 새 문단과 짝이 없으므로 본문에 끼우지 않는다 — 사진 순서·캡션은 아래에 그대로 남는다.
+ */
+function composeRewriteBlog(kit, draft, body) {
+  const k = kit || {};
+  const d = draft || {};
+  const lines = [];
+  lines.push('■ 제목 후보 3');
+  draftTitlesOf(k, d).forEach((t, n) => lines.push((n + 1) + ') ' + t));
+  lines.push('');
+  lines.push('■ 본문');
+  if (k.compliance && k.compliance.paid) lines.push(DISCLOSURE_TEXT, '');
+  body.forEach((p) => { lines.push(''); lines.push(p.text); });
+  lines.push('');
+  lines.push('■ 마무리 한 문단');
+  lines.push(d.outro ? splitLongBlock(d.outro).join('\n\n') : (k.outro || FILL));
+  const caps = Array.isArray(d.captions) ? d.captions : [];
+  if (caps.length) {
+    lines.push('');
+    lines.push('■ 사진 캡션 (빈 칸만 AI — 직접 쓴 캡션은 그대로)');
+    (k.captions || []).forEach((c) => {
+      const hit = caps.find((x) => x && x.name === c.name);
+      lines.push(c.name + ' — ' + (c.auto === false ? c.text : ((hit && hit.text) || c.text)));
+    });
+  }
+  const originParas = (Array.isArray(k.blocks) ? k.blocks : []).map((b) => String(b.text || ''));
+  const fact = d.fact_check && typeof d.fact_check === 'object' ? d.fact_check : null;
+  return {
+    text: lines.join('\n'),
+    mode: 'rewrite',
+    verified: { ok: true, changed: 0, note: '재작성본입니다 — 문단 해시 대신 사실 대조로 검사했습니다' },
+    titles: (Array.isArray(d.titles) ? d.titles : k.titles || []).slice(0, 3),
+    outro: d.outro || k.outro || '',
+    captions: caps,
+    body: body,
+    origin_paras: originParas,
+    fact_check: fact,
+    fact_ok: !fact || fact.ok !== false,
+    fact_line: factCheckLine(fact, d.warnings),
+    body_chars: Number(d.body_chars) || body.reduce((a, p) => a + p.text.replace(/\s+/g, ' ').length, 0),
+    warnings: Array.isArray(d.warnings) ? d.warnings : []
   };
 }
 

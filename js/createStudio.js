@@ -21,11 +21,12 @@ import {
   normalizeMaterials, materialSummary, hasMaterial, autoOrderPhotos, photoRole,
   photoPlanFor, buildBlogKit, signKit, buildFeedCards, feedCaption, hashtagsOf, buildDraftRequest,
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio,
+  DRAFT_MODES, normalizeDraftMode,
   errorText, orderLine, FEED_CARDS,
   photoRenderOrder, photoRenderNotes, pickBgmName, toneLabel,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName,
   MV_MAX_CLIPS, MV_VIDEO_EXT_RE, mvClipNames, mvMediaPlan
-} from './studioLogic.js?v=20261128a';
+} from './studioLogic.js?v=20261128b';
 import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT, warmCardFonts } from './studioCanvas.js?v=20261128a';
 import { saveCardsInOrder, exportHintText, exportProgressText, exportResultText, exportGapMs, isIosLike, CARD_EXPORT_GAP_MS } from './cardExport.js?v=20261127a';
 import { WATERMARK_POSITIONS } from './designModel.js?v=20261127a';
@@ -38,6 +39,7 @@ import { copyText } from './clipboard.js?v=20261126a';
 
 const LS_MAT = 'contenthub.studio.v1.';
 const LS_CARD = 'contenthub.studio.card.';
+const LS_DRAFT_MODE = 'contenthub.studio.draftmode.';   // 블로그 AI 초안 방식(preserve·rewrite) — 브랜드별로 기억한다
 const LS_RECENT = 'contenthub.studio.recent.v1';
 const POLL_MS = 15000;
 
@@ -622,7 +624,7 @@ async function saveMaterialsToStudio(ctx, format, extra) {
 
 /** content_draft · content_render 오더 1회. 같은 화면에서 두 번 눌리지 않게 잠근다. */
 async function sendOrder(ctx, key, payload, btn, onDone) {
-  const { api, toast } = ctx;
+  const { h, api, toast } = ctx;   // h 를 빼먹어 오더 접수 뒤 "h is not defined"로 터지던 결함 수정(2026-11-28)
   if (mem.busy[key]) { toast('이미 보낸 오더가 끝나기를 기다리는 중입니다', 'err'); return; }
   mem.busy[key] = true;
   const label = btn.textContent;
@@ -723,10 +725,43 @@ function paintBlog(actions, out, ctx, ui) {
     h('label', { class: 'field' }, h('span', { class: 'field-label', text: '블로그씨 오늘의 주제 (선택)' }), seEl),
     noticeLine));
 
+  /* ── AI 초안 방식 (2026-11-28, docs/REWRITE_MODE_v1.md) ──
+     preserve = 지금까지 그대로(원문 잠금). rewrite = 원문은 재료, 사실만 잠그고 새로 쓴다. */
+  if (DRAFT_MODES.indexOf(mem.draftMode) < 0) {
+    mem.draftMode = normalizeDraftMode(lsGet(LS_DRAFT_MODE + mem.brand) || '', 'blog');
+  }
   const free = h('button', { class: 'btn primary', type: 'button', text: '⚡ 바로 만들기 (무료 · 즉시)' });
   const ai = h('button', { class: 'btn', type: 'button', text: '🤖 AI 초안 생성 (노트북 1회)' });
+  const modeHint = h('p', { class: 'st-hint' });
+  const chipPreserve = h('button', { class: 'st-chip', type: 'button', text: '내 문단 그대로',
+    title: '내가 쓴 문단은 한 글자도 바꾸지 않고 제목·사이 문장·캡션·마무리만 AI가 씁니다' });
+  const chipRewrite = h('button', { class: 'st-chip', type: 'button', text: '✍️ 사실만 남기고 새로 쓰기',
+    title: '원문은 재료로만 쓰고 문장·호흡·말맛을 새로 씁니다 — 숫자·가격·장소는 사실 대조로 잠급니다' });
+  function setDraftMode(id) {
+    mem.draftMode = normalizeDraftMode(id, 'blog');
+    lsSet(LS_DRAFT_MODE + mem.brand, mem.draftMode);
+    paintDraftMode();
+  }
+  function paintDraftMode() {
+    const rw = mem.draftMode === 'rewrite';
+    chipPreserve.className = 'st-chip' + (rw ? '' : ' on');
+    chipRewrite.className = 'st-chip' + (rw ? ' on' : '');
+    ai.textContent = rw ? '✍️ AI 재작성 (노트북 1회)' : '🤖 AI 초안 생성 (노트북 1회)';
+    modeHint.textContent = rw
+      ? '새로 쓰기: 원문은 재료입니다. 문장·호흡·말맛을 새로 쓰고, 숫자·가격·장소·영업시간은 사실 대조로 봅니다(원문에 없는 숫자가 생기면 폐기).'
+      : '원문 보존: 내가 쓴 문단은 그대로 남고, 제목 3안·문단 사이 연결·빈 캡션·마무리만 AI가 씁니다.';
+  }
+  chipPreserve.addEventListener('click', () => setDraftMode('preserve'));
+  chipRewrite.addEventListener('click', () => setDraftMode('rewrite'));
+  paintDraftMode();
+
+  actions.appendChild(h('div', { class: 'panel', style: 'margin-bottom:10px' },
+    h('div', { class: 'st-field-row st-mode-row' },
+      h('span', { class: 'field-label', text: 'AI 초안 방식' }),
+      h('div', { class: 'st-chips' }, chipPreserve, chipRewrite)),
+    modeHint));
   actions.appendChild(h('div', { class: 'row' }, free, ai));
-  actions.appendChild(h('p', { class: 'st-hint', text: '바로 만들기는 내 메모와 사진만 배치합니다(토큰 0). AI 초안은 제목 3안·문단 사이 연결·빈 캡션·마무리만 씁니다 — 내 문단은 그대로 남습니다.' }));
+  actions.appendChild(h('p', { class: 'st-hint', text: '바로 만들기는 내 메모와 사진만 배치합니다(토큰 0). AI 초안은 노트북을 한 번 부릅니다 — 위에서 방식을 고르세요.' }));
 
   free.addEventListener('click', async () => {
     free.disabled = true;
@@ -750,7 +785,7 @@ function paintBlog(actions, out, ctx, ui) {
     const label = ai.textContent;
     try {
       const id = await ensureCard(ctx, 'blog', ui);
-      const req = await buildDraftRequest({ contentId: id, brand: ctx.state.brand, format: 'blog', materials: m });
+      const req = await buildDraftRequest({ contentId: id, brand: ctx.state.brand, format: 'blog', materials: m, mode: mem.draftMode });
       mem.outHost = out;
       await sendOrder(ctx, 'draft-blog', req, ai, async () => {
         try {
@@ -763,7 +798,7 @@ function paintBlog(actions, out, ctx, ui) {
           const kit = await signKit(buildBlogKit({ materials: m, links: m.links || [], title: seoTitleOf() }));
           mem.kit = kit;
           paintKit(out, ctx, kit, ui, draft);
-          toast('AI 초안을 카드에서 가져왔습니다', 'ok');
+          toast(draft.mode === 'rewrite' ? 'AI 재작성본을 카드에서 가져왔습니다' : 'AI 초안을 카드에서 가져왔습니다', 'ok');
         } catch (err) {
           toast('결과를 가져오지 못했습니다 — ' + ((err && err.message) || err), 'err');
         }
@@ -787,6 +822,7 @@ function paintBlog(actions, out, ctx, ui) {
 function paintKit(out, ctx, kit, ui, draft) {
   const { h } = ctx;
   const composed = draft ? composeBlogWithDraft(kit, draft) : null;
+  const rewrite = !!(composed && composed.mode === 'rewrite');
 
   /* ── 🖋️ 내 스타일 본문 (2026-11-25, #50347) — 레이 님 발행글 문법으로 0토큰 조립한 본문을 맨 위에 ──
      인용구 섹션·▲ 캡션·📌 정보카드·⭐ 총평·펀치라인 순서. 비는 자리는 ⟦⟧ 로 보이게 둔다. */
@@ -821,6 +857,14 @@ function paintKit(out, ctx, kit, ui, draft) {
 
   const box = h('div', { class: 'panel' },
     h('h3', null, '제목 후보 3안'));
+  /* rewrite 승인 요약 (2026-11-28) — 사실 대조·경고를 한 줄로. ok=false 면 폐기 대상이라 빨갛게. */
+  if (rewrite) {
+    box.appendChild(h('p', { class: 'st-hint' + (composed.fact_ok ? '' : ' err'),
+      text: '✍️ 새로 쓴 본문 ' + composed.body.length + '문단 · ' + composed.body_chars + '자 · ' + composed.fact_line }));
+    if (composed.warnings.length) {
+      box.appendChild(h('p', { class: 'st-hint', text: '경고 — ' + composed.warnings.slice(0, 4).join(' · ') }));
+    }
+  }
   (composed ? composed.titles : kit.titles).forEach((t, i) => {
     box.appendChild(h('div', { class: 'st-title-row' },
       h('strong', { text: t }),
@@ -833,11 +877,32 @@ function paintKit(out, ctx, kit, ui, draft) {
   const text = composed ? composed.text : kit.text;
   const pre = h('pre', { class: 'st-pre' }, text);
   box.appendChild(h('h3', { text: '붙여넣기 키트' }));
-  box.appendChild(h('p', { class: 'st-hint', text: '원문 ' + kit.blocks.length + '문단 · 사진 ' + kit.photo_plan.length + '장 · 해시 ' + (kit.user_body_sha256 || '').slice(0, 8) }));
+  box.appendChild(h('p', { class: 'st-hint', text: rewrite
+    ? '재작성 ' + composed.body.length + '문단 · 사진 ' + kit.photo_plan.length + '장 · 원문은 재료로만 썼습니다(본문에 깔지 않음)'
+    : '원문 ' + kit.blocks.length + '문단 · 사진 ' + kit.photo_plan.length + '장 · 해시 ' + (kit.user_body_sha256 || '').slice(0, 8) }));
   box.appendChild(pre);
   box.appendChild(h('div', { class: 'row' },
     copyTextBtn(h, text, ctx.toast, '키트 복사'),
     downloadBtn(h, '블로그키트.md', text, ctx.toast)));
+
+  /* ── rewrite 승인 화면: 원문 / 재작성 나란히 + 원문은 '재료' 접기 영역 (2026-11-28) ── */
+  if (rewrite) {
+    box.appendChild(h('h3', { text: '원문 / 재작성 나란히' }));
+    box.appendChild(h('p', { class: 'st-hint', text: '왼쪽은 재료로 쓴 내 원문, 오른쪽은 새로 쓴 본문입니다. 숫자·가격·장소 같은 사실은 위 대조를 통과했습니다.' }));
+    const col = (label, paras) => {
+      const c = h('div', { class: 'st-compare-col' }, h('h4', { text: label }));
+      c.appendChild(paras.length
+        ? h('pre', { class: 'st-pre' }, paras.join('\n\n'))
+        : h('p', { class: 'st-hint', text: '—' }));
+      return c;
+    };
+    box.appendChild(h('div', { class: 'st-compare' },
+      col('원문 (재료)', composed.origin_paras),
+      col('재작성', composed.body.map((p) => p.text))));
+    box.appendChild(h('details', { class: 'st-fold' },
+      h('summary', { text: '📎 재료로 쓴 원문 ' + composed.origin_paras.length + '문단 (접기/펼치기)' }),
+      h('pre', { class: 'st-pre' }, composed.origin_paras.join('\n\n'))));
+  }
 
   /* ── 공개 표시 · 네이버 기능 자동 결과 (2026-11-24) ── */
   const comp = kit.compliance || {};
@@ -864,7 +929,9 @@ function paintKit(out, ctx, kit, ui, draft) {
   box.appendChild(compBox);
 
   /* ── 톤 · 2줄 호흡 (제미니 확정안 A, 2026-11-21) ── */
-  const bodyText = (kit.blocks || []).map((b) => b.text).join('\n\n');
+  const bodyText = rewrite
+    ? composed.body.map((p) => p.text).join('\n\n')   // rewrite 는 새로 쓴 본문으로 톤·AI 티를 잰다
+    : (kit.blocks || []).map((b) => b.text).join('\n\n');
   const rh = kit.rhythm || { stats: rhythmStats(bodyText), issues: lintRhythm(bodyText) };
   const rhBox = h('div', null);
   box.appendChild(h('h3', { text: '톤 · 2줄 호흡' }));
