@@ -3981,7 +3981,8 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const body3 = drawSpy3({ no: 2, kicker: '메뉴', headline: '삼겹 16,000원', body: '반찬 8가지', emphasis: '16,000원' }, photo3, { index: 1, total: 4 });
     ok('body: 카운터·kicker·본문이 그려지고 사진은 위 52%에만', body3.spy.texts.some((t) => t.s === '02/04') && body3.spy.texts.some((t) => t.s === '반찬 8가지') && body3.spy.images === 1);
     const quote3 = drawSpy3({ no: 3, type: 'quote', headline: '기다림은 값이었다', source: '봉명동 미미삼겹' }, null, { index: 2, total: 4 });
-    ok('quote: 인용 따옴표와 출처가 그려진다', quote3.spy.texts.some((t) => t.s === '“') && quote3.spy.texts.some((t) => t.s === '봉명동 미미삼겹'), quote3.spy.texts.map((t) => t.s));
+    ok('quote: 인용구와 출처가 가운데 정렬로 그려진다', quote3.spy.texts.some((t) => t.s === '기다린 값은 했다' || t.s === '기다림은 값이었다' && t.x === 540)
+      && quote3.spy.texts.some((t) => t.s === '봉명동 미미삼겹' && t.x === 540), quote3.spy.texts.map((t) => t.s + '@' + t.x));
     const cta3 = drawSpy3({ no: 4, type: 'cta', headline: '저장해 두세요', body: '다음에 갈 때 보려고' }, null, { index: 3, total: 4 });
     ok('cta: 저장 버튼 글자와 헤드라인이 그려진다', cta3.spy.texts.some((t) => t.s === '저장') && cta3.spy.texts.some((t) => t.s === '저장해 두세요'), cta3.spy.texts.map((t) => t.s));
     const noPhoto3 = drawSpy3({ no: 2, kicker: '메뉴', headline: '삼겹', body: '반찬' }, null, { index: 1, total: 3 });
@@ -4090,6 +4091,15 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const qaS3 = fs.readFileSync(path.join(ROOT, 'js', 'quickApprove.js'), 'utf8');
     ok('승인 탭 미리보기가 사진을 카드에 앉혀 그린다', /loadCardPhotos\(/.test(qaS3) && /drawCard\(c, pi >= 0 \? images\[pi\] : null/.test(qaS3));
     ok('사진이 없거나 실패하면 4타입 단색 폴백으로 그린다', /카드 사진을 읽지 못해 글자 카드로/.test(qaS3) && /drawCard\(card, pi >= 0 \? images\[pi\] : null/.test(qaS3));
+
+    /* ── ⑨ 화면 배선 — 사진 렌더 버튼이 새 오더 빌더를 쓰고, TTS 는 칩으로만 켜진다 ── */
+    const csS3 = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+    ok('사진 렌더 버튼이 photoRenderOrder 로 오더를 만든다', /const payload = photoRenderOrder\(\{/.test(csS3));
+    ok('예전처럼 대본이 있으면 무조건 내레이션을 켜지 않는다', !/payload\.narrate = !!\(draft\.narration/.test(csS3) && /narrate: wantNarrate/.test(csS3));
+    ok('소리 칩: 내레이션 기본 꺼짐 · 음악 자동/없음', /내레이션\(TTS\) 꺼짐/.test(csS3) && /음악 자동/.test(csS3) && /음악 없음/.test(csS3));
+    ok('보내기 전에 무음·빈 제목 경고를 띄운다', /photoRenderNotes\(payload/.test(csS3));
+    ok('스튜디오 피드 카드도 4타입·카운터를 넘긴다', /index: ci, total: total/.test(csS3) && /type: \(cards\[ci\] && cards\[ci\]\.type\)/.test(csS3));
+    ok('카드를 그리기 전에 폰트를 기다린다', /await warmCardFonts\(\)/.test(csS3));
   } catch (err) {
     ok('결과물 품질 1차 개선 시험', false, (err && err.stack) || err);
   }

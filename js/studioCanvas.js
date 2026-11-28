@@ -401,18 +401,27 @@ function paintCover(ctx, card, image, theme, o, W, H) {
   }
   paintCounter(ctx, theme, card, total, W);
 
-  const kickerY = photoOk ? Math.round(H * 0.545) : Math.round(H * 0.24);
-  paintKicker(ctx, theme, card.kicker, PAD, kickerY, 34);
-  const headlineTop = kickerY + 58 + 40;
   const fit = fitText(card.headline, {
     fontPx: 88, minPx: 56, maxLines: 2, maxWidth: W - PAD * 2, weight: 700,
     measureFor: (px) => makeMeasure(ctx, px, fontOf(700, px))
   });
-  paintHeadlineLines(ctx, fit.lines, PAD, headlineTop, fit.fontPx, Math.round(fit.fontPx * 1.14), theme, { weight: 700 });
+  const lh = Math.round(fit.fontPx * 1.14);
+  let bodyLines = [];
   if (card.body) {
-    const bodyTop = headlineTop + fit.lines.length * Math.round(fit.fontPx * 1.14) + 28;
-    const maxLines = Math.max(1, Math.floor((H - PAD - 120 - bodyTop) / 50));
-    paintBody(ctx, theme, card.body, PAD, bodyTop, W - PAD * 2, Math.min(2, maxLines), { fontPx: 34, lineHeight: 50 });
+    const bm = makeMeasure(ctx, 34, fontOf(400, 34));
+    bodyLines = wrapKo(card.body, W - PAD * 2, bm).slice(0, 2);
+  }
+  const blockH = 58 + 40 + fit.lines.length * lh + (bodyLines.length ? 28 + bodyLines.length * 50 : 0);
+  // 사진 위 표지는 사진 아래에서 시작하고, 사진 없는 표지는 글자 덩어리를 아래로 내려 포스터처럼 둔다.
+  const kickerY = photoOk
+    ? Math.round(H * 0.545)
+    : Math.max(Math.round(H * 0.24), H - PAD - 140 - blockH);
+  paintKicker(ctx, theme, card.kicker, PAD, kickerY, 34);
+  const headlineTop = kickerY + 58 + 40;
+  paintHeadlineLines(ctx, fit.lines, PAD, headlineTop, fit.fontPx, lh, theme, { weight: 700 });
+  if (bodyLines.length) {
+    const bodyTop = headlineTop + fit.lines.length * lh + 28;
+    paintBody(ctx, theme, card.body, PAD, bodyTop, W - PAD * 2, 2, { fontPx: 34, lineHeight: 50 });
   }
   paintBrand(ctx, theme, brandName, PAD, H - PAD - 20);
 }
@@ -430,12 +439,27 @@ function paintBodyCard(ctx, card, image, theme, o, W, H) {
     ctx.fillStyle = hexToRgba(theme.accent, 0.9);
     ctx.fillRect(PAD, 80, 64, 8);
   }
+
+  const fit = fitText(card.headline, {
+    fontPx: 76, minPx: 48, maxLines: 2, maxWidth: W - PAD * 2, weight: 700,
+    measureFor: (px) => makeMeasure(ctx, px, fontOf(700, px))
+  });
+  const lineHeight = Math.round(fit.fontPx * 1.16);
+  let bodyLines = [];
+  if (card.body) {
+    const bm = makeMeasure(ctx, 34, fontOf(400, 34));
+    bodyLines = wrapKo(card.body, W - PAD * 2, bm).slice(0, 6);
+  }
+  const blockH = 78 + fit.lines.length * lineHeight + (bodyLines.length ? 30 + bodyLines.length * 52 : 0);
+  // 사진이 있으면 사진 바로 아래가 아니라 카드 아래쪽에 글자 덩어리를 앉힌다(사이에 숨통).
+  const start = Math.max(top, H - PAD - 70 - blockH);
+
   // 번호 + kicker
   ctx.save();
   ctx.font = fontOf(600, 34);
   ctx.fillStyle = theme.accent;
   ctx.textBaseline = 'top';
-  ctx.fillText(counterText(card, total), PAD, top);
+  ctx.fillText(counterText(card, total), PAD, start);
   ctx.restore();
   ctx.save();
   ctx.font = fontOf(600, 32);
@@ -443,24 +467,19 @@ function paintBodyCard(ctx, card, image, theme, o, W, H) {
   ctx.textBaseline = 'top';
   const kickerMeasure = makeMeasure(ctx, 32, fontOf(600, 32));
   const kicker = wrapKo(card.kicker, 520, kickerMeasure)[0] || '';
-  if (kicker) ctx.fillText(kicker, PAD + 128, top + 2);
+  if (kicker) ctx.fillText(kicker, PAD + 128, start + 2);
   ctx.restore();
 
-  const fit = fitText(card.headline, {
-    fontPx: 76, minPx: 48, maxLines: 2, maxWidth: W - PAD * 2, weight: 700,
-    measureFor: (px) => makeMeasure(ctx, px, fontOf(700, px))
-  });
-  const headlineTop = top + 78;
-  const lineHeight = Math.round(fit.fontPx * 1.16);
+  const headlineTop = start + 78;
   paintHeadlineLines(ctx, fit.lines, PAD, headlineTop, fit.fontPx, lineHeight, theme, { weight: 700 });
   if (fit.lines.length && card.emphasis) {
     paintEmphasis(ctx, theme, fit.lines[0], PAD, headlineTop, fit.fontPx, card.emphasis);
   }
 
-  const bodyTop = headlineTop + fit.lines.length * lineHeight + 30;
-  const room = H - PAD - 70 - bodyTop;
-  const maxLines = Math.max(1, Math.floor(room / 52));
-  paintBody(ctx, theme, card.body, PAD, bodyTop, W - PAD * 2, maxLines, { fontPx: 34, lineHeight: 52 });
+  if (bodyLines.length) {
+    const bodyTop = headlineTop + fit.lines.length * lineHeight + 30;
+    paintBody(ctx, theme, card.body, PAD, bodyTop, W - PAD * 2, bodyLines.length, { fontPx: 34, lineHeight: 52 });
+  }
   paintBrand(ctx, theme, brandName, PAD, H - PAD - 20);
 }
 
@@ -476,13 +495,6 @@ function paintQuote(ctx, card, image, theme, o, W, H) {
     }
   }
   paintCounter(ctx, theme, card, total, W);
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.fillStyle = hexToRgba(theme.accent, 0.55);
-  ctx.font = fontOf(700, 150);
-  ctx.textBaseline = 'top';
-  ctx.fillText('“', W / 2, Math.round(H * 0.16));
-  ctx.restore();
 
   const fit = fitText(card.headline || card.body, {
     fontPx: 96, minPx: 54, maxLines: 3, maxWidth: W - PAD * 2 - 24, weight: 700,
@@ -491,6 +503,11 @@ function paintQuote(ctx, card, image, theme, o, W, H) {
   const lineHeight = Math.round(fit.fontPx * 1.22);
   const blockH = fit.lines.length * lineHeight;
   const top = Math.max(Math.round(H * 0.36), Math.round((H - blockH) / 2) - 40);
+  // 여는 표시 — Pretendard 의 굵은 따옴표 글자는 두 줄 버팀목처럼 보여서, 짧은 액센트 라인으로 바꿨다.
+  ctx.save();
+  ctx.fillStyle = hexToRgba(theme.accent, 0.9);
+  ctx.fillRect(Math.round(W / 2 - 36), top - 78, 72, 6);
+  ctx.restore();
   ctx.save();
   ctx.font = fontOf(700, fit.fontPx);
   setLetterSpacing(ctx, '-0.02em');
@@ -522,10 +539,7 @@ function paintCta(ctx, card, image, theme, o, W, H) {
   const total = o.total || card.total;
   if (image) {
     const ok = paintPhoto(ctx, image, o.filter, 0, 0, W, H);
-    if (ok) {
-      ctx.fillStyle = hexToRgba(theme.bg, 0.86);
-      ctx.fillRect(0, 0, W, H);
-    }
+    if (ok) paintScrim(ctx, theme, 0, Math.round(H * 0.18), W, Math.round(H * 0.82), 0.98);
   } else {
     const g = ctx.createLinearGradient(0, H, W, 0);
     g.addColorStop(0, theme.bg);
@@ -541,12 +555,21 @@ function paintCta(ctx, card, image, theme, o, W, H) {
   });
   const lineHeight = Math.round(fit.fontPx * 1.18);
   const blockH = fit.lines.length * lineHeight;
-  const top = Math.round(H * 0.32);
+  const buttonH = 112;
+  const buttonY = H - PAD - 190;
+  let bodyLines = [];
+  if (card.body) {
+    const bm = makeMeasure(ctx, 34, fontOf(400, 34));
+    bodyLines = wrapKo(card.body, W - PAD * 2, bm).slice(0, 3);
+  }
+  // 글자 덩어리를 저장 버튼 바로 위에 앉힌다(가운데가 휑하게 비지 않게).
+  const allH = blockH + (bodyLines.length ? 30 + bodyLines.length * 54 : 0);
+  const top = Math.max(Math.round(H * 0.18), buttonY - 56 - allH);
   paintHeadlineLines(ctx, fit.lines, PAD, top, fit.fontPx, lineHeight, theme, { weight: 700 });
   if (card.emphasis) paintEmphasis(ctx, theme, fit.lines[0], PAD, top, fit.fontPx, card.emphasis);
 
   const bodyTop = top + blockH + 30;
-  paintBody(ctx, theme, card.body, PAD, bodyTop, W - PAD * 2, 3, { fontPx: 34, lineHeight: 54 });
+  paintBody(ctx, theme, card.body, PAD, bodyTop, W - PAD * 2, bodyLines.length, { fontPx: 34, lineHeight: 54 });
 
   // 저장 버튼 자리 — 큰 알약 하나(글자는 카드 문구, 없으면 '저장')
   const label = String(card.cta || '저장').trim().slice(0, 12) || '저장';
@@ -555,9 +578,9 @@ function paintCta(ctx, card, image, theme, o, W, H) {
   setLetterSpacing(ctx, '-0.01em');
   const measure = makeMeasure(ctx, 40, fontOf(700, 40));
   const w = measure(label) + 176;
-  const h = 112;
+  const h = buttonH;
   const x = PAD;
-  const y = H - PAD - 190;
+  const y = buttonY;
   fillRoundRect(ctx, x, y, w, h, h / 2, theme.accent);
   ctx.fillStyle = theme.bg;
   ctx.textAlign = 'center';
