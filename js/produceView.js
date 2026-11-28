@@ -33,7 +33,7 @@ import {
   PACE_IDS, PACE_LABELS, PACE_NOTES
 } from './produceLogic.js?v=20261127b';
 import { analyzeSrt, textHash } from './srtRules.js?v=20261127c';
-import { readStudio, mergeFormat } from './studioLogic.js?v=20261127c';
+import { readStudio, mergeFormat } from './studioLogic.js?v=20261128a';
 import { TEMPLATE_IDS, TEMPLATE_LABELS, templateHint, HOOK_POSITIONS, HOOK_HOLDS, DEFAULT_HOOK_POS, DEFAULT_HOOK_HOLD, checkHookForm, HOOK_QUESTION } from './videoTemplate.js?v=20261126c';
 import { designPanel } from './designView.js?v=20261127c';
 import { timelinePanel } from './timelineView.js?v=20261127a';
