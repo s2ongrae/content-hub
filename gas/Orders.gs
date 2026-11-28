@@ -643,8 +643,15 @@ const DRAFT_MAX_FACT = 400;
 const DRAFT_LENGTHS = [15, 30, 60];
 const DRAFT_FACT_KEYS = ['place_name', 'region_dong', 'category', 'hours', 'closed_days', 'parking',
   'wait_time', 'price_menu', 'tel', 'address', 'naver_place_url'];
+/* 초안 모드(2026-11-28) — js/studioLogic.js DRAFT_MODES · 노트북 lib/draft.js MODES 와 같은 값.
+   rewrite 는 지금 블로그만(영상 대본은 장면·비트 검사와 엇갈릴 수 있어 다음 단계). */
+const DRAFT_MODES = ['preserve', 'rewrite'];
+const DRAFT_MAX_NOTICE = 200;   // 노트북 lib/draft.js 와 같은 상한(공개 표시 문구)
+/* 허용 목록 = js/studioLogic.js buildDraftRequest 가 싣는 top-level 키 전부.
+   여기에 없는 키는 오더를 거절하므로, 화면이 새 필드를 실으면 이 목록도 같이 늘려야 한다
+   (2026-11-28 P0: compliance·mode 가 빠져 초안 오더가 ERR_VALIDATION_FAILED 로 통째로 거절됐다). */
 const DRAFT_ALLOWED_KEYS = ['type', 'content_id', 'brand', 'format', 'concept', 'facts', 'memo_sha256',
-  'blocks', 'media', 'ask', 'payload_source', 'length_sec', 'user_body_sha256'];
+  'blocks', 'media', 'ask', 'payload_source', 'length_sec', 'user_body_sha256', 'compliance', 'mode'];
 const REPORT_SHA_RE = /^[0-9a-f]{64}$/;
 
 /** 문자열의 SHA-256 hex — 블록 락에 쓸 때만 쓴다(개인정보·비밀값 아님). */
@@ -671,6 +678,29 @@ function hubDraftPayload_(payload) {
   if (RENDER_BRANDS.indexOf(brand) === -1) throw bad('brand 가 올바르지 않습니다.');
   const format = String(payload.format || '');
   if (DRAFT_FORMATS.indexOf(format) === -1) throw bad('format 은 ' + DRAFT_FORMATS.join(' · ') + ' 이어야 합니다.');
+  // 모드(2026-11-28) — 화면은 rewrite 일 때만 싣는다. 비우면 preserve 라 예전 payload 와 같다.
+  let draftMode = '';
+  if (payload.mode !== undefined && payload.mode !== null && payload.mode !== '') {
+    draftMode = String(payload.mode).trim().toLowerCase();
+    if (DRAFT_MODES.indexOf(draftMode) === -1) throw bad('mode 는 ' + DRAFT_MODES.join(' · ') + ' 중 하나여야 합니다(비우면 preserve).');
+    if (draftMode === 'rewrite' && format !== 'blog') throw bad('rewrite 모드는 지금 블로그(format:blog)만 지원합니다.');
+  }
+  /* 공개 표시(2026-11-24) — 대가성·내돈내산·이해충돌. 노트북 lib/draft.js 와 같은 모양·경계.
+     셋 다 false 면 초안 프롬프트에 닿는 것이 없으므로 싣지 않는다(예전 payload 그대로). */
+  let compliance = null;
+  if (payload.compliance !== undefined && payload.compliance !== null && payload.compliance !== '') {
+    const cIn = payload.compliance;
+    if (typeof cIn !== 'object' || Array.isArray(cIn)) throw bad('compliance 는 객체여야 합니다.');
+    ['paid', 'own_money', 'conflict'].forEach(function (k) {
+      if (cIn[k] !== undefined && cIn[k] !== null && cIn[k] !== '' && typeof cIn[k] !== 'boolean') throw bad('compliance.' + k + ' 는 true·false 여야 합니다.');
+    });
+    const c = { paid: cIn.paid === true, own_money: cIn.own_money === true, conflict: cIn.conflict === true };
+    if (c.paid || c.own_money || c.conflict) {
+      const notice = String(cIn.notice == null ? '' : cIn.notice).replace(/\s+/g, ' ').trim().slice(0, DRAFT_MAX_NOTICE);
+      if (notice) c.notice = notice;
+      compliance = c;
+    }
+  }
   const concept = payload.concept && typeof payload.concept === 'object' ? payload.concept : {};
   const kind = String(concept.kind || 'review');
   if (DRAFT_KINDS.indexOf(kind) === -1) throw bad('concept.kind 는 ' + DRAFT_KINDS.join(' · ') + ' 중 하나여야 합니다.');
@@ -741,6 +771,8 @@ function hubDraftPayload_(payload) {
   };
   const out = { content_id: contentId, brand: brand, format: format, concept: { kind: kind, tone: tone, hint: hint }, memo_sha256: memoSha, ask: ask };
   if (media.length) out.media = media;
+  if (draftMode === 'rewrite') out.mode = 'rewrite';
+  if (compliance) out.compliance = compliance;
   if (format === 'video') {
     const len = Number(payload.length_sec);
     out.length_sec = DRAFT_LENGTHS.indexOf(len) >= 0 ? len : 30;

@@ -543,6 +543,30 @@ ok('drive 모드도 블록 없이 접수된다(워커가 카드에서 읽는다)
   const r = A.ctx.hubDraftPayload_({ content_id: 'CH-1', brand: 'daejeon_youth', format: 'blog', memo_sha256: memoHash, payload_source: 'drive' });
   return r.payload_source === 'drive' && !r.blocks;
 })());
+
+/* ── 2026-11-28 P0 — js/studioLogic.js buildDraftRequest 가 싣는 compliance·mode 가 허용 목록에 없어
+     초안 오더가 ERR_VALIDATION_FAILED 로 통째로 거절됐다(재작성 모드·공개 표시가 화면에서만 돌았다). ── */
+const draftUi = Object.assign({}, goodDraft, {
+  content_id: 'CH-20261128-DR3',
+  compliance: { paid: true, own_money: false, conflict: false, notice: '이 글은 업체 제공으로 작성했습니다.' },
+  mode: 'rewrite'
+});
+const rUi = A.ctx.hubDraftPayload_(draftUi);
+ok('화면 모양(compliance·mode)의 초안 오더를 거절하지 않는다', rUi.memo_sha256 === memoHash && rUi.blocks.length === blockObjs.length);
+ok('mode:rewrite 가 payload 에 실린다(노트북이 재작성 경로로 간다)', rUi.mode === 'rewrite');
+ok('compliance 표시가 payload 에 실린다(협찬 사실을 뒤집지 않게)', rUi.compliance && rUi.compliance.paid === true && rUi.compliance.own_money === false && /업체/.test(rUi.compliance.notice), rUi.compliance);
+ok('셋 다 false 인 compliance 는 싣지 않는다(예전 payload 그대로)', A.ctx.hubDraftPayload_(Object.assign({}, goodDraft, { content_id: 'CH-DR4', compliance: { paid: false, own_money: false, conflict: false, notice: '' } })).compliance === undefined);
+ok('mode 를 비우면 mode 키가 없다(preserve·예전 payload 그대로)', A.ctx.hubDraftPayload_(Object.assign({}, goodDraft, { content_id: 'CH-DR5' })).mode === undefined);
+ok('공개 표시의 고지 문구는 200자로 자른다(노트북과 같은 상한)', A.ctx.hubDraftPayload_(Object.assign({}, goodDraft, { content_id: 'CH-DR6', compliance: { paid: true, notice: '가'.repeat(500) } })).compliance.notice.length === 200);
+const draftBadUi = (patch) => { try { A.ctx.hubDraftPayload_(Object.assign({}, goodDraft, patch)); return false; } catch (e) { return e.code === 'ERR_VALIDATION_FAILED'; } };
+ok('거부: 모르는 mode · 영상 대본 rewrite · compliance 가 객체가 아님 · paid 가 문자열',
+  draftBadUi({ mode: 'hack' }) && draftBadUi({ format: 'video', mode: 'rewrite' }) && draftBadUi({ compliance: 'paid' }) && draftBadUi({ compliance: { paid: 'yes' } }));
+ok('허용 목록에 없는 필드는 여전히 거절한다(정의된 실수는 조용히 넘기지 않는다)', draftBadUi({ evil: 1 }));
+A.env.setFetchReply(okReply);
+const nUi = A.env.fetched.length;
+const oUi = callHandler(A.ctx, 'handleHubOrder_', null, draftUi, { brand: 'daejeon_youth' });
+const qUi = A.env.fetched[A.env.fetched.length - 1].body.payload;
+ok('화면 모양 그대로 오더가 큐까지 간다(mode·compliance 포함)', oUi.ok && A.env.fetched.length === nUi + 1 && qUi.mode === 'rewrite' && qUi.compliance.paid === true, oUi);
 A.env.setFetchReply({ code: 200, body: JSON.stringify({ ok: false, error: { code: 'ERR_UNKNOWN_TYPE', message: '허용되지 않은 작업 타입입니다: content_draft' } }) });
 o = callHandler(A.ctx, 'handleHubOrder_', null, goodDraft, { brand: 'daejeon_youth' });
 eq('큐가 content_draft 를 모르면 같은 안내(ERR_QUEUE_TYPE_UNKNOWN)', o.code, 'ERR_QUEUE_TYPE_UNKNOWN');

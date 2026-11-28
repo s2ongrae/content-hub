@@ -1004,6 +1004,20 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('재작성 오더: 드라이브 경로(payload_source)에도 mode 가 남는다',
       reqRwLong.payload_source === 'drive' && reqRwLong.mode === 'rewrite' && JSON.stringify(reqRwLong).length <= 3500);
 
+    /* ── 2026-11-28 P0 회귀 — 화면이 싣는 top-level 키는 GAS 허용 목록에 다 있어야 한다.
+       compliance·mode 가 빠져 초안 오더가 ERR_VALIDATION_FAILED 로 통째로 거절됐다. */
+    {
+      const gasSrc = fs.readFileSync(path.join(ROOT, 'gas', 'Orders.gs'), 'utf8');
+      const m = gasSrc.match(/const DRAFT_ALLOWED_KEYS = \[([\s\S]*?)\];/);
+      const allowed = m ? (m[1].match(/'[^']+'/g) || []).map((s) => s.slice(1, -1)) : [];
+      const uiKeys = Object.keys(reqRw);
+      const missing = uiKeys.filter((k) => allowed.indexOf(k) === -1);
+      ok('GAS 초안 허용 목록에 화면이 싣는 키가 모두 있다(재작성 오더 기준)', allowed.length > 10 && missing.length === 0, missing);
+      ok('허용 목록에 compliance·mode 가 있다(2026-11-28 P0)', allowed.indexOf('compliance') >= 0 && allowed.indexOf('mode') >= 0, allowed);
+      const longKeys = Object.keys(reqRwLong);
+      ok('드라이브 경로 키도 허용 목록 안이다(user_body_sha256·payload_source)', longKeys.filter((k) => allowed.indexOf(k) === -1).length === 0, longKeys.filter((k) => allowed.indexOf(k) === -1));
+    }
+
     const rwDraft = {
       mode: 'rewrite',
       titles: ['[봉명동 삼겹살] 냉상이 1티어였던 날', 'ㄴ', 'ㄷ'],
