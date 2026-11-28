@@ -85,17 +85,69 @@ function linkBlock(linkTargets) {
   }).join('\n\n');
 }
 
-/** 블로그 제목 — 26~45자, 앞 14자에 지역+메뉴 */
+/* ── 문장·펀치라인 (2026-11-28) ────────────────────────────────────────────
+ *  진단 §2-1: 제목 따옴표가 첫 줄 토막("요즘 봉명동 쪽은")이 되고, 결론이 마지막 '줄'
+ *  ("덜 힘듭니다.")이 되는 조각체를 고치고, 금지된 "솔직후기"를 뺐다.
+ *  규칙: 두 줄 호흡으로 끊긴 USER 블록을 **문장 단위로 다시 합친다**(사용자 글자는 그대로).
+ */
+const SENTENCE_END_RE = /(?:[.!?…~]|다|요|죠|네|까|지|음|함|니|오|래|는데요|걸랑)["'”’)\]]*$/;
+
+/** 블록 하나의 줄들을 문장 단위로 합친다(줄을 지우거나 바꾸지 않고 이어 붙이기만). */
+export function sentencesOf(text) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  let buf = '';
+  lines.forEach((line) => {
+    buf = buf ? buf + ' ' + line : line;
+    if (SENTENCE_END_RE.test(line) && Array.from(buf).length >= 6) {
+      out.push(buf);
+      buf = '';
+    }
+  });
+  if (buf) {
+    if (out.length) out[out.length - 1] = out[out.length - 1] + ' ' + buf;
+    else out.push(buf);
+  }
+  return out;
+}
+
+/** 본문 전체의 마지막 문장 — 한 줄 결로이 아니라 '문장'이 된다. */
+export function lastSentence(text) {
+  const list = sentencesOf(text);
+  if (!list.length) return '';
+  const s = String(list[list.length - 1]).trim();
+  return Array.from(s).length <= 60 ? s : Array.from(s).slice(0, 59).join('') + '…';
+}
+
+/** 펀치라인 후보 — 마지막 USER 블록의 문장들. 짧고(8~28자) 사실·반전이 있는 문장을 먼저 본다. */
+export function punchLine(blocks) {
+  const list = Array.isArray(blocks) ? blocks.filter((b) => b && b.origin === 'USER') : [];
+  if (!list.length) return '';
+  const sentences = sentencesOf(list[list.length - 1].text)
+    .concat(list.length > 1 ? sentencesOf(list[list.length - 2].text) : [])
+    .map((s) => String(s).replace(/\s+/g, ' ').trim())
+    .filter((s) => Array.from(s).length >= 6 && s.indexOf('[') < 0);
+  if (!sentences.length) return '';
+  const plain = (s) => s.replace(/[.!?…~"'”’)\]]+$/, '');
+  const punchy = sentences.filter((s) => {
+    const n = Array.from(plain(s)).length;
+    return n >= 8 && n <= 28 && /[0-9]|다만|그래도|결국|하지만|그런데|진짜|안 |못 |없|없었|비싸|싸|줄|대기|웨이팅/.test(s);
+  });
+  const pick = punchy.length ? punchy[punchy.length - 1] : sentences[sentences.length - 1];
+  const n = Array.from(plain(pick)).length;
+  return n > 28 ? Array.from(plain(pick)).slice(0, 27).join('') + '…' : plain(pick);
+}
+
+/** 블로그 제목 — 26~45자, 앞에 지역+메뉴, 뒤는 펀치라인 인용(2026-11-28) */
 export function blogTitle(facts, blocks) {
   const f = facts || {};
   const dong = clean(f.region_dong) || '대전';
   const menu = clean(f.category).split(/[·,/]/)[0].trim() || '맛집';
   const place = clean(f.place_name) || '[가게 이름]';
-  const first = (blocks || []).find((b) => b.origin === 'USER');
-  const seedLine = first ? oneLine(first.text.split('\n')[0], 30) : '';
-  const tail = seedLine && seedLine.length >= 6 ? seedLine : '[한 줄 확인 필요]';
-  const title = '[' + dong + ' ' + menu + '] ' + place + ' 솔직후기 : "' + tail + '"';
-  return title.length > 45 ? title.slice(0, 44) + '…' : title;
+  const punch = punchLine(blocks);
+  const tail = punch || '[한 줄 확인 필요]';
+  const head = '[' + dong + ' ' + menu + '] ' + place + ' : "' + tail + '"';
+  return Array.from(head).length > 45 ? Array.from(head).slice(0, 44).join('') + '…' : head;
 }
 
 /** draft 모드 골격 — 톤 레퍼런스(두 줄 호흡·숫자 그대로·`[확인 필요]`) */
@@ -153,8 +205,8 @@ export async function composeBlog(input) {
     .concat(info.length ? ['', '급하신 분은 위 ' + info.length + '줄만 보고 가셔도 됩니다.'] : [])
     .join('\n');
 
-  const last = frozen.length ? frozen[frozen.length - 1].text.split('\n').map((s) => s.trim()).filter(Boolean).pop() : '';
-  const conclusion = last && last.length <= 60 ? last : '[한 줄 결론 확인 필요]';
+  // 결론(2026-11-28) — 마지막 '줄' 토막이 아니라 본문의 마지막 '문장'("덜 힘듭니다." 같은 조각 금지).
+  const conclusion = lastSentence(frozen.map((b) => b.text).join('\n')) || '[한 줄 결론 확인 필요]';
   const tags = makeHashtags(f);
   const links = linkBlock(opts.linkTargets);
   const tail = ['**한 줄 결론**', conclusion, links, tags.join(' ')].filter((s) => s && s.trim()).join('\n\n');

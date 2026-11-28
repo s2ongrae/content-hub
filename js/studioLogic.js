@@ -248,12 +248,171 @@ export function toneLabel(id) {
   const t = TONES.find((x) => x.id === id);
   return t ? t.label : '담백';
 }
+/* ────────────────────────── 사진 숏폼 렌더 오더 (2026-11-28) ──────────────────────────
+ *  진단 §1-2: 사진 렌더 오더에 bgm·title·hook·template·motion 이 없어서
+ *  '무음 슬라이드쇼 + 안내방송'이 나왔다. 여기서 오더 모양을 한 곳에서 만든다(순수 함수 · 시험용).
+ *  계약은 hub-agent/notebook-agent/lib/render.js 와 같다 — 모르는 키는 버려지고, 키 이름이 틀리면 무시된다.
+ */
+export const SHORTS_BGM_VOLUME_DB = -18;
+export const SHORTS_BGM_DUCK_DB = 8;
+
+/** bgm 인자(이름 문자열 또는 {name}) → 이름. */
+export function bgmNameOf(x) {
+  if (!x) return '';
+  if (typeof x === 'string') return x.trim();
+  if (typeof x === 'object') return String(x.name || '').trim();
+  return '';
+}
+
+/**
+ * 기본 BGM — ①사람이 고른 곡(있으면 그대로) ②보관함 첫 곡(자동) ③없음.
+ * 곡 이름만 싣는다 — 파일은 노트북이 허브 _bgm 보관함에서 받아 간다.
+ */
+export function pickBgmName(explicit, library) {
+  const picked = bgmNameOf(explicit);
+  if (picked) return picked;
+  const list = Array.isArray(library) ? library : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const n = bgmNameOf(list[i]);
+    if (n) return n;
+  }
+  return '';
+}
+
+/** 자막·내레이션 큐를 render.js 가 아는 모양으로만 남긴다(배열 [start,end,text] · 객체). */
+function cueListOf(raw) {
+  return (Array.isArray(raw) ? raw : []).filter((c) => c && (Array.isArray(c) ? c.length >= 3 : Number.isFinite(Number(c.start !== undefined ? c.start : c.s))));
+}
+
+/**
+ * 사진 숏폼 content_render 오더. 2026-11-28 선보정 — 진단 V1·V5.
+ *  · bgm: 고른 곡 또는 보관함 첫 곡을 -18dB 로 자동(무음 방지). 보관함이 비면 안 싣는다.
+ *  · title · hook · hook_sub: 카드 제목·대본 훅을 실제로 싣는다(첫 1초에 정보·궁금증).
+ *  · template: 브랜드 시그니처를 고정한다(뱃지·아웃트로·질문형 훅).
+ *  · narration: **기본 꺼짐**(쇼츠 프리셋 'AI 내레이션 금지'). narrate:true 일 때만 싣는다.
+ *  · 톤 칩 → 내레이션 큐 톤(hype|calm). 자막은 captions 그대로다.
+ */
+export function photoRenderOrder(input) {
+  const i = input || {};
+  const brand = i.brand === 'ppiyak_kimmary' ? 'ppiyak_kimmary' : 'daejeon_youth';
+  const images = (Array.isArray(i.images) ? i.images : []).map(String).filter(Boolean).slice(0, 25);
+  const out = {
+    type: 'content_render',
+    content_id: String(i.contentId || ''),
+    brand: brand,
+    images: images,
+    profile: 'captions',
+    sub_style: String(i.subStyle || 'auto'),
+    template: brand,
+    motion: i.motion === 'none' ? 'none' : 'auto'
+  };
+  const clampText = (v, n) => Array.from(String(v == null ? '' : v).replace(/\s+/g, ' ').trim()).slice(0, n).join('');
+  const titleText = clampText(i.title, 40);
+  const hookText = clampText(i.hook, 16);
+  const hookSub = clampText(i.hookSub, 6);
+  if (titleText) out.title = titleText;
+  if (hookText) out.hook = hookText;
+  if (hookSub) out.hook_sub = hookSub;
+
+  const bgmOff = String(typeof i.bgm === 'string' ? i.bgm : '').trim().toLowerCase() === 'none';
+  const bgmName = bgmOff ? '' : pickBgmName(i.bgm, i.bgmLibrary);
+  if (bgmName) {
+    const vol = Number(i.bgmVolumeDb);
+    out.bgm = {
+      name: bgmName,
+      volume_db: Number.isFinite(vol) ? Math.max(-40, Math.min(0, Math.round(vol * 10) / 10)) : SHORTS_BGM_VOLUME_DB,
+      duck_db: SHORTS_BGM_DUCK_DB
+    };
+  }
+
+  const captions = cueListOf(i.captions);
+  if (captions.length) out.captions = captions;
+
+  const cues = cueListOf(i.narration);
+  if (i.narrate === true && (cues.length || captions.length)) {
+    // 대본 내레이션이 없으면 노트북이 자막 문장을 읽는다(render.js narrate:true + captions).
+    if (cues.length) out.narration = applyToneToCues(cues, i.tone);
+    out.narrate = true;
+  }
+  return out;
+}
+
+/**
+ * 오더를 보내기 전에 사람에게 보여 줄 경고 — 지어내지 않고, 실제로 나쁜 결과가 나는 경우만.
+ * @returns {{level:'warn'|'info', text:string}[]}
+ */
+export function photoRenderNotes(payload, opts) {
+  const p = payload || {};
+  const o = opts || {};
+  const out = [];
+  if (!p.bgm) {
+    const deliberate = String(o.bgm || '').trim().toLowerCase() === 'none';
+    out.push({
+      level: 'warn',
+      text: deliberate
+        ? '음악 없음을 골랐습니다 — 현장음·자막만 남습니다.'
+        : (pickBgmName(o.bgm, o.bgmLibrary)
+          ? 'BGM 을 실지 못했습니다 — 무음으로 굽힐 수 있습니다.'
+          : '보관함에 BGM 이 없습니다 — ⑥ 마무리에서 한 곡을 골라 두면 다음 렌더부터 음악이 깔립니다.')
+    });
+  }
+  if (!p.bgm && !p.narration) {
+    out.push({ level: 'warn', text: '지금 설정이면 음악도 내레이션도 없는 무음 영상이 됩니다 — 자막만 남습니다.' });
+  }
+  if (!p.title) out.push({ level: 'info', text: '제목이 비어 — 첫 장 제목 없이 굽습니다(첫 장에 가게 이름을 넣으면 첫 1초가 살아집니다).' });
+  return out;
+}
+
 /** 톤 → 노트북 TTS 파라미터(설계 §5②). 화면에 그대로 보여 주고, 오더에는 id 로 보낸다. */
 export const TTS_OF_TONE = {
   plain: { rate: '+6%', pitch: '+0Hz', volume: '+0%' },
   hype: { rate: '+18%', pitch: '+6Hz', volume: '+10%' },
   chungcheong: { rate: '-4%', pitch: '-3Hz', volume: '+0%' }
 };
+
+/**
+ * 톤 → 글쓰기 지시문 (2026-11-28) — 칩이 TTS 속도만 바꾸던 것을 글·자막 쪽에도 잇는다.
+ *  · 노트북 초안 프롬프트에는 concept.hint 가 '지시:' 한 줄로 들어간다(hub-agent/lib/draft.js:380).
+ *    그래서 톤 지시를 hint 끝에 붙여 보낸다 — 새 계약·GAS 배포 없이 실제 글에 닿는 길이다.
+ *  · 내레이션 큐 톤은 hype 만 노트북 어휘다(hype|calm). 담백·충청도는 calm 으로 읽힌다.
+ */
+export const TONE_BRIEF = {
+  plain: [
+    '톤: 담백 — 형용사 대신 사실, 감탄 대신 숫자.',
+    '문장은 짧게 끝내고, 결론은 마지막에 한 번만 말한다.'
+  ].join(' '),
+  hype: [
+    '톤: 호들갑 — “진짜”, “이건 못 참지”, “미쳤다” 같은 감탄을 문단마다 한 번까지.',
+    '느낌표는 남발하지 말고 결정적인 한 곳에만. 과장은 사실 위에서만(숫자·경험을 바꾸지 않는다).'
+  ].join(' '),
+  chungcheong: [
+    '톤: 충청도 아저씨 — “~유”, “~디유”, “그려”, “허여” 같은 어미와 느린 말투.',
+    '비유는 동네 일상에서 가져오고, 칭찬도 겸손하게 돌려 말한다. 숫자·사실은 그대로 둔다.'
+  ].join(' ')
+};
+
+/** 사용자가 쓴 한 줄 지시(앞) + 톤 지시(뒤). 노트북 prompt 한도를 넘지 않게 자른다. */
+export function toneHint(hint, toneId) {
+  const user = String(hint == null ? '' : hint).replace(/\s+/g, ' ').trim().slice(0, 120);
+  const brief = TONE_BRIEF[toneId] || TONE_BRIEF.plain;
+  return (user ? user + ' / ' : '') + brief;
+}
+
+/** 내레이션 큐에 칩 톤을 입힌다 — 노트북이 아는 어휘는 hype · calm 둘뿐이다. */
+export function applyToneToCues(cues, toneId) {
+  const list = Array.isArray(cues) ? cues : [];
+  const tone = toneId === 'hype' ? 'hype' : 'calm';
+  return list.map((c) => {
+    if (Array.isArray(c)) {
+      const out = c.slice(0, 4);
+      out[3] = tone;
+      if (out.length < 4) out[3] = tone;
+      return out;
+    }
+    if (c && typeof c === 'object') return Object.assign({}, c, { tone: tone });
+    return c;
+  });
+}
 
 export function defaultConcept() {
   return { kind: 'review', tone: 'plain', hint: '' };
@@ -647,29 +806,29 @@ export function buildFeedCards(input) {
 
   const cards = [
     {
-      no: 1, kicker: [dong, cat].filter(Boolean).join(' · ') || FILL, headline: place || FILL,
+      no: 1, type: 'cover', kicker: [dong, cat].filter(Boolean).join(' · ') || FILL, headline: place || FILL,
       body: materials.concept.hint.trim() || '직접 가서 확인한 것만 적었습니다', photo: pick(0), role: '외관'
     },
     {
-      no: 2, kicker: '가는 길 · 영업', headline: c.hours.trim() || FILL,
+      no: 2, type: 'body', kicker: '가는 길 · 영업', headline: c.hours.trim() || FILL,
       body: [c.closed_days.trim() ? '휴무 ' + c.closed_days.trim() : '', c.parking.trim() ? '주차 ' + c.parking.trim() : '', c.address.trim(), c.tel.trim()].filter(Boolean).join(' · ') || FILL,
       photo: pick(1), role: '외관'
     },
     {
-      no: 3, kicker: '메뉴 · 가격', headline: firstPrice(c.price_menu) || FILL,
+      no: 3, type: 'body', kicker: '메뉴 · 가격', headline: firstPrice(c.price_menu) || FILL,
       body: c.price_menu.trim() || FILL, photo: pick(2), role: '메뉴판'
     },
     {
-      no: 4, kicker: '실제로 겪은 것', headline: (firstBlock && String(firstBlock.text || '').split('\n')[0].slice(0, 28)) || FILL,
+      no: 4, type: 'body', kicker: '실제로 겪은 것', headline: (firstBlock && String(firstBlock.text || '').split('\n')[0].slice(0, 28)) || FILL,
       body: firstBlock ? String(firstBlock.text).slice(0, 120) : FILL, photo: pick(3), role: '음식'
     },
     {
-      no: 5, kicker: '알아두면', headline: c.wait_time.trim() || FILL,
+      no: 5, type: 'quote', kicker: '알아두면', headline: c.wait_time.trim() || FILL,
       body: [c.wait_time.trim() ? '대기 ' + c.wait_time.trim() : '', materials.concept.hint.trim()].filter(Boolean).join(' · ') || FILL,
       photo: pick(4), role: '분위기'
     },
     {
-      no: 6, kicker: '저장해 두세요', headline: place || FILL,
+      no: 6, type: 'cta', kicker: '저장해 두세요', headline: (place ? place + ' · ' : '') + '저장해 두세요',
       body: [dong, cat].filter(Boolean).join(' · ') || FILL, photo: pick(5), role: '마무리'
     }
   ];
@@ -742,7 +901,7 @@ export async function buildDraftRequest(input) {
     content_id: String(i.contentId || ''),
     brand: String(i.brand || 'daejeon_youth'),
     format: i.format === 'video' ? 'video' : 'blog',
-    concept: { kind: materials.concept.kind, tone: materials.concept.tone, hint: materials.concept.hint.trim() },
+    concept: { kind: materials.concept.kind, tone: materials.concept.tone, hint: toneHint(materials.concept.hint, materials.concept.tone), tone_brief: TONE_BRIEF[materials.concept.tone] || TONE_BRIEF.plain },
     ask: Object.assign({ titles: 3, bridge: true, captions: true, outro: true, style: true }, i.ask || {}),
     memo_sha256: await sha256Hex(memo),
     media: photos,

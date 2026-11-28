@@ -3577,8 +3577,8 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('quickApprove: 승인·반려를 전용 액션으로 보낸다', /igCardApprove\(/.test(qaSrc2) && /igCardReject\(/.test(qaSrc2));
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
-    ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-36 · v2-m65)', /js\/app\.js\?v=20261128a/.test(html2) && /css\/style\.css\?v=m2-36/.test(html2) && /v2-m65/.test(html2));
+    ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261128a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-37 · v2-m66)', /js\/app\.js\?v=20261128a/.test(html2) && /css\/style\.css\?v=m2-37/.test(html2) && /v2-m66/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);
@@ -3813,7 +3813,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const cssT = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
     ok('폰 360px: 막대는 100% 폭 · 손가락 끌기는 브라우저 스크롤을 막는다', /\.tl-bar \{[^}]*width: 100%/.test(cssT) && /\.tl-bar \{[^}]*touch-action: none/.test(cssT));
     ok('폰 360px: 9:16 무대는 300px 까지 · 고정 px 폭을 쓰지 않는다', /\.tl-stage \{[^}]*max-width: 300px/.test(cssT) && !/\.tl-(bar|stage|lane)[^{]*\{[^}]*width: (3[7-9]\d|4\d\d)px/.test(cssT));
-    ok('index.html 캐시 버전·빌드 라벨을 올렸다(style m2-36 · v2-m65)', /css\/style\.css\?v=m2-36/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /v2-m65/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 캐시 버전·빌드 라벨을 올렸다(style m2-37 · v2-m66)', /css\/style\.css\?v=m2-37/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /v2-m66/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 영상 없이도 컷·자막 트랙이 그려지나 */
     {
@@ -3900,6 +3900,198 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('GAS: 새 오더 타입·새 폴링 API 없이 기존 hub_order_status 만 쓴다', !/hub_order_progress'/.test(ordSrc3) && /action: 'queue_list'/.test(ordSrc3));
   } catch (err) {
     ok('오더 6단계 진행 시험', false, (err && err.stack) || err);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     [23] 결과물 품질 1차 개선 (2026-11-28)
+     - 진단 work/content-hub-quality-diagnosis-20261128.md §3·§1-2·§2-1
+     - 카드 4타입 레이아웃 · Pretendard 굵기 4종 · measureText 줄바꿈
+     - 사진 렌더 오더의 bgm·title·hook·template·motion · 내레이션 기본 꺼짐
+     - 조립기 제목(솔직후기 제거·펀치라인 인용) · 결론(마지막 문장)
+     - 승인 탭 카드뉴스 사진 자동 배치
+     ═══════════════════════════════════════════════════════════════ */
+  console.log('\n[23] 결과물 품질 1차 개선 — 카드 4타입 · 폰트 · 사진 오더 · 조립기');
+  try {
+    const SC3 = await import('file://' + path.join(ROOT, 'js', 'studioCanvas.js') + '?v=q23');
+    const SL3 = await import('file://' + path.join(ROOT, 'js', 'studioLogic.js') + '?v=q23');
+    const AS3 = await import('file://' + path.join(ROOT, 'js', 'assembler.js') + '?v=q23');
+
+    /* ── ① 폰트 번들 — 굵기 위계 ── */
+    const css3 = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
+    const faces3 = (css3.match(/@font-face\s*\{[^}]*\}/g) || []).filter((b) => /Pretendard/.test(b));
+    eq('Pretendard @font-face 4벌(Bold 하나뿐이던 것)', faces3.length, 4);
+    ok('굵기 400·500·600·700 을 각각 선언한다', [400, 500, 600, 700].every((w) => new RegExp('font-weight:\\s*' + w + '\\s*;').test(css3)));
+    ok('woff2 4벌이 저장소에 있고 비어 있지 않다', ['Regular', 'Medium', 'SemiBold', 'Bold'].every((w) => {
+      const p = path.join(ROOT, 'font', 'Pretendard-' + w + '.woff2');
+      return fs.existsSync(p) && fs.statSync(p).size > 100000;
+    }));
+    ok('OFL 라이선스가 함께 있다(재배포 가능)', /SIL OPEN FONT LICENSE|Open Font License/i.test(fs.readFileSync(path.join(ROOT, 'font', 'OFL.txt'), 'utf8')));
+    eq('폰트 API 가 없는 노드에서는 warmCardFonts 가 조용히 false', await SC3.warmCardFonts(), false);
+
+    /* ── ② 카드 4타입 ── */
+    eq('카드 타입 4종', SC3.CARD_TYPES.join(','), 'cover,body,quote,cta');
+    eq('type 이 없으면 첫 장은 cover', SC3.cardTypeOf({}, 0, 4), 'cover');
+    eq('가운데 장은 body', SC3.cardTypeOf({}, 1, 4), 'body');
+    eq('마지막 장은 cta', SC3.cardTypeOf({}, 3, 4), 'cta');
+    eq('한 장뿐이면 cover', SC3.cardTypeOf({}, 0, 1), 'cover');
+    eq('카드가 적은 type 은 자리 규칙을 이긴다', SC3.cardTypeOf({ type: 'quote' }, 0, 5), 'quote');
+    eq('모르는 type 은 자리 규칙으로 돌린다', SC3.cardTypeOf({ type: 'x' }, 2, 5), 'body');
+    const cards3 = SC3.cardsFromSlides([{ headline: 'a' }, { headline: 'b', type: 'quote' }, { headline: 'c' }]);
+    eq('슬라이드 → 카드 타입 자동 배치', cards3.map((c) => c.type).join(','), 'cover,quote,cta');
+    ok('카드마다 전체 장수를 담아 01/03 카운터를 맞춘다', cards3.every((c) => c.total === 3));
+
+    /* ── ③ measureText 기반 줄바꿈 ── */
+    const meas3 = (s) => Array.from(String(s)).length * 50;
+    const longWord3 = '아주바쁜날먹으러갔더니자리가없었습니다';
+    const lines3 = SC3.wrapKo(longWord3, 500, meas3);
+    ok('띄어쓰기 없는 긴 단어도 폭 안에서 자른다(캔버스 밖으로 안 넘침)', lines3.length > 1 && lines3.every((l) => meas3(l) <= 500), lines3);
+    eq('자를 때 글자를 잃지 않는다', lines3.join(''), longWord3);
+    const lines3b = SC3.wrapKo('숯불에 고기 굽는 냄새가 진동을 합니다', 500, meas3);
+    eq('어절은 쪼개지 않고 통째로 옮긴다', lines3b.join(' '), '숯불에 고기 굽는 냄새가 진동을 합니다');
+    ok('한 줄도 폭을 넘지 않는다', lines3b.every((l) => meas3(l) <= 500), lines3b);
+    const fit3 = SC3.fitText('대기 30분 그래도 갑니다 정말 오래 기다렸습니다', {
+      fontPx: 88, minPx: 40, maxLines: 2, maxWidth: 600, measureFor: (px) => (s) => Array.from(s).length * px * 0.58
+    });
+    ok('fitText 는 maxLines 안에 들어오게 폰트를 줄인다', fit3.lines.length <= 2 && fit3.fontPx < 88 && fit3.fontPx >= 40, fit3);
+    eq('measureText 가 없어도 글자수 근사로 돈다', SC3.approxWidth('가나다', 50), 3 * 50 * 0.58);
+
+    /* ── ④ 4타입이 실제로 다르게 그려진다(가짜 캔버스) ── */
+    const drawSpy3 = (card, image, opts) => {
+      const spy = { texts: [], images: 0, spacing: [] };
+      const ctx = new Proxy({}, {
+        get: (t, k) => {
+          if (k === 'measureText') return (s) => ({ width: Array.from(String(s)).length * 30 });
+          if (k === 'createLinearGradient') return () => ({ addColorStop() {} });
+          if (k === 'fillText') return (s, x, y) => spy.texts.push({ s: String(s), x: x, y: y });
+          if (k === 'drawImage') return () => { spy.images += 1; };
+          return () => {};
+        },
+        set: (t, k, v) => { if (k === 'letterSpacing') spy.spacing.push(v); return true; }
+      });
+      const prevDoc = global.document;
+      global.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ctx }) };
+      try { const canvas = SC3.drawCard(card, image || null, opts || {}); return { spy: spy, canvas: canvas }; }
+      finally { global.document = prevDoc; }
+    };
+    const photo3 = { width: 2000, height: 1500 };
+    const cover3 = drawSpy3({ no: 1, kicker: '봉명동', headline: '대기 30분', body: '그래도 갑니다' }, photo3, { index: 0, total: 4 });
+    ok('cover: 카운터·kicker·헤드라인·브랜드·워터마크가 다 그려진다', ['01/04', '봉명동', '대기 30분', '대전 청년', '@s2ongrae'].every((s) => cover3.spy.texts.some((t) => t.s === s)), cover3.spy.texts.map((t) => t.s));
+    ok('cover: 사진을 풀블리드 배경으로 쓴다', cover3.spy.images === 1);
+    ok('자간 -0.02em 을 건다', cover3.spy.spacing.indexOf('-0.02em') >= 0, cover3.spy.spacing);
+    const body3 = drawSpy3({ no: 2, kicker: '메뉴', headline: '삼겹 16,000원', body: '반찬 8가지', emphasis: '16,000원' }, photo3, { index: 1, total: 4 });
+    ok('body: 카운터·kicker·본문이 그려지고 사진은 위 52%에만', body3.spy.texts.some((t) => t.s === '02/04') && body3.spy.texts.some((t) => t.s === '반찬 8가지') && body3.spy.images === 1);
+    const quote3 = drawSpy3({ no: 3, type: 'quote', headline: '기다림은 값이었다', source: '봉명동 미미삼겹' }, null, { index: 2, total: 4 });
+    ok('quote: 인용 따옴표와 출처가 그려진다', quote3.spy.texts.some((t) => t.s === '“') && quote3.spy.texts.some((t) => t.s === '봉명동 미미삼겹'), quote3.spy.texts.map((t) => t.s));
+    const cta3 = drawSpy3({ no: 4, type: 'cta', headline: '저장해 두세요', body: '다음에 갈 때 보려고' }, null, { index: 3, total: 4 });
+    ok('cta: 저장 버튼 글자와 헤드라인이 그려진다', cta3.spy.texts.some((t) => t.s === '저장') && cta3.spy.texts.some((t) => t.s === '저장해 두세요'), cta3.spy.texts.map((t) => t.s));
+    const noPhoto3 = drawSpy3({ no: 2, kicker: '메뉴', headline: '삼겹', body: '반찬' }, null, { index: 1, total: 3 });
+    ok('사진이 없으면 글자 카드로 그린다(drawImage 0회)', noPhoto3.spy.images === 0 && noPhoto3.canvas.width === 1080);
+    const threeFour3 = drawSpy3({ no: 1, headline: 'a' }, null, { aspect: '3:4', index: 0, total: 3 });
+    ok('3:4 에서도 4타입이 같은 코드로 그려진다', threeFour3.canvas.width === 1080 && threeFour3.canvas.height === 1440);
+
+    /* ── ⑤ 사진 렌더 오더 — bgm·title·hook·template·motion·내레이션 기본 꺼짐 ── */
+    const order3 = SL3.photoRenderOrder({
+      contentId: 'DY-1', brand: 'daejeon_youth', images: ['a.jpg', 'b.jpg'],
+      title: '봉명동 미미삼겹', hook: '대기 30분의 비밀', hookSub: '이유 있음',
+      captions: [[0, 2, '첫 문장'], [2, 4, '둘째 문장']],
+      narration: [[0, 2, '첫 문장', 'calm']], narrate: false,
+      tone: 'plain', bgm: '', bgmLibrary: [{ name: 'calm-piano.mp3' }, { name: 'x.mp3' }]
+    });
+    ok('사진 오더: 보관함 첫 곡을 -18dB 로 자동으로 싣는다', order3.bgm && order3.bgm.name === 'calm-piano.mp3' && order3.bgm.volume_db === -18, order3.bgm);
+    ok('사진 오더: 제목·훅·보조 글자가 실제로 실린다', order3.title === '봉명동 미미삼겹' && order3.hook === '대기 30분의 비밀' && order3.hook_sub === '이유 있음', order3);
+    eq('사진 오더: 템플릿은 브랜드 시그니처로 고정', order3.template, 'daejeon_youth');
+    eq('사진 오더: 모션 auto 를 명시한다', order3.motion, 'auto');
+    eq('사진 오더: 자막은 그대로 싣는다', order3.captions.length, 2);
+    ok('내레이션은 기본 꺼짐 — narration·narrate 키가 없다', order3.narration === undefined && order3.narrate === undefined);
+    const order3b = SL3.photoRenderOrder({
+      contentId: 'DY-1', brand: 'ppiyak_kimmary', images: ['a.jpg'],
+      captions: [[0, 2, '한 문장']], narration: [[0, 2, '한 문장', 'calm']], narrate: true, tone: 'hype', bgm: 'none'
+    });
+    ok('내레이션을 켜면 톤 칩이 큐 톤(hype)으로 실린다', order3b.narrate === true && order3b.narration[0][3] === 'hype', order3b.narration);
+    ok('음악 없음을 고르면 bgm 을 싣지 않는다(보관함이 있어도)', order3b.bgm === undefined);
+    eq('트랙 B 는 김메리 템플릿', order3b.template, 'ppiyak_kimmary');
+    eq('고른 곡이 있으면 보관함보다 우선', SL3.pickBgmName('mine.mp3', [{ name: 'a.mp3' }]), 'mine.mp3');
+    eq('보관함이 비면 자동 선택 없음', SL3.pickBgmName('', []), '');
+    const silent3 = SL3.photoRenderOrder({ contentId: 'X', images: ['a.jpg'], captions: [[0, 2, '한 문장']], bgm: 'none' });
+    const notes3 = SL3.photoRenderNotes(silent3, { bgm: 'none' });
+    ok('음악도 내레이션도 없으면 무음 경고를 띄운다', notes3.some((n) => n.level === 'warn' && /무음/.test(n.text)), notes3);
+    ok('음악 없음을 고른 경우는 그 선택을 확인시켜 준다', notes3.some((n) => /음악 없음을 골랐습니다/.test(n.text)), notes3);
+    const flow3 = SL3.photoRenderOrder({ contentId: 'X', images: ['a.jpg'], title: '가'.repeat(60), hook: '나'.repeat(30), bgm: 'p.mp3' });
+    ok('제목 40자·훅 16자로 자른다(노트북 계약과 같은 상한)', Array.from(flow3.title).length === 40 && Array.from(flow3.hook).length === 16);
+    const emptyOrder3 = SL3.photoRenderOrder({ contentId: 'X', images: ['a.jpg'] });
+    ok('아무것도 안 고르면 무음·제목 없음 경고가 함께 나온다', SL3.photoRenderNotes(emptyOrder3, {}).filter((n) => n.level === 'warn').length === 2);
+
+    /* ── ⑥ 톤 칩이 글로 간다 ── */
+    ok('톤 지시문 3종이 있다(담백·호들갑·충청도)', ['plain', 'hype', 'chungcheong'].every((t) => typeof SL3.TONE_BRIEF[t] === 'string' && SL3.TONE_BRIEF[t].length > 15));
+    ok('사용자 한 줄 지시 뒤에 톤 지시를 붙인다', /웃긴데 정보는 정확하게 \/ 톤: 호들갑/.test(SL3.toneHint('웃긴데 정보는 정확하게', 'hype')), SL3.toneHint('웃긴데', 'hype'));
+    const reqTone3 = await SL3.buildDraftRequest({ contentId: 'C-9', brand: 'daejeon_youth', format: 'blog', materials: SL3.normalizeMaterials({ place: { name: '미미삼겹' }, concept: { tone: 'chungcheong' } }) });
+    ok('오더의 concept 이 톤 지시를 품고 나간다(노트북 prompt 에 닿는 길)', /톤: 충청도 아저씨/.test(reqTone3.concept.hint) && reqTone3.concept.tone === 'chungcheong', reqTone3.concept);
+
+    /* ── ⑦ 조립기 — 제목·결론이 문장이 된다 ── */
+    const blocks3 = [
+      { origin: 'USER', text: '요즘 봉명동 쪽은\n저녁이면 어김없이 만석입니다.' },
+      { origin: 'USER', text: '숫자부터 말하면\n삼겹 16,000원.\n\n20분 기다리고\n겨우 앉았습니다.' },
+      { origin: 'USER', text: '다만 공영 1시간 1,200원.\n\n이건 미리 알고 가셔야\n덜 힘듭니다.' }
+    ];
+    const facts3 = { place_name: '미미삼겹', region_dong: '봉명동', category: '고기', price_menu: '삼겹 16,000원', parking: '공영 1시간 1,200원' };
+    const title3 = AS3.blogTitle(facts3, blocks3);
+    ok('제목에 금지된 "솔직후기"가 없다', title3.indexOf('솔직') < 0, title3);
+    ok('따옴표 안이 첫 줄 토막이 아니라 문장이다', /"(.+)"$/.test(title3) && /(다|요|죠|까|습니다)$/.test(title3.replace(/"$/, '')) && title3.indexOf('요즘 봉명동 쪽은') < 0, title3);
+    ok('제목은 45자 이내', Array.from(title3).length <= 45, Array.from(title3).length);
+    eq('문장 나누기 — 끊긴 두 줄을 한 문장으로 합친다', AS3.sentencesOf('이건 미리 알고 가셔야\n덜 힘듭니다.').join('|'), '이건 미리 알고 가셔야 덜 힘듭니다.');
+    eq('마지막 문장 = 결론', AS3.lastSentence('첫 문장입니다.\n\n이건 미리 알고 가셔야\n덜 힘듭니다.'), '이건 미리 알고 가셔야 덜 힘듭니다.');
+    const blog3 = await AS3.composeBlog({ facts: facts3, blocks: blocks3, mode: 'preserve' });
+    ok('조립 결과: 제목에 솔직후기 없음', blog3.title.indexOf('솔직') < 0, blog3.title);
+    ok('조립 결과: 한 줄 결론이 마지막 문장(조각 아님)', /\*\*한 줄 결론\*\*\n\n(.+)/.test(blog3.tail) && /이건 미리 알고 가셔야 덜 힘듭니다\./.test(blog3.tail), blog3.tail);
+    ok('원문 해시는 그대로(본문을 고치지 않는다)', blog3.ok === true && /^[0-9a-f]{64}$/.test(String(blog3.user_body_sha256)));
+    const draft3 = await AS3.composeBlog({ facts: facts3, mode: 'draft' });
+    ok('draft 모드도 같은 규칙(솔직후기 없음·결론은 문장)', draft3.title.indexOf('솔직') < 0 && /덜 힘듭니다\./.test(draft3.tail), [draft3.title, draft3.tail.split('\n\n')[1]]);
+
+    /* ── ⑧ 승인 탭 카드뉴스 사진 자동 배치 ── */
+    const QA3 = await import('file://' + path.join(ROOT, 'js', 'quickApprove.js') + '?v=q23');
+    const apimod3 = await import('file://' + path.join(ROOT, 'js', 'api.js'));   // quickApprove 와 같은 인스턴스여야 post 를 바꿔 끼울 수 있다
+    eq('사진 MIME 은 확장자로 안다', QA3.photoMimeOf('a.PNG') + ',' + QA3.photoMimeOf('b.webp') + ',' + QA3.photoMimeOf('c.jpg'), 'image/png,image/webp,image/jpeg');
+    eq('base64 → 바이트', Buffer.from(QA3.base64ToBytes(Buffer.from('abc').toString('base64'))).toString('utf8'), 'abc');
+    eq('깨진 base64 는 빈 바이트(화면이 죽지 않는다)', QA3.base64ToBytes('@@@').length, 0);
+    eq('사진 배정은 카드 순서대로 돌려 쓴다', [0, 1, 2, 3].map((i) => QA3.photoForCard(i, 4, 2)).join(','), '0,1,0,1');
+    eq('사진이 없으면 -1(단색 폴백)', QA3.photoForCard(0, 4, 0), -1);
+
+    const realPost3 = apimod3.api.post;
+    const asked3 = [];
+    const prevBlob3 = global.Blob; const prevUrl3 = global.URL; const prevImage3 = global.Image;
+    apimod3.api.post = async (action, payload) => {
+      asked3.push(action);
+      if (action === 'upload_video_list') return { data: { items: [
+        { name: '2.jpg', kind: 'photo', parts: 1, complete: true, size: 900 },
+        { name: '1.jpg', kind: 'photo', parts: 1, complete: true, size: 800 },
+        { name: 'clip.mp4', kind: 'video', parts: 1, complete: true, size: 9000 },
+        { name: 'broken.jpg', kind: 'photo', parts: 1, complete: false, size: 10 }
+      ] } };
+      if (action === 'upload_video_fetch') return { data: { data: Buffer.from('imgbytes').toString('base64') } };
+      return { data: {} };
+    };
+    global.Blob = class { constructor(parts, opts) { this.parts = parts; this.type = opts && opts.type; } };
+    global.URL = { createObjectURL: () => 'blob:card', revokeObjectURL: () => {} };
+    global.Image = class { set src(v) { this._src = v; this.width = 800; this.height = 600; setTimeout(() => { if (this.onload) this.onload(); }, 0); } get src() { return this._src; } };
+    try {
+      const view3 = Object.create(QA3.QuickApproveView.prototype);
+      view3.igPhotos = {};
+      const st3 = await view3.loadCardPhotos({ content_id: 'DY-1' });
+      ok('카드 폴더에서 사진만 골라 읽는다(영상·미완성 제외)', st3.images.length === 2 && st3.images[0].width === 800, st3.images.length);
+      ok('사진은 upload_video_fetch 조각으로 받는다(드라이브 링크 아님)', asked3.indexOf('upload_video_fetch') >= 0 && asked3.filter((a) => a === 'upload_video_fetch').length === 2, asked3);
+      const again3 = await view3.loadCardPhotos({ content_id: 'DY-1' });
+      eq('한 번 읽은 사진은 다시 받지 않는다(캐시)', again3.images.length, 2);
+    } finally {
+      apimod3.api.post = realPost3;
+      if (prevBlob3 === undefined) delete global.Blob; else global.Blob = prevBlob3;
+      if (prevUrl3 === undefined) delete global.URL; else global.URL = prevUrl3;
+      if (prevImage3 === undefined) delete global.Image; else global.Image = prevImage3;
+    }
+    const qaS3 = fs.readFileSync(path.join(ROOT, 'js', 'quickApprove.js'), 'utf8');
+    ok('승인 탭 미리보기가 사진을 카드에 앉혀 그린다', /loadCardPhotos\(/.test(qaS3) && /drawCard\(c, pi >= 0 \? images\[pi\] : null/.test(qaS3));
+    ok('사진이 없거나 실패하면 4타입 단색 폴백으로 그린다', /카드 사진을 읽지 못해 글자 카드로/.test(qaS3) && /drawCard\(card, pi >= 0 \? images\[pi\] : null/.test(qaS3));
+  } catch (err) {
+    ok('결과물 품질 1차 개선 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));
