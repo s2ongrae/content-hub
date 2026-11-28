@@ -676,7 +676,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면 문구에 큐 코드값이 그대로 나오지 않는다', ['WAITING_APPROVAL', 'PENDING', 'RUNNING', 'DONE', 'FAILED', 'REJECTED', 'EXPIRED', 'REVIEW_NEEDED', 'TIMEOUT_REVIEW'].every((c) => { const d = D({ status: c, approval_expires_at: '2026-11-19T21:15:03+09:00' }); return !/[A-Z]{4,}_?[A-Z]*/.test(d.title + d.text.replace(/report/g, '')); }));
     ok('모르는 상태도 깨지지 않는다', typeof D({ status: 'WHATEVER' }).title === 'string' && typeof D(null).title === 'string');
 
-    ok('api.js 에 hubOrderStatus(읽기)가 있다', /async hubOrderStatus\(orderId\)[\s\S]*?post\('hub_order_status'/.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')));
+    ok('api.js 에 hubOrderStatus(읽기)가 있다', /async hubOrderStatus\(orderId, contentId\)[\s\S]*?post\('hub_order_status'/.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')));
     ok('api.js 재시도 규칙은 그대로(429/5xx 3회)', /RETRY_DELAYS/.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')) && !/hub_order_status[\s\S]{0,200}retry/i.test(fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8')));
     ok('폴링은 숨은 탭에서 쉬고, 화면을 떠나면 멈춘다', /document\.hidden/.test(pv) && /visibilitychange/.test(pv) && /wrap\.isConnected/.test(pv) && /ORDER_KEY_OF_STEP\[openStep\] !== poll\.key/.test(pv));
     ok('상세 시트를 닫으면(DOM 이 남아도) 폴링이 멈춘다', /wrap\.closest\('dialog'\)/.test(pv) && /!dlg\.open/.test(pv));
@@ -1820,6 +1820,34 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 중복이면 기존 카드로 안내 + 강제 재수집', /ERR_PRODUCT_DUPLICATE/.test(pvSrc) && /강제로 다시 수집/.test(pvSrc) && /showDuplicate/.test(pvSrc));
     ok('화면: 오더에 트랙·force 를 싣는다', /track: track, force: force/.test(pvSrc));
 
+    /* ── v4 P1-2 (2026-11-28): 매칭 검증 칩 3개 + 불일치·사진 0장 렌더 차단 ── */
+    ok('칩: 읽은 경로 이름은 GAS·노트북·브라우저 셋뿐', P.readSourceLabel('gas') === 'GAS' && P.readSourceLabel('notebook') === '노트북' && P.readSourceLabel('playwright') === '브라우저' && P.readSourceLabel('product_extract') === '', P.readSourceLabel('product_extract'));
+    const chipsOk = P.verifyChips({ source: 'notebook', name_match: true, image_count: 6 });
+    eq('칩 3개 — 순서는 읽기·이름·사진', chipsOk.map((c) => c.key).join(','), 'source,name,images');
+    eq('칩: 노트북이 읽었다', chipsOk[0].text, '1차 읽기: 노트북');
+    eq('칩: 상품명 일치', chipsOk[1].text, '상품명 일치');
+    eq('칩: 사진 6장', chipsOk[2].text, '사진 6장');
+    const chipsNone = P.verifyChips({});
+    eq('칩: 값이 없으면 아직 없음·미확인·사진 —', chipsNone.map((c) => c.text).join(' / '), '1차 읽기: 아직 없음 / 상품명 미확인 / 사진 —');
+    ok('칩: 불일치는 붉게(경고)', P.verifyChips({ name_match: false })[1].warn === true && P.verifyChips({ name_match: false })[1].text === '상품명 불일치');
+    ok('칩: 사진 0장은 붉게(경고)', P.verifyChips({ image_count: 0 })[2].warn === true && P.verifyChips({ image_count: 0 })[2].text === '사진 0장');
+    ok('칩: 비교할 이름이 없으면(null) 일치라고 꾸미지 않는다', P.verifyChips({ name_match: null })[1].text === '상품명 미확인' && P.verifyChips({ name_match: null })[1].warn === false);
+
+    const gOk = P.renderGate(['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'], { name_match: true });
+    ok('렌더 가드: 5장 + 일치면 통과', gOk.ok === true && gOk.count === 5, gOk);
+    const gShort = P.renderGate(['1.jpg'], { name_match: true });
+    ok('렌더 가드: 사진 5장 규칙은 그대로(모자라면 막는다)', gShort.ok === false && /5장부터/.test(gShort.message), gShort.message);
+    const gMismatch = P.renderGate(['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'], { name_match: false });
+    ok('렌더 가드: 상품명 불일치면 사진이 충분해도 막는다', gMismatch.ok === false && gMismatch.mismatch === true && /불일치|다른 상품/.test(gMismatch.message), gMismatch.message);
+    ok('렌더 가드: 이름을 모르면(null) 막지 않는다', P.renderGate(['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'], { name_match: null }).ok === true);
+    ok('렌더 가드: 사진 0장은 막는다', P.renderGate([], {}).ok === false && P.renderGate([], {}).photos === false);
+    ok('렌더 가드: 기존 canRenderWith 규칙은 손대지 않았다', P.canRenderWith([]).ok === false && P.canRenderWith(['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg']).ok === true && P.canRenderWith(['1.jpg']).missing === 4);
+
+    ok('화면: 링크 칸 아래 칩 3개를 그린다', /verifyHost/.test(pvSrc) && /verifyChips\(readInfo\)/.test(pvSrc) && /function paintVerify/.test(pvSrc));
+    ok('화면: 카드의 source·name_match·image_count 를 읽는다', /product\.source/.test(pvSrc) && /product\.name_match/.test(pvSrc) && /image_count/.test(pvSrc));
+    ok('화면: 렌더 버튼은 renderGate 로 열린다(불일치\u00b7사진 모자람 차단)', /renderGate\(names/.test(pvSrc) && /if \(gate\.ok\)/.test(pvSrc));
+    ok('화면: GAS 로 읽었으면 칩에 바로 GAS 라고 쓴다', /setReadInfo\(\{ source: 'gas' \}\)/.test(pvSrc));
+
     const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
     ok('스튜디오 카드: 고정댓글 복사 버튼', /draft\.pinned_comment/.test(csSrc) && /고정댓글 문구 복사/.test(csSrc));
     ok('스튜디오 카드: 카드에서 대본·트랙을 먼저 읽는다', /loadCardDraft/.test(csSrc) && /product\.track/.test(csSrc));
@@ -2941,7 +2969,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261127f/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261128a/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -3146,7 +3174,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261127f/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261128a/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3234,6 +3262,135 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     }
   } catch (err) {
     ok('상품 실패 대비·트랙 A/B 시험', false, (err && err.stack) || err);
+  }
+
+
+  /* ═══════════════════════════════════════════════════════════════
+     [P2] 매칭 검증 칩 · 6단계 진행 — 실제로 그려 본다 (2026-11-28, v4 P1)
+     - 카드에 source·name_match·image_count 가 있으면 링크 칸 아래 칩 3개가 그 값을 보여 준다
+     - 상품명 불일치면 렌더 버튼이 안 열린다(붉은 안내). 사진 5장 규칙은 그대로.
+     ═══════════════════════════════════════════════════════════════ */
+  console.log('\n[P2] 매칭 검증 칩 — 가짜 DOM 으로 실제 그리기');
+  try {
+    class D2 {
+      constructor(tag) {
+        this.tag = tag; this.attrs = {}; this.children = []; this.listeners = {}; this.className = ''; this._text = '';
+        this.value = ''; this.disabled = false; this.isConnected = true; this.style = {}; this.dataset = {}; this.files = [];
+        const set = new Set();
+        this.classList = { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c), toggle: (c) => (set.has(c) ? (set.delete(c), false) : (set.add(c), true)) };
+      }
+      set textContent(v) { this._text = String(v); this.children = []; }
+      get textContent() { return this._text + this.children.map((c) => (c && c.textContent) || '').join(''); }
+      get firstChild() { return this.children.length ? this.children[0] : null; }
+      setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'value') this.value = String(v); }
+      removeAttribute(k) { delete this.attrs[k]; }
+      getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+      addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
+      append(...kids) { kids.forEach((k) => { const n = (k !== null && typeof k === 'object') ? k : { textContent: String(k), tag: '#text', children: [] }; this.children.push(n); }); }
+      appendChild(k) { this.append(k); return k; }
+      replaceChildren(...kids) { this.children = []; this.append(...kids); }
+      focus() {}
+      scrollIntoView() {}
+      click() { if (this.disabled) return; (this.listeners.click || []).forEach((f) => f({ target: this, currentTarget: this })); }
+    }
+    const dh2 = (tag, attrs, ...kids) => {
+      const n = new D2(tag);
+      if (attrs) for (const [k, v] of Object.entries(attrs)) {
+        if (v == null || v === false) continue;
+        if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v; else if (k === 'value') n.value = String(v);
+        else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v);
+        else if (v === true) n.setAttribute(k, ''); else n.setAttribute(k, String(v));
+      }
+      n.append(...kids.flat(5).filter((k) => k != null && k !== false)); return n;
+    };
+    const walk2 = (n, fn) => { if (!n || !n.tag) return; fn(n); (n.children || []).forEach((c) => walk2(c, fn)); };
+    const find2 = (n, pred) => { let hit = null; walk2(n, (x) => { if (!hit && pred(x)) hit = x; }); return hit; };
+    const chipsOf = (main) => {
+      const out = {};
+      walk2(main, (n) => { const k = n.attrs && n.attrs['data-chip']; if (k) out[k] = n.textContent; });
+      return out;
+    };
+
+    /* localStorage 흉내 — 카드 번호를 기억하는 브라우저 */
+    const prevLs = global.localStorage;
+    const store = new Map();
+    global.localStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, String(v)); },
+      removeItem: (k) => { store.delete(k); },
+      clear: () => store.clear()
+    };
+    try {
+      const PV2 = await import('file://' + path.join(ROOT, 'js', 'productView.js'));
+
+      const renderWithCard = async (product) => {
+        store.clear();
+        store.set('contenthub.product.card.v1', 'CH-P9');
+        store.set('contenthub.product.card.brand.v1', 'daejeon_youth');
+        const payload = {
+          studio: {
+            place: { name: product.name },
+            product: product,
+            media: (product.image_files || []).map((nm, i) => ({ name: nm, kind: 'photo', role: i ? '상세' : '대표', order: i + 1, caption: '' })),
+            formats: { video: { length_sec: 30, draft: { captions: [[0, 3, '훅', 'hook']], narration: [[0, 3, '훅', 'hype']], description: '설명' } } }
+          }
+        };
+        const apiStub = {
+          configured: true,
+          post: () => Promise.reject(new Error('안 부름')),
+          createContent: () => Promise.reject(new Error('안 부름')),
+          getContentDetail: () => Promise.resolve({ data: { version: 9, payload: payload } }),
+          updateContent: () => Promise.reject(new Error('안 부름')),
+          hubOrderStatus: () => Promise.reject(new Error('안 부름'))
+        };
+        const main = dh2('div');
+        let threw = null;
+        try {
+          PV2.renderProductView(main, {
+            h: dh2, state: { brand: 'daejeon_youth' }, api: apiStub,
+            pageHead: (t, s) => dh2('div', { class: 'page-head' }, dh2('h1', { text: t }), dh2('p', { text: s || '' })),
+            toast: () => {}, friendlyError: (e) => String((e && e.message) || e), banner: () => null
+          });
+        } catch (e) { threw = e; }
+        await new Promise((r) => setTimeout(r, 40));
+        return { main, threw, apiStub };
+      };
+
+      const mismatch = await renderWithCard({
+        name: '남성 가죽 지갑', price: 39000, source: 'notebook', name_match: false, image_count: 6,
+        image_files: ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg']
+      });
+      ok('그리기: 카드가 있는 상품 화면도 끝까지 그려진다', mismatch.threw === null, mismatch.threw && mismatch.threw.stack);
+      const ch = chipsOf(mismatch.main);
+      eq('칩: 읽은 경로가 노트북', ch.source, '1차 읽기: 노트북');
+      eq('칩: 상품명 불일치', ch.name, '상품명 불일치');
+      eq('칩: 사진 6장', ch.images, '사진 6장');
+      ok('칩: 불일치 칩은 붉은 색으로 표시된다', /c62828/.test(String(find2(mismatch.main, (n) => n.attrs && n.attrs['data-chip'] === 'name').attrs.style || '')));
+      ok('불일치: 붉은 안내가 뜰다(다른 상품일 수 있다)', /다른 상품/.test(String(mismatch.main.textContent)) && /렌더를 막/.test(String(mismatch.main.textContent)));
+      ok('불일치: 렌더 버튼이 열리지 않는다', !find2(mismatch.main, (n) => n.tag === 'button' && /렌더 \(승인\)/.test(n.textContent)));
+      ok('불일치: [영상 스튜디오 열기]는 그대로 있다', !!find2(mismatch.main, (n) => n.tag === 'button' && /영상 스튜디오 열기/.test(n.textContent)));
+
+      const matched = await renderWithCard({
+        name: '14k 여자목걸이', price: 227100, source: 'playwright', name_match: true, image_count: 6,
+        image_files: ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg']
+      });
+      const ch2 = chipsOf(matched.main);
+      eq('칩: 브라우저로 읽었다', ch2.source, '1차 읽기: 브라우저');
+      eq('칩: 상품명 일치', ch2.name, '상품명 일치');
+      ok('일치: 렌더 버튼이 열린다', !!find2(matched.main, (n) => n.tag === 'button' && /렌더 \(승인\)/.test(n.textContent)));
+
+      const fewPhotos = await renderWithCard({
+        name: '14k 여자목걸이', price: 227100, source: 'gas', name_match: true, image_count: 2,
+        image_files: ['1.jpg', '2.jpg']
+      });
+      eq('칩: 사진 2장', chipsOf(fewPhotos.main).images, '사진 2장');
+      ok('사진 5장 미만이면 렌더 버튼이 없다(기존 규칙 그대로)', !find2(fewPhotos.main, (n) => n.tag === 'button' && /렌더 \(승인\)/.test(n.textContent)));
+      ok('사진이 모자라면 이유를 말한다', /5장부터/.test(String(fewPhotos.main.textContent)));
+    } finally {
+      global.localStorage = prevLs;
+    }
+  } catch (err) {
+    ok('매칭 검증 칩 그리기 시험', false, (err && err.stack) || err);
   }
 
 
@@ -3421,7 +3578,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
     ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261127a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-36 · v2-m64)', /js\/app\.js\?v=20261127f/.test(html2) && /css\/style\.css\?v=m2-36/.test(html2) && /v2-m64/.test(html2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-36 · v2-m65)', /js\/app\.js\?v=20261128a/.test(html2) && /css\/style\.css\?v=m2-36/.test(html2) && /v2-m65/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);
@@ -3656,7 +3813,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const cssT = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
     ok('폰 360px: 막대는 100% 폭 · 손가락 끌기는 브라우저 스크롤을 막는다', /\.tl-bar \{[^}]*width: 100%/.test(cssT) && /\.tl-bar \{[^}]*touch-action: none/.test(cssT));
     ok('폰 360px: 9:16 무대는 300px 까지 · 고정 px 폭을 쓰지 않는다', /\.tl-stage \{[^}]*max-width: 300px/.test(cssT) && !/\.tl-(bar|stage|lane)[^{]*\{[^}]*width: (3[7-9]\d|4\d\d)px/.test(cssT));
-    ok('index.html 캐시 버전·빌드 라벨을 올렸다(style m2-36 · v2-m64)', /css\/style\.css\?v=m2-36/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /v2-m64/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 캐시 버전·빌드 라벨을 올렸다(style m2-36 · v2-m65)', /css\/style\.css\?v=m2-36/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /v2-m65/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 영상 없이도 컷·자막 트랙이 그려지나 */
     {
@@ -3711,6 +3868,38 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     }
   } catch (err) {
     ok('시각 타임라인 작업공간 시험', false, (err && err.stack) || err);
+  }
+
+  /* 오더 6단계 진행 (v4 P1-1, 2026-11-28) — js/orderProgress.js + 두 화면 */
+  console.log('\n[Q] 오더 6단계 진행 (진행률·매칭 검증)');
+  try {
+    const OP = await import('file://' + path.join(ROOT, 'js', 'orderProgress.js'));
+    eq('단계는 6개', OP.ORDER_STEP_TOTAL, 6);
+    eq("단계 이름 고정 매핑('03' = 세로)", OP.ORDER_STEP_LABELS['03'], '세로');
+    eq("화면 문구 '2/6 단계 · 17%'", OP.stepProgressText('02', 17), '2/6 단계 · 17%');
+    eq('서버가 퍼센트를 안 줘도 단계에서 계산한다', OP.stepProgressText('04'), '4/6 단계 · 50%');
+    eq('퍼센트는 0~100 으로 자른다', OP.stepProgressText('01', 400), '1/6 단계 · 100%');
+    eq('단계가 없으면 진행 전', OP.stepProgressText('', null), '진행 전');
+    eq('이상한 단계도 진행 전(숫자를 꾸며 내지 않는다)', OP.stepProgressText('07', 10), '진행 전');
+    eq("'1' 도 받는다", OP.stepProgressText(1, 0), '1/6 단계 · 0%');
+    eq('단계 이름', OP.stepLabel('05'), '자막·합성');
+    ok('끝난 오더에만 진행을 붙이지 않는다', OP.isOrderDone('done') && OP.isOrderDone('FAILED') && !OP.isOrderDone('RUNNING') && !OP.isOrderDone('WAITING_APPOVAL'));
+
+    const pvSrc2 = fs.readFileSync(path.join(ROOT, 'js', 'productView.js'), 'utf8');
+    const prSrc2 = fs.readFileSync(path.join(ROOT, 'js', 'produceView.js'), 'utf8');
+    ok('상품 화면: 폴링에서 카드 번호를 같이 보낸다(진행 값을 받으려면)', /hubOrderStatus\(orderId, cardId\)/.test(pvSrc2));
+    ok('상품 화면: 진행을 폴링 줄에 붙인다', /stepProgressText\(d\.step_code, d\.step_pct\)/.test(pvSrc2));
+    ok('제작 화면: 카드 번호를 같이 보낸다', /hubOrderStatus\(id, contentId\)/.test(prSrc2) && /order_id: id, content_id: contentId/.test(prSrc2));
+    ok('제작 화면: 배너에 단계·퍼센트를 보여 준다', /stepProgressText\(live\.step_code, live\.step_pct\)/.test(prSrc2));
+    ok('두 화면이 같은 규칙 모듈을 버전 쿼리로 부른다', /orderProgress\.js\?v=\d+[a-z]/.test(pvSrc2) && /orderProgress\.js\?v=\d+[a-z]/.test(prSrc2)
+      && (pvSrc2.match(/orderProgress\.js\?v=(\d+[a-z])/) || [])[1] === (prSrc2.match(/orderProgress\.js\?v=(\d+[a-z])/) || [])[1]);
+    const apiSrc3 = fs.readFileSync(path.join(ROOT, 'js', 'api.js'), 'utf8');
+    ok('api: 카드 번호는 있을 때만 싣는다(예전 호출 그대로)', /if \(cid\) body\.content_id = cid/.test(apiSrc3));
+    const ordSrc3 = fs.readFileSync(path.join(ROOT, 'gas', 'Orders.gs'), 'utf8');
+    ok('GAS: hub_order_status 가 step_code·step_pct 를 얹는다', /step_code: prog\.step_code/.test(ordSrc3) && /step_pct: prog\.step_pct/.test(ordSrc3));
+    ok('GAS: 새 오더 타입·새 폴링 API 없이 기존 hub_order_status 만 쓴다', !/hub_order_progress'/.test(ordSrc3) && /action: 'queue_list'/.test(ordSrc3));
+  } catch (err) {
+    ok('오더 6단계 진행 시험', false, (err && err.stack) || err);
   }
 
   console.log('\n' + (failed ? '❌ 실패 ' + failed + '건' : '✅ content-hub 시험 전부 통과'));

@@ -24,10 +24,11 @@
 
 import {
   normalizeProductUrl, normalizeFacts, productScript, descriptionBlocks, canRender, factsToMaterials,
-  productExtractRequest, imageFilesOf, canRenderWith, PRODUCT_HOSTS,
+  productExtractRequest, imageFilesOf, PRODUCT_HOSTS,
   SC_NOTICE_CLIP, CLIP_CHALLENGE_TAG, PRODUCT_TRACKS, normalizeTrack, trackRules, trackWarnings,
-  dedupState, dedupKey, urlHash
-} from './productShorts.js?v=20261124v3';
+  dedupState, dedupKey, urlHash, readSourceLabel, verifyChips, renderGate
+} from './productShorts.js?v=20261128a';
+import { stepProgressText, isOrderDone } from './orderProgress.js?v=20261128a';
 import { copyButton } from './clipboard.js?v=20261126a';
 import { uploadPhoto, isPhotoFile, PHOTO_MAX_COUNT } from './uploadVideo.js?v=20261127b';
 import {
@@ -111,6 +112,9 @@ export function renderProductView(main, ctx) {
   let script = null;
   let product = null;          // 카드에 저장된 상품 정보(studio.product)
   let imageFiles = [];         // 카드에 저장된 사진 이름
+  /* 매칭 검증 칩(v4 P1-2) — 어느 경로로 읽었고(source) 상품명이 맞았고(name_match) 사진이 몇 장인지(image_count).
+     값은 카드(studio.product)에 남은 것만 쓴다. 없으면 칩은 '아직 없음 · 미확인 · 사진 —' 로 솔직하게 둔다. */
+  let readInfo = { source: '', name_match: null, image_count: null };
   let busy = false;
   let draftTimer = null;
 
@@ -213,6 +217,27 @@ export function renderProductView(main, ctx) {
   const status = h('p', { class: 'st-hint', text: draft ? draftNotice(draft) : '' });
   const orderLine = h('p', { class: 'st-order' });
 
+  /* 매칭 검증 칩 3개 — 링크 칸 바로 아래 (v4 P1-2) */
+  const verifyHost = h('div', { class: 'st-chips', role: 'status', 'aria-live': 'polite' });
+  const verifyNote = h('p', { class: 'st-hint err' });
+  function paintVerify() {
+    const chips = verifyChips(readInfo);
+    verifyHost.replaceChildren(...chips.map((c) => h('span', {
+      class: 'st-chip' + (c.tone === 'ok' ? ' on' : ''),
+      'data-chip': c.key,
+      'data-tone': c.tone,
+      style: c.warn ? 'border-color:#c62828;color:#c62828' : ''
+    }, c.text)));
+    const bad = chips.filter((c) => c.warn).map((c) => c.text);
+    verifyNote.textContent = bad.length
+      ? '⚠️ ' + bad.join(' · ') + ' — 상품명이 어긋나면 다른 상품일 수 있어 렌더를 막습니다. 링크를 확인해 주세요.'
+      : '';
+  }
+  function setReadInfo(patch) {
+    readInfo = Object.assign({}, readInfo, patch || {});
+    paintVerify();
+  }
+
   const imageInput = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true, style: 'display:none' });
   imageInput.addEventListener('change', () => {
     const files = Array.from(imageInput.files || []);
@@ -224,6 +249,8 @@ export function renderProductView(main, ctx) {
   const form = h('div', { class: 'panel' },
     h('h3', null, '① 상품 링크'),
     h('label', { class: 'field' }, h('span', { class: 'field-label', text: '상품 주소' }), urlEl),
+    verifyHost,
+    verifyNote,
     h('div', { class: 'row' }, loadBtn),
     h('div', { class: 'row' }, collectBtn, renderNowBtn),
     status,
@@ -417,6 +444,7 @@ export function renderProductView(main, ctx) {
       uploadedNames = uploadedNames.concat(names);
       await saveUploadedToCard();
       paintUploads();
+      setReadInfo({ image_count: uploadedNames.length });
       status.textContent = '✅ 사진 ' + names.length + '장을 카드에 올렸어요 — [🎬 5비트 대본 만들기]로 이어가세요.';
       toast('사진 ' + names.length + '장 올림', 'ok');
       saveDraftNow();
@@ -550,6 +578,8 @@ export function renderProductView(main, ctx) {
       if (!f.name) throw new Error('상품명을 찾지 못했습니다');
       fill(f);
       clearFailure();
+      /* GAS 1차가 읽었다 — 칩에 '1차 읽기: GAS' 를 바로 보여 준다(사진 수·이름 대조는 노트북이 카드에 남긴다). */
+      setReadInfo({ source: 'gas' });
       status.textContent = '✅ 불러왔습니다 — 값이 맞는지 확인하고 [이미지까지 자동 수집]을 누르면 사진까지 받아 옵니다.';
       toast('상품 사실을 채웠습니다', 'ok');
       saveDraftNow();
@@ -707,9 +737,12 @@ export function renderProductView(main, ctx) {
       n++;
       if (n > POLL_MAX) { setBusy(false, orderId + ' · 시간이 지났습니다 — [영상 스튜디오]에서 카드를 확인하세요'); return; }
       try {
-        const d = await api.hubOrderStatus(orderId);
+        const d = await api.hubOrderStatus(orderId, cardId);
         const st = String(d.status || '').toUpperCase();
-        orderLine.textContent = orderId + ' · ' + (st || 'PENDING') + (d.result ? ' — ' + String(d.result).split('\n')[0].slice(0, 90) : '');
+        /* 6단계 진행(v4 P1-1) — 끝난 오더에는 붙이지 않는다. 값이 없으면 '진행 전'. */
+        const done = isOrderDone(st);
+        const step = done ? '' : ' · ' + stepProgressText(d.step_code, d.step_pct);
+        orderLine.textContent = orderId + ' · ' + (st || 'PENDING') + step + (d.result ? ' — ' + String(d.result).split('\n')[0].slice(0, 90) : '');
         if (st === 'DONE') {
           setBusy(false, orderId + ' · 완료');
           toast('상품 수집이 끝났습니다 — 사진·대본을 카드에서 불러옵니다', 'ok');
@@ -744,6 +777,12 @@ export function renderProductView(main, ctx) {
         if (t !== track) { track = t; writeTrack(t); paintClipTrack(); }
       }
       if (product && product.image_files) uploadedNames = imageFiles.slice();
+      /* 매칭 검증 칩 — 카드에 남은 세 값만 쓴다(없으면 null 그대로 = '미확인') */
+      setReadInfo({
+        source: product ? product.source : '',
+        name_match: product && typeof product.name_match === 'boolean' ? product.name_match : null,
+        image_count: product ? imageFiles.length : null
+      });
       if (product) {
         fill(normalizeFacts(Object.assign({}, product, { images: product.images || [] })));
       }
@@ -757,13 +796,19 @@ export function renderProductView(main, ctx) {
 
   function paintResult(draftData, prod, names) {
     while (outHost.firstChild) outHost.removeChild(outHost.firstChild);
-    const gate = canRenderWith(names);
+    /* 렌더 가드 — 사진 5장 규칙(canRenderWith 그대로) + 상품명 불일치(v4 P1-2). */
+    const gate = renderGate(names, {
+      source: (prod && prod.source) || readInfo.source,
+      name_match: prod && typeof prod.name_match === 'boolean' ? prod.name_match : readInfo.name_match,
+      image_count: names.length
+    });
     const rules = trackRules(track);
     const head = h('div', { class: 'panel' },
       h('h3', null, '⑤ 수집 결과 — 카드 ' + (cardId || '')),
       productRow('트랙', rules.label),
       productRow('운영 트랙', trackById(brandTrack).label),
       productRow('사진', names.length ? names.length + '장 · ' + names.join(', ') : '0장'),
+      productRow('1차 읽기', readSourceLabel(prod && prod.source) || '—'),
       productRow('상품', (prod && prod.name) || facts.name || ''),
       productRow('가격', prod && prod.price != null ? String(prod.price).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '원' + (prod.discount_pct ? ' (' + prod.discount_pct + '% 할인)' : '') : '미확인'),
       h('p', { class: 'st-hint' + (gate.ok ? '' : ' err'), text: gate.ok ? '' : '⚠️ ' + gate.message }));
@@ -948,6 +993,7 @@ export function renderProductView(main, ctx) {
   paintClipTrack();
   paintChannels();
   paintUploads();
+  paintVerify();
   paintRetry();
   if (draft && !status.textContent) status.textContent = draftNotice(draft);
 

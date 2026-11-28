@@ -41,6 +41,7 @@ import { clipNameOf } from './timeline.js?v=20261127a';
 import { hasCaptionDesign, normalizeDesign } from './designModel.js?v=20261127a';
 import { copyText } from './clipboard.js?v=20261126a';
 import { errorInfo } from './uiState.js?v=20261126a';
+import { stepProgressText, stepLabel } from './orderProgress.js?v=20261128a';
 
 const LS_PREFIX = 'contenthub.produce.v1.';
 const SAVE_DELAY_MS = 600;
@@ -214,8 +215,8 @@ export function produceSection(ctx) {
   function currentStatus() { const o = orderOf(poll.key) || {}; return (poll.live && poll.live.status) || o.status || ''; }
 
   async function fetchOrderStatus(id) {
-    if (typeof api.hubOrderStatus === 'function') return api.hubOrderStatus(id);
-    const res = await api.post('hub_order_status', { order_id: id });   // api.js 가 아직 옛 캐시일 때를 위한 대비
+    if (typeof api.hubOrderStatus === 'function') return api.hubOrderStatus(id, contentId);
+    const res = await api.post('hub_order_status', { order_id: id, content_id: contentId });   // api.js 가 아직 옛 캐시일 때를 위한 대비
     return (res && res.data) || {};
   }
 
@@ -240,6 +241,14 @@ export function produceSection(ctx) {
     const d = describeOrder(live, Date.now());
     const rows = [h('div', { class: 'pr-banner' + (d.kind === 'warn' || d.kind === 'err' ? ' ' + d.kind : '') },
       h('strong', { text: d.title + ' ' }), h('span', { text: d.text }))];
+    /* 6단계 진행(v4 P1-1) — 노트북이 단계를 바꿀 때만 남긴 값(step_code·step_pct)을 그대로 보여 준다.
+       아직 보고가 없으면 '진행 전' — 끝나지 않은 일을 퍼센트로 꾸며 내지 않는다. */
+    if (!isTerminalStatus(live.status)) {
+      const stepText = stepProgressText(live.step_code, live.step_pct);
+      const name = stepLabel(live.step_code);
+      rows.push(h('p', { class: 'hint', 'data-step': 'progress',
+        text: '진행 ' + stepText + (name ? ' (' + name + ')' : '') }));
+    }
     if (poll.halted) rows.push(h('p', { class: 'hint', text: poll.halted }));
     if (!isTerminalStatus(live.status) || poll.halted) {
       rows.push(h('div', { class: 'pr-row' }, h('button', {

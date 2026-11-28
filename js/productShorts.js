@@ -15,6 +15,63 @@ export const PRODUCT_HOSTS = [
   'musinsa.com', 'oliveyoung.co.kr', 'ohou.se', 'coupang.com', 'naver.me'
 ];
 
+/* ────────────────────────── 매칭 검증 칩 (v4 P1-2, 2026-11-28) ──────────────────────────
+ *  지금까지는 화면에 "어느 경로로 읽었는지" 가 없어서, 사진이 이상하거나 다른 상품이 나와도 알 길이 없었다.
+ *  카드(studio.product)에 남는 값 세 개로 링크 칸 아래 칩 3개를 그린다.
+ *    source      gas | notebook | playwright  →  '1차 읽기: GAS | 노트북 | 브라우저'
+ *    name_match  true | false | null           →  '상품명 일치 | 불일치 | 미확인'
+ *    image_count 0 이상                        →  '사진 n장'
+ *  값은 노트북(product_extract)이 카드에 남긴다. 비교할 앞 이름이 없으면 name_match 는 null 이고,
+ *  그때는 '미확인' 으로 둔다(일치라고 꾸미지 않는다 — 렌더도 막지 않는다).
+ *  불일치·사진 0장이면 붉게 안내하고, 렌더는 renderGate 가 막는다(사진 5장 규칙은 그대로). */
+export const PRODUCT_SOURCE_LABELS = { gas: 'GAS', notebook: '노트북', playwright: '브라우저' };
+
+/** 카드의 source → 화면 말. 모르는 값은 ''(지어내지 않는다). */
+export function readSourceLabel(source) {
+  const s = String(source == null ? '' : source).trim().toLowerCase();
+  return PRODUCT_SOURCE_LABELS[s] || '';
+}
+
+/**
+ * 링크 칸 아래 칩 3개 — 화면이 그대로 그린다.
+ * @param {{source?:string, name_match?:boolean|null, image_count?:number|null}} info
+ * @returns {Array<{key:string, text:string, tone:'ok'|'dim'|'err', warn:boolean}>}
+ */
+export function verifyChips(info) {
+  const i = info && typeof info === 'object' ? info : {};
+  const label = readSourceLabel(i.source);
+  const rawCount = i.image_count === null || i.image_count === undefined || i.image_count === '' ? NaN : Number(i.image_count);
+  const count = Number.isFinite(rawCount) ? Math.max(0, Math.round(rawCount)) : null;
+  const match = i.name_match === true ? true : (i.name_match === false ? false : null);
+  return [
+    { key: 'source', text: label ? '1차 읽기: ' + label : '1차 읽기: 아직 없음', tone: label ? 'ok' : 'dim', warn: false },
+    { key: 'name', text: match === true ? '상품명 일치' : (match === false ? '상품명 불일치' : '상품명 미확인'), tone: match === true ? 'ok' : (match === false ? 'err' : 'dim'), warn: match === false },
+    { key: 'images', text: count === null ? '사진 —' : '사진 ' + count + '장', tone: count === null ? 'dim' : (count === 0 ? 'err' : 'ok'), warn: count === 0 }
+  ];
+}
+
+/**
+ * 렌더 가드 — 사진 5장 규칙(canRenderWith, 그대로) + 상품명 불일치.
+ *  · 불일치면 다른 상품을 영상으로 만들 수 있어 막는다(붉은 안내). 비교할 이름이 없으면(null) 막지 않는다.
+ * @returns {{ok:boolean, count:number, missing:number, mismatch:boolean, photos:boolean, message:string}}
+ */
+export function renderGate(names, info) {
+  const photo = canRenderWith(names);
+  const i = info && typeof info === 'object' ? info : {};
+  const mismatch = i.name_match === false;
+  const blockers = [];
+  if (mismatch) blockers.push('상품명이 앞서 읽은 이름과 다릅니다 — 다른 상품 페이지일 수 있어 렌더를 막았습니다. 링크를 확인해 주세요.');
+  if (!photo.ok) blockers.push(photo.message);
+  return {
+    ok: blockers.length === 0,
+    count: photo.count,
+    missing: photo.missing,
+    mismatch: mismatch,
+    photos: photo.ok,
+    message: blockers.join(' ')
+  };
+}
+
 export const PRODUCT_BEATS = ['hook', 'info', 'build', 'climax', 'payoff'];
 
 /* 대가성 문구는 채널·용도별로 나눈다 (v3, 2026-11-24 · docs/NAVER_CLIP_SHOPPING_CONNECT_v3.md §2)
@@ -435,6 +492,7 @@ if (typeof window !== 'undefined') {
   window.ProductShorts = {
     normalizeProductUrl, normalizeFacts, productScript, descriptionBlocks, factsToMaterials, canRender, productExtractRequest, imageFilesOf, canRenderWith,
     SC_NOTICE_CLIP, AFFILIATE_NOTICE, CLIP_CHALLENGE_TAG, PRODUCT_TRACKS, normalizeTrack, trackRules, pinnedComment, trackWarnings, clipTags,
-    DEDUP_WINDOW_MS, canonicalProductUrl, fnv1aHex, urlHash, dedupKey, dedupState
+    DEDUP_WINDOW_MS, canonicalProductUrl, fnv1aHex, urlHash, dedupKey, dedupState,
+    PRODUCT_SOURCE_LABELS, readSourceLabel, verifyChips, renderGate
   };
 }

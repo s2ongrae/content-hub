@@ -812,8 +812,55 @@ ok('긴 외부 호출이라 라우터 락을 잡지 않는다', ev(A.ctx, 'ACTIO
   eq('포털 상한 20건', sent.body.limit, 20);
   ok('큐 토큰은 본문에만, 응답에는 없다', sent.body.key === 'portal-key-for-test-0123456789abcdef' && !JSON.stringify(s.data).includes('portal-key'));
   eq('돌려주는 필드는 정해진 것뿐', Object.keys(s.data).sort().join(','),
-    'approval_expires_at,beat_at,created_at,error,finished_at,order_id,result,risk_level,started_at,status,type');
+    'approval_expires_at,beat_at,created_at,error,finished_at,order_id,result,risk_level,started_at,status,step_code,step_pct,type');
   ok('큐의 다른 필드(branch·changed_files·summary)는 내려가지 않는다', !/secret-branch|changed_files|summary/.test(JSON.stringify(s.data)));
+
+  /* ── 6단계 진행(v4 P1-1, 2026-11-28) — 카드(studio.progress)의 두 값을 그대로 얹는다 ──
+     카드 번호를 주지 않으면(옛 화면·다른 호출자) 예전과 똑같이 빈 값으로 내려간다. */
+  eq('카드 번호가 없으면 step_code 는 빈 값', s.ok && s.data.step_code, '');
+  eq('카드 번호가 없으면 step_pct 는 null(0 으로 꾸미지 않는다)', s.ok && s.data.step_pct, null);
+  {
+    const HDR = ['content_id', 'payload_file_id'];
+    const cardSheet = {
+      getName: () => 'Contents',
+      getLastRow: () => 2,
+      getLastColumn: () => HDR.length,
+      getRange: () => ({ getValues: () => [HDR.slice(), ['CH-1', 'file_payload_1']] })
+    };
+    const fakeSs = { getSheetByName: (n) => (n === 'Contents' ? cardSheet : null) };
+    const prog = (obj) => JSON.stringify(obj);
+    let driveBody = prog({ studio: { progress: { order_id: 'Q-20261119-210000-rend', step_code: '03', step_pct: 33, updated_at: '2026-11-28T13:00:00+09:00' } } });
+    A.ctx.DriveApp.getFileById = (id) => ({ getBlob: () => ({ getDataAsString: () => (id === 'file_payload_1' ? driveBody : '') }) });
+    A.env.setFetchReply(listReply([ST()]));
+    s = callHandler(A.ctx, 'handleHubOrderStatus_', fakeSs, { order_id: 'Q-20261119-210000-rend', content_id: 'CH-1' });
+    eq('카드에 남은 단계 코드', s.ok && s.data.step_code, '03');
+    eq('카드에 남은 퍼센트', s.ok && s.data.step_pct, 33);
+    eq('상태·결과는 그대로 같이 온다', s.ok && s.data.status, 'RUNNING');
+
+    driveBody = prog({ studio: { progress: { order_id: 'Q-20261119-200000-old0', step_code: '06', step_pct: 83 } } });
+    A.env.setFetchReply(listReply([ST()]));
+    s = callHandler(A.ctx, 'handleHubOrderStatus_', fakeSs, { order_id: 'Q-20261119-210000-rend', content_id: 'CH-1' });
+    ok('다른 오더(옛 렌더)의 진행은 보여 주지 않는다', s.ok && s.data.step_code === '' && s.data.step_pct === null, s.data);
+
+    driveBody = prog({ studio: { progress: { order_id: 'Q-20261119-210000-rend', step_code: '09', step_pct: 300 } } });
+    A.env.setFetchReply(listReply([ST()]));
+    s = callHandler(A.ctx, 'handleHubOrderStatus_', fakeSs, { order_id: 'Q-20261119-210000-rend', content_id: 'CH-1' });
+    ok('1~6 밖의 단계는 버린다', s.ok && s.data.step_code === '', s.data && s.data.step_code);
+
+    driveBody = prog({ studio: {} });
+    A.env.setFetchReply(listReply([ST()]));
+    s = callHandler(A.ctx, 'handleHubOrderStatus_', fakeSs, { order_id: 'Q-20261119-210000-rend', content_id: 'CH-1' });
+    ok('진행 값이 없으면 빈 값(진행 전)', s.ok && s.data.step_code === '' && s.data.step_pct === null);
+
+    A.ctx.DriveApp.getFileById = () => { throw new Error('드라이브 오류'); };
+    A.env.setFetchReply(listReply([ST()]));
+    s = callHandler(A.ctx, 'handleHubOrderStatus_', fakeSs, { order_id: 'Q-20261119-210000-rend', content_id: 'CH-1' });
+    ok('카드를 읽지 못해도 상태 조회는 살아 있다', s.ok && s.data.status === 'RUNNING' && s.data.step_code === '', s.data);
+
+    A.env.setFetchReply(listReply([ST()]));
+    s = callHandler(A.ctx, 'handleHubOrderStatus_', null, { order_id: 'Q-20261119-210000-rend', content_id: 'CH-1' });
+    ok('시트가 없는 호출(옛 경로)도 깨지지 않는다', s.ok && s.data.step_code === '');
+  }
 
   // 길이 제한 · 대소문자
   A.env.setFetchReply(listReply([ST({ status: 'done', result: 'r'.repeat(900), error: 'e'.repeat(900) })]));
