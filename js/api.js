@@ -130,9 +130,14 @@ export class ContentHubApi {
     throw lastErr;
   }
 
-  /** 렌더 등 노트북 오더의 진행 상태(읽기 전용). GAS 의 hub_order_status — 최근 큐 20건 안에서 그 id 한 건. */
-  async hubOrderStatus(orderId) {
-    const res = await this.post('hub_order_status', { order_id: String(orderId || '') });
+  /** 렌더 등 노트북 오더의 진행 상태(읽기 전용). GAS 의 hub_order_status — 최근 큐 20건 안에서 그 id 한 건.
+   *  contentId 를 주면 서버가 그 카드(studio.progress)의 6단계 진행(step_code·step_pct)도 함께 돌려준다(2026-11-28, v4 P1-1).
+   *  카드 번호를 모르면 예전과 똑같이 오더 상태만 온다(없는 값을 꾸며 내지 않는다). */
+  async hubOrderStatus(orderId, contentId) {
+    const body = { order_id: String(orderId || '') };
+    const cid = String(contentId || '').trim();
+    if (cid) body.content_id = cid;
+    const res = await this.post('hub_order_status', body);
     return (res && res.data) || {};
   }
 

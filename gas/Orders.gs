@@ -1077,6 +1077,40 @@ function handleHubOrder_(ss, payload, ctx) {
 const HUB_ORDER_ID_RE = /^Q-\d{8}-\d{6}-[a-z0-9]{4}$/;
 const HUB_STATUS_LIST_LIMIT = 20;   // 포털 queue_list 의 상한(QQ_LIST_MAX)
 
+/* 6단계 진행(2026-11-28 · 쇼핑쇼츠 v4 P1-1)
+ *   노트북(product_extract · content_render)이 단계가 바뀔 때만 카드(studio.progress)에 남기는 두 값이다.
+ *     step_code  '01'~'06'  ·  01 추출 → 02 대본 → 03 세로 → 04 TTS → 05 자막·합성 → 06 커버
+ *     step_pct   0~100      ·  그 단계에 들어설 때 앞 단계까지 끝난 비율(1/6=0 · 3/6=33 · 6/6=83)
+ *   화면은 값이 없으면 '진행 전' 으로 둔다 — 서버도 없는 값을 0/100 으로 꾸며 내지 않는다(빈 값으로 돌려준다). */
+const HUB_CONTENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
+const HUB_STEP_CODES_ = ['01', '02', '03', '04', '05', '06'];
+
+/** 카드 payload(studio.progress) → { step_code, step_pct }. 없거나 남의 오더 값이면 빈 값. */
+function hubOrderProgress_(ss, contentId, orderId) {
+  const empty = { step_code: '', step_pct: null };
+  const cid = String(contentId || '').trim();
+  if (!ss || !HUB_CONTENT_ID_RE.test(cid)) return empty;
+  try {
+    const rows = readSheetAsObjects_(ss, 'Contents');
+    const row = rows.filter(function (r) { return String(r.content_id) === cid; })[0];
+    if (!row || !row.payload_file_id) return empty;
+    const doc = JSON.parse(DriveApp.getFileById(String(row.payload_file_id)).getBlob().getDataAsString());
+    const p = (doc && doc.studio && doc.studio.progress) || null;
+    if (!p || typeof p !== 'object') return empty;
+    /* 지금 물어본 오더의 값만 보여 준다 — 같은 카드를 다시 렌더했을 때 옛 진행이 남아 보이면 안 된다. */
+    if (String(p.order_id || '') !== String(orderId || '')) return empty;
+    const code = String(p.step_code || '').trim();
+    if (HUB_STEP_CODES_.indexOf(code) === -1) return empty;
+    const pct = Number(p.step_pct);
+    return {
+      step_code: code,
+      step_pct: isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : null
+    };
+  } catch (err) {
+    return empty;   // 진행 표시는 보조다 — 읽기 실패로 상태 조회를 깨뜨리지 않는다.
+  }
+}
+
 function handleHubOrderStatus_(ss, payload) {
   const orderId = String((payload && payload.order_id) || '').trim();
   if (!HUB_ORDER_ID_RE.test(orderId)) {
@@ -1129,6 +1163,7 @@ function handleHubOrderStatus_(ss, payload) {
       { order_id: orderId });
   }
   const clip = function (v, n) { return String(v == null ? '' : v).slice(0, n); };
+  const prog = hubOrderProgress_(ss, payload && payload.content_id, orderId);
   return {
     order_id: orderId,
     status: clip(hit.status, 30).toUpperCase(),
@@ -1140,7 +1175,10 @@ function handleHubOrderStatus_(ss, payload) {
     finished_at: clip(hit.finished_at, 40),
     approval_expires_at: clip(hit.approval_expires_at, 40),
     result: clip(hit.result, 300),
-    error: clip(hit.error, 300)
+    error: clip(hit.error, 300),
+    // 6단계 진행(v4 P1-1) — 노트북이 카드에 남긴 값. 없으면 '' · null(화면은 '진행 전').
+    step_code: prog.step_code,
+    step_pct: prog.step_pct
   };
 }
 

@@ -19,10 +19,10 @@ import { getAnalytics } from './analyticsView.js?v=20261126c';
 import { channelRows, cardTotals, compact, daangnWarnings, daangnGoal } from './cardPerf.js?v=20261123k';
 import { renderCreateView } from './create-view.js?v=20261126c';
 import { renderCreateStudio } from './createStudio.js?v=20261127d';
-import { renderProductView } from './productView.js?v=20261127a';
+import { renderProductView } from './productView.js?v=20261128a';
 import { renderBlogView, loadBlogStats } from './blogView.js?v=20261127c';
 import { draftSection, draftPreview } from './draftView.js?v=20261127c';
-import { produceSection } from './produceView.js?v=20261127f';
+import { produceSection } from './produceView.js?v=20261128a';
 import {
   LINK_CHANNELS, LINK_LABEL, parseLinkText, identifyChannel, matchesChannel,
   auditLinks, auditSummary, linkPatch, publishGuard
