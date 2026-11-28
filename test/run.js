@@ -984,6 +984,60 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('합치기: 제목·마무리는 AI 것을 쓴다', composed.titles[0] === 'ㄱ' && composed.text.indexOf('마무리 문단') >= 0);
     const composedBad = SL.composeBlogWithDraft(kit, { titles: ['x'], blocks: [{ origin: 'USER', text: '변조' }], bridges: ['AI 문장'] });
     ok('합치기: 원문이 변조됐으면 AI 문장을 넣지 않는다', composedBad.verified.ok === false && composedBad.text.indexOf('AI 문장') < 0);
+    ok('합치기: 모드를 안 보낸 예전 초안은 원문 보존(preserve) 그대로', composed.mode === 'preserve');
+
+    /* ── 블로그 AI rewrite 모드 연결 (2026-11-28, hub-agent docs/REWRITE_MODE_v1.md) ──
+       허브 → 노트북 계약: content_draft.mode='rewrite' (블로그만) · 결과: draft.body 문단 + fact_check. */
+    ok('재작성: 모드는 preserve·rewrite 둘뿐 · rewrite 는 블로그만',
+      SL.DRAFT_MODES.join(',') === 'preserve,rewrite'
+      && SL.normalizeDraftMode('rewrite', 'blog') === 'rewrite'
+      && SL.normalizeDraftMode('rewrite', 'video') === 'preserve'
+      && SL.normalizeDraftMode('hack', 'blog') === 'preserve'
+      && SL.normalizeDraftMode('', 'blog') === 'preserve');
+    ok('재작성 오더: rewrite 일 때만 mode 를 싣는다', !('mode' in req) && req.mode === undefined);
+    const reqRw = await SL.buildDraftRequest({ contentId: 'C-1', brand: 'daejeon_youth', format: 'blog', materials: matB, blocks: blocks, mode: 'rewrite' });
+    ok('재작성 오더: mode:rewrite · 블록·메모 해시는 그대로 보낸다',
+      reqRw.mode === 'rewrite' && reqRw.blocks.length === 2 && /^[0-9a-f]{64}$/.test(reqRw.blocks[0].sha256) && /^[0-9a-f]{64}$/.test(reqRw.memo_sha256));
+    ok('재작성 오더: 영상 대본은 아직 rewrite 를 싣지 않는다',
+      !('mode' in await SL.buildDraftRequest({ contentId: 'C-1', brand: 'daejeon_youth', format: 'video', materials: matB, mode: 'rewrite' })));
+    const reqRwLong = await SL.buildDraftRequest({ contentId: 'C-1', brand: 'daejeon_youth', format: 'blog', materials: SL.normalizeMaterials({ content: { memo: longMemo } }), blocks: longBlocks, mode: 'rewrite' });
+    ok('재작성 오더: 드라이브 경로(payload_source)에도 mode 가 남는다',
+      reqRwLong.payload_source === 'drive' && reqRwLong.mode === 'rewrite' && JSON.stringify(reqRwLong).length <= 3500);
+
+    const rwDraft = {
+      mode: 'rewrite',
+      titles: ['[봉명동 삼겹살] 냉상이 1티어였던 날', 'ㄴ', 'ㄷ'],
+      body: [
+        { id: 'P01', text: '웨이팅 20분, 냉상 15,000원.\n기다린 값은 했다.' },
+        { id: 'P02', text: '반찬이 1티어.' }
+      ],
+      blocks: [],
+      outro: '다음엔 평일 6시.',
+      captions: [{ name: '삼겹.jpg', text: '두툼한 냉상' }],
+      fact_check: { ok: true, checked: 2, missing: [], invented: [] },
+      body_chars: 40,
+      warnings: ['본문이 짧습니다']
+    };
+    const rw = SL.composeBlogWithDraft(kit, rwDraft);
+    ok('재작성 조립: 본문을 draft.body 문단으로 채운다', rw.mode === 'rewrite' && rw.text.indexOf('기다린 값은 했다') >= 0 && rw.text.indexOf('반찬이 1티어') >= 0);
+    ok('재작성 조립: 원문 블록을 본문 앞에 깔지 않는다', rw.text.indexOf('첫 문단은 그대로 남습니다') < 0 && rw.text.indexOf('둘째 문단입니다') < 0);
+    ok('재작성 조립: 문단 안 줄바꿈(두 줄 호흡)을 살린다', rw.body[0].text.indexOf('\n') > 0);
+    ok('재작성 조립: 원문은 재료(origin_paras)로 따로 돌려준다', rw.origin_paras.join('\n\n') === memo);
+    ok('재작성 조립: 제목·마무리·캡션은 AI 것을 쓴다', rw.titles[0].indexOf('냉상이 1티어') >= 0 && rw.text.indexOf('다음엔 평일 6시') >= 0 && rw.captions.length === 1);
+    ok('재작성 조립: 사실 대조·경고를 한 줄로 붙인다', rw.fact_line.indexOf('사실 2개 대조 통과') === 0 && rw.fact_line.indexOf('경고 1건') > 0, rw.fact_line);
+    ok('재작성 조립: 사실 대조를 통과하지 못하면 fact_ok=false(화면이 빨갛게)',
+      SL.composeBlogWithDraft(kit, Object.assign({}, rwDraft, { fact_check: { ok: false, checked: 3, missing: ['20분'], invented: ['30분'] } })).fact_ok === false);
+    const rwEmpty = SL.composeBlogWithDraft(kit, { mode: 'rewrite', body: [], titles: ['x'] });
+    ok('재작성 조립: 본문이 비어 오면 원문 보존으로 안전하게 돌아간다', rwEmpty.mode === 'preserve' && rwEmpty.text.indexOf('첫 문단은 그대로 남습니다') >= 0);
+    ok('사실 대조 문구: 없는 숫자는 폐기 사유로 알린다',
+      SL.factCheckLine({ ok: false, checked: 3, invented: ['30분'], missing: ['20분'] }, []).indexOf('원문에 없는 숫자 1건') > 0
+      && SL.factCheckLine(null, ['경고']) === '경고 1건');
+    {   /* 화면 연결 — rewrite 면 승인 화면에 원문/재작성 비교를 그리고, 토글 값이 오더로 간다 */
+      const csSrc = fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8');
+      ok('승인 화면: rewrite 면 원문/재작성 나란히 비교를 그린다', /st-compare/.test(csSrc) && /composed\.origin_paras/.test(csSrc) && /st-fold/.test(csSrc));
+      ok('승인 화면: 사실 대조·경고 요약을 카드 맨 위에 붙인다', /composed\.fact_line/.test(csSrc));
+      ok('승인 화면: 고른 방식이 오더(mode)로 간다', /buildDraftRequest\(\{[^}]*format: 'blog', materials: m, mode: mem\.draftMode/.test(csSrc));
+    }
 
     /* studio 문서 읽기·쓰기(마이그레이션) */
     const legacy = { steps: 3, inputs: ['a.mp4'], render: { order_id: 'Q-1' } };
@@ -1085,6 +1139,54 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
           } catch (e) { failures.push((e && e.message) || String(e)); }
           ok('화면 스모크(' + label + '): 오류 없이 그려진다', failures.length === 0, failures.join(' | '));
         }
+        /* rewrite 승인 화면 — 새 모듈 인스턴스로 재료를 새로 읽어 실제 버튼 흐름을 돌린다(2026-11-28).
+           여기서 오더 모드가 rewrite 로 나가고, 결과 draft.body·fact_check 가 화면에 붙는지 본다.
+           폴링 2.5초는 setTimeout 을 잠시 0ms 로 바꿔 건너뛴다. */
+        try {
+          store['contenthub.studio.v1.daejeon_youth'] = JSON.stringify({
+            place: { name: '미미삼겹' },
+            content: { memo: '웨이팅 20분 있었어요. 냉상 15,000원.\n\n반찬이 1티어였습니다.', region_dong: '봉명동', category: '고기' }
+          });
+          let sentReq = null;
+          const rwDraft = {
+            mode: 'rewrite', titles: ['ㄱ', 'ㄴ', 'ㄷ'],
+            body: [{ id: 'P01', text: '웨이팅 20분, 냉상 15,000원.\n기다린 값은 했다.' }, { id: 'P02', text: '반찬이 1티어.' }],
+            blocks: [], outro: '끝.', captions: [],
+            fact_check: { ok: true, checked: 2, missing: [], invented: [] }, body_chars: 40, warnings: []
+          };
+          const apiRw = {
+            createContent: async () => ({ data: { content_id: 'C-RW' } }),
+            getContentDetail: async () => ({ data: { version: 1, payload: { studio: { formats: { blog: { draft: rwDraft } } } } } }),
+            updateContent: async () => ({ data: { version: 2 } }),
+            post: async (p, payload) => { sentReq = payload; return { data: { order_id: 'Q-RW', status: 'RUNNING' } }; },
+            hubOrderStatus: async () => ({ status: 'DONE', result: '재작성 완료' })
+          };
+          const toastsRw = [];
+          const ctxRw = Object.assign(mkCtx('daejeon_youth'), { api: apiRw, toast: (m, k) => toastsRw.push(String(k || '') + ':' + m) });
+          const CS2 = await import('file://' + path.join(ROOT, 'js', 'createStudio.js') + '?v=rewrite-ui-test');
+          const mainRw = new N('main');
+          global.location.hash = '#/create/blog';
+          CS2.renderCreateStudio(mainRw, ctxRw, { format: 'blog' });
+          const btns2 = [];
+          walk(mainRw, (n) => { if (n.tag === 'button') btns2.push(n); });
+          const rwChip = btns2.find((b) => /사실만 남기고 새로 쓰기/.test(b.textContent));
+          if (rwChip) rwChip.click();
+          const aiBtn = btns2.find((b) => /AI 재작성/.test(b.textContent));
+          if (aiBtn) aiBtn.click();
+          const realST = global.setTimeout;
+          global.setTimeout = (fn) => realST(fn, 0);
+          await new Promise((r) => realST(r, 120));
+          global.setTimeout = realST;
+          const rwText = mainRw.textContent;
+          ok('화면 흐름(rewrite): 고른 방식이 오더 mode 로 나간다', !!sentReq && sentReq.mode === 'rewrite', sentReq && sentReq.mode);
+          ok('화면 흐름(rewrite): 오더 접수 뒤 터지지 않는다(h is not defined 결함 없음)', !toastsRw.some((t) => /is not defined/.test(t)), toastsRw.join(' | '));
+          ok('화면 흐름(rewrite): 승인 화면에 본문·사실 대조·원문 비교가 나온다',
+            rwText.indexOf('기다린 값은 했다') >= 0 && rwText.indexOf('사실 2개 대조 통과') >= 0 && rwText.indexOf('원문 / 재작성 나란히') >= 0);
+        } finally {
+          delete store['contenthub.studio.v1.daejeon_youth'];
+          delete store['contenthub.studio.card.daejeon_youth'];
+        }
+
         // 트랙 B 에서 블로그를 요청하면 영상으로 보낸다 + 토스트
         toasts.length = 0;
         const mainB = new N('main');
@@ -2969,7 +3071,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('오프라인이면 30초를 기다리지 않고 바로 ERR_OFFLINE', /navigator\.onLine === false/.test(apiSrc) && /ERR_OFFLINE/.test(apiSrc));
     ok('서버가 준 retry_after_ms 를 먼저 존중한다(최대 8초)', /retry_after_ms/.test(apiSrc) && /retryDelayMs\(err, attempt\)/.test(apiSrc) && /Math\.min\(asked, 8000\)/.test(apiSrc));
     ok('기존 재시도 규칙(429/5xx·ERR_BUSY 3회)은 그대로', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc));
-    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261128a/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 이 app.js 새 버전을 부른다', /js\/app\.js\?v=20261128b/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
   } catch (err) {
     ok('공통 실패·기다림 안내 시험', false, (err && err.stack) || err);
   }
@@ -3174,7 +3276,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('화면: 설명란 해시태그가 운영 트랙 색을 따른다', /trackTagList\(brandTrack, f\)/.test(pvSrc));
     ok('화면: 상품명·사진·특징 3칸은 트랙 패널 밖(사실 카드)에 있다 — 전환해도 지우지 않는다', /const kpEls = slotValues\.map/.test(pvSrc) && pvSrc.indexOf('switchBrand') < pvSrc.indexOf('const kpEls'));
     ok('화면: 트랙을 바꿔도 스튜디오로 넘길 브랜드가 함께 바뀐다', /let brand = brandOfTrack\(brandTrack\)/.test(pvSrc) && /brand = plan\.brand/.test(pvSrc));
-    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261128a/.test(idxSrc) && /css\/studio\.css\?v=20261127a/.test(idxSrc));
+    ok('index.html: 새 화면 캐시 버전(js/app.js · studio.css c)', /js\/app\.js\?v=20261128b/.test(idxSrc) && /css\/studio\.css\?v=20261128a/.test(idxSrc));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 트랙을 바꿔도 적은 값이 남는지, 실패하면 5단계가 뜨는지 */
     {
@@ -3578,7 +3680,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     ok('api: ig_card_draft_run · ig_card_review 를 부른다', /ig_card_draft_run/.test(apiSrc2) && /ig_card_review/.test(apiSrc2) && /newIdempotencyKey\('igreview'\)/.test(apiSrc2));
     ok('api: 재시도 규칙은 그대로(429/5xx·ERR_BUSY 3회)', /RETRY_DELAYS = \[800, 1600, 3200\]/.test(apiSrc2));
     ok('index.html: studioCanvas 를 새 버전으로 부른다', /studioCanvas\.js\?v=20261128a/.test(fs.readFileSync(path.join(ROOT, 'js', 'createStudio.js'), 'utf8') + qaSrc2));
-    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-37 · v2-m66)', /js\/app\.js\?v=20261128a/.test(html2) && /css\/style\.css\?v=m2-37/.test(html2) && /v2-m66/.test(html2));
+    ok('index.html: 새 화면 캐시 버전(app.js · style.css m2-37 · v2-m67)', /js\/app\.js\?v=20261128b/.test(html2) && /css\/style\.css\?v=m2-37/.test(html2) && /v2-m67/.test(html2));
     ok('카드뉴스 카드도 innerHTML 을 쓰지 않는다', !/\.innerHTML\s*=|outerHTML|insertAdjacentHTML/.test(qaSrc2));
   } catch (err) {
     ok('인스타 카드뉴스 초안 화면 시험', false, (err && err.stack) || err);
@@ -3813,7 +3915,7 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     const cssT = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
     ok('폰 360px: 막대는 100% 폭 · 손가락 끌기는 브라우저 스크롤을 막는다', /\.tl-bar \{[^}]*width: 100%/.test(cssT) && /\.tl-bar \{[^}]*touch-action: none/.test(cssT));
     ok('폰 360px: 9:16 무대는 300px 까지 · 고정 px 폭을 쓰지 않는다', /\.tl-stage \{[^}]*max-width: 300px/.test(cssT) && !/\.tl-(bar|stage|lane)[^{]*\{[^}]*width: (3[7-9]\d|4\d\d)px/.test(cssT));
-    ok('index.html 캐시 버전·빌드 라벨을 올렸다(style m2-37 · v2-m66)', /css\/style\.css\?v=m2-37/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /v2-m66/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
+    ok('index.html 캐시 버전·빌드 라벨을 올렸다(style m2-37 · v2-m67)', /css\/style\.css\?v=m2-37/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')) && /v2-m67/.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')));
 
     /* ⑩ 화면을 실제로 그려 본다(가짜 DOM) — 영상 없이도 컷·자막 트랙이 그려지나 */
     {
