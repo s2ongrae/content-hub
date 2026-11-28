@@ -60,11 +60,19 @@ const IG_CARD_SYSTEM_PROMPT_ =
   '너는 대전 로컬 맛집·일상 계정의 인스타그램 피드 카드뉴스 편집자다. ' +
   '아래 규칙을 지키고 JSON 만 출력한다.\n' +
   '1. 근거에 없는 사실·숫자·가격·영업시간·후기·수치를 절대 만들지 마라. 모르는 항목은 빼라.\n' +
-  '2. 슬라이드는 5~8장. 1장은 스크롤을 멈추게 하는 훅, 마지막 장은 저장을 권하는 마무리다.\n' +
-  '3. headline 은 한 줄 14자 안팎(두 줄을 넘기지 않는다), body 는 60자 안팎 한두 문장이다.\n' +
-  '4. 캡션은 3~5문장이고 마지막 문장은 저장·공유를 권한다. 해시태그는 5~8개다.\n' +
-  '5. 협찬·광고 표시가 근거에 있을 때만 캡션 첫 줄에 [광고] 를 넣는다(없으면 넣지 않는다).\n' +
-  '6. 반말·과장·감탄사 남발을 피하고, 실제로 겪은 사람이 쓴 담백한 문장으로 쓴다.';
+  '2. 슬라이드는 5~8장. 1장은 type="cover"(스크롤을 멈추게 하는 훅), 마지막 장은 type="cta"(저장을 권하는 마무리)다.\n' +
+  '3. 가운데 장은 type="body" 이고, 그중 한 장은 type="quote" 로 썰 수 있는 한 문장(숫자·반전·대구)을 고른다.\n' +
+  '   · cover: headline 은 가게 이름·핵심 훅 한 줄(14자 안팎, 두 줄을 넘기지 않는다). body 는 비우거나 짧게.\n' +
+  '   · body: headline 은 핵심 한 줄(14자 안팎), body 는 60자 안팎 한두 문장이다.\n' +
+  '   · quote: headline 이 곧 인용구다 — 20자 안팎 짧은 한 문장(한 줄로 읽힘), body 는 출처·상황 한 줄.\n' +
+  '   · cta: headline 은 “저장해 두세요”처럼 저장을 부드럽게 권하는 말, body 는 다시 갈 때 틸킬 한 줄.\n' +
+  '4. 카드 문법 — (a) 숫자는 그대로 쓰고 headline 앞에 둔다(예: “16,000원의 믿음”). ' +
+  '   (b) 대구·대조(싸다/비싸다, 기다렸다/뿌듯했다)로 한 줄을 만든다. ' +
+  '   (c) 반전은 마지막 3~4자에 둔다("대기 40분, 그래도 또 갑니다"). (d) 한 장에 한 가지 말만 한다.\n' +
+  '5. 캡션은 3~5문장이고 마지막 문장은 저장·공유를 권한다. 해시태그는 5~8개다.\n' +
+  '6. 협찬·광고 표시가 근거에 있을 때만 캡션 첫 줄에 [광고] 를 넣는다(없으면 넣지 않는다).\n' +
+  '7. 반말·과장·감탄사 남발을 피하고, 실제로 겪은 사람이 쓴 담백한 문장으로 쓴다. ' +
+  '   같은 종결(∼습니다·∼어요)이 세 번 이어지면 한 번은 다른 모양으로 끊는다.';
 
 /* ── 라우터 핸들러 (ig_card_draft_run / ig_card_review) ───────────── */
 
@@ -210,6 +218,18 @@ function igCardRun_(req, ss) {
 
   const headers = igCardHeaders_(sheet);
   const col = igCardCols_(headers);   // 없는 열이면 여기서 ERR_IG_CARD_SCHEMA
+
+  /* 선점 청소(2026-11-28) — 지난 실행이 6분 한도에 잘려 catch 를 못 타면 카드가 'drafting' 으로 남는다.
+     회수는 '다음 실행이 있을 때' 일어나는데, 그 다음 실행이 이른불에 후보를 읽기 전에 먼저 풀어 준다.
+     · 30분 넘은 drafting · 선점 기록이 아예 없는 drafting → queued 로 되돌리고 결과에 몇 장을 풀었는지 남긴다. */
+  let swept = 0;
+  try {
+    swept = igCardSweepStale_(sheet, col);
+  } catch (sweepErr) {
+    swept = 0;   // 청소가 실패해도 이번 실행은 산다(후보 선택이 다시 회수 대상으로 잡는다)
+  }
+  result.swept = swept;
+
   const rows = igCardReadRows_(sheet, headers);
 
   // 손대지 않고 남겨 둘 카드 수(사람이 볼 수 있게 같이 돌려준다)
@@ -274,7 +294,13 @@ function igCardRun_(req, ss) {
     }
 
     // 선점 — 아직 queued(또는 회수 대상 drafting)일 때만 내 것으로 만든다.
-    if (!igCardClaim_(sheet, col, cand.rowIndex, contentId)) {
+    let claimed = false;
+    try {
+      claimed = igCardClaim_(sheet, col, cand.rowIndex, contentId);
+    } catch (claimErr) {
+      claimed = false;   // 락 대기 초과 등 — 이 카드는 건드리지 않고 다음 카드로 간다(다음 밤에 다시)
+    }
+    if (!claimed) {
       result.skipped += 1;
       continue;
     }
@@ -441,6 +467,33 @@ function igCardClaimStale_(contentId) {
   return !at || (nowMs_() - at) > IG_CARD_CLAIM_STALE_MS_;
 }
 
+/**
+ * 멈춘 'drafting' 을 queued 로 되돌린다(2026-11-28) — 다음 실행이 있어야만 풀리던 것을 실행 첫 보리에서 풀어 준다.
+ * 기준: 선점 기록이 없거나 30분 넘은 카드. 사람이 방금 누른 실행(최근 30분)은 건드리지 않는다.
+ * @returns {number} 풀어 준 장수
+ */
+function igCardSweepStale_(sheet, col) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const width = Math.max(col.ig_feed_status, col.content_id) + 1;
+  const values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+  let freed = 0;
+  values.forEach(function (v, i) {
+    const rowIndex = i + 2;
+    if (String((v || [])[col.ig_feed_status] || '').trim() !== IG_CARD_STATUS_DRAFTING_) return;
+    const contentId = String((v || [])[col.content_id] || '').trim();
+    if (!contentId || !igCardClaimStale_(contentId)) return;
+    withWriteLock_(function () {
+      const cur = String(sheet.getRange(rowIndex, col.ig_feed_status + 1).getValue() || '').trim();
+      if (cur !== IG_CARD_STATUS_DRAFTING_) return;
+      sheet.getRange(rowIndex, col.ig_feed_status + 1).setValue(IG_CARD_STATUS_QUEUED_);
+      PropertiesService.getScriptProperties().deleteProperty('IG_CARD_CLAIM_' + contentId);
+    });
+    freed += 1;
+  });
+  return freed;
+}
+
 /** 실패한 카드를 queued 로 되돌린다(drafting 인 것만 — 사람이 그새 바꾼 값은 건드리지 않는다). */
 function igCardRestore_(sheet, col, rowIndex, contentId) {
   try {
@@ -520,7 +573,7 @@ function igCardPrompt_(row, sourceText) {
   return IG_CARD_SYSTEM_PROMPT_ +
     '\n\n[출력 JSON]\n' +
     '{"summary":"한 줄 요약(60자 이내)","hook":"1장 훅 한 줄",' +
-    '"slides":[{"kicker":"구역 이름(예: 메뉴·가격)","headline":"핵심 한 줄","body":"보충 한두 문장"}],' +
+    '"slides":[{"type":"cover|body|quote|cta","kicker":"구역 이름(예: 메뉴·가격)","headline":"핵심 한 줄","body":"보충 한두 문장"}],' +
     '"caption":"캡션 3~5문장","hashtags":["#태그"]}\n\n' +
     '[카드]\n' +
     'content_id: ' + cleanText_(row.content_id, 40) + '\n' +
@@ -550,6 +603,7 @@ function igCardGeminiCall_(model, prompt, apiKey) {
             items: {
               type: 'OBJECT',
               properties: {
+                type: { type: 'STRING', enum: ['cover', 'body', 'quote', 'cta'] },
                 kicker: { type: 'STRING' },
                 headline: { type: 'STRING' },
                 body: { type: 'STRING' }
@@ -611,6 +665,23 @@ function igCardGeminiCall_(model, prompt, apiKey) {
 
 /* ── 응답 정규화 ─────────────────────────────────────────────────── */
 
+const IG_CARD_SLIDE_TYPES_ = ['cover', 'body', 'quote', 'cta'];
+
+/**
+ * 슬라이드 type 자리 보정(2026-11-28) — AI 가 type 을 꽃도 지키고, 빼 먹어도 카드가 산다.
+ *  · 첫 장은 반드시 cover, 마지막 장은 반드시 cta(사람이 보는 표지·마무리)
+ *  · 가운데 장은 body 또는 quote 만 허용(cover·cta 중복 금지)
+ */
+function igCardAssignTypes_(slides) {
+  for (let i = 0; i < slides.length; i += 1) {
+    const s = slides[i];
+    if (i === 0) { s.type = 'cover'; continue; }
+    if (i === slides.length - 1) { s.type = 'cta'; continue; }
+    if (s.type !== 'quote') s.type = 'body';
+  }
+  return slides;
+}
+
 function igCardParseDraft_(rawText, row) {
   const cleaned = String(rawText || '')
     .replace(/^```(?:json)?\s*/i, '')
@@ -627,6 +698,7 @@ function igCardParseDraft_(rawText, row) {
     if (!headline) continue;
     slides.push({
       no: slides.length + 1,
+      type: cleanText_(s.type, 8).toLowerCase(),
       kicker: cleanText_(s.kicker, 18),
       headline: headline,
       body: cleanText_(s.body, IG_CARD_SLIDE_BODY_MAX_)
@@ -635,6 +707,7 @@ function igCardParseDraft_(rawText, row) {
   if (slides.length < IG_CARD_MIN_SLIDES_) {
     return { ok: false, reason: 'too_few_slides(' + slides.length + ')' };
   }
+  igCardAssignTypes_(slides);
 
   const summary = cleanText_(obj.summary, IG_CARD_SUMMARY_MAX_) || cleanText_(slides[0].headline, IG_CARD_SUMMARY_MAX_);
   const hook = cleanText_(obj.hook, 60) || cleanText_(slides[0].headline, 60);
@@ -647,11 +720,12 @@ function igCardParseDraft_(rawText, row) {
     ok: true,
     draft: {
       kind: 'ig_card_draft',
-      version: 1,
+      version: 2,
       generated_at: formatKstIso_(new Date()),
       brand: cleanText_(row.brand, 20),
       aspect: '4:5',
       aspect_options: ['4:5', '3:4'],
+      card_types: ['cover', 'body', 'quote', 'cta'],
       carousel_count: slides.length,
       summary: summary,
       hook: hook,

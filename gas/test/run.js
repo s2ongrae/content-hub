@@ -3499,6 +3499,47 @@ console.log('\n[IG] 인스타 카드뉴스 초안 (gas/IgCardDraft.gs) — 선�
     })());
   }
 
+  /* 12. 4타입 카드 문법 · 초안 v2 · 선점 청소 (2026-11-28, 결과물 품질 1차 개선) */
+  {
+    const S = setUp();
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    const sent = S.g.env.fetched[0].body.contents[0].parts[0].text;
+    ok('카드 프롬프트가 4타입(cover·body·quote·cta)을 말한다', /cover/.test(sent) && /quote/.test(sent) && /cta/.test(sent) && /type=/.test(sent), sent.slice(0, 200));
+    ok('카드 문법 — 숫자 강조·대구/대조·반전을 지시한다', /숫자는 그대로/.test(sent) && /대구/.test(sent) && /반전/.test(sent));
+    ok('quote 장은 짧은 한 문장 인용구로 쓰라고 한다', /quote: headline 이 곧 인용구/.test(sent));
+    ok('응답 스키마 slide.type 은 4개 enum', (() => {
+      const p = S.g.env.fetched[0].body.generationConfig.responseSchema.properties.slides.items.properties;
+      return !!p.type && p.type.type === 'STRING' && p.type.enum.join(',') === 'cover,body,quote,cta';
+    })());
+    let doc = null;
+    try { doc = JSON.parse(S.world.files.get(S.fx.payload1.id).text); } catch (e) { doc = null; }
+    ok('초안 버전 2 · card_types 목록을 남긴다', !!doc && doc.ig_feed.version === 2 && doc.ig_feed.card_types.join(',') === 'cover,body,quote,cta', doc && doc.ig_feed && doc.ig_feed.version);
+    ok('1장 cover · 마지막 cta · 가운데 body', !!doc && doc.ig_feed.slides[0].type === 'cover' && doc.ig_feed.slides[5].type === 'cta'
+      && doc.ig_feed.slides.slice(1, 5).every((s) => s.type === 'body'), doc && doc.ig_feed && doc.ig_feed.slides.map((s) => s.type));
+  }
+  {
+    /* AI 가 quote 를 골랐으면 살리고, 중간의 중복 cover·모르는 값은 body 로 보정한다 */
+    const S = setUp();
+    S.g.env.setFetchReply(geminiReply(6, { slides: [
+      { type: 'cover', headline: '대기 30분의 비밀' }, { type: 'quote', headline: '기다림은 값이었다' },
+      { type: 'cover', headline: '중복 표지' }, { type: 'body', headline: '숫자 16,000원' },
+      { type: 'nope', headline: '모르는 타입' }, { type: 'cta', headline: '저장해 두세요' }
+    ] }));
+    runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    let doc = null;
+    try { doc = JSON.parse(S.world.files.get(S.fx.payload1.id).text); } catch (e) { doc = null; }
+    ok('quote 는 살리고 중간 중복 cover·모르는 type 은 body 로 보정', !!doc && doc.ig_feed.slides.map((s) => s.type).join(',') === 'cover,quote,body,body,body,cta', doc && doc.ig_feed && doc.ig_feed.slides.map((s) => s.type));
+  }
+  {
+    /* 선점 청소 — 30분 넘게 멈춘 drafting 은 '다음 실행'을 기대하지 않고 이번 실행 첫머리에서 풀린다 */
+    const S = setUp({ rows: [{ content_id: 'DY-1', ig_feed_status: 'drafting' }] });
+    S.g.env.props.set('IG_CARD_CLAIM_DY-1', String(Date.now() - 31 * 60 * 1000));
+    const r = runDraft(S.g.ctx, S.fx.ss, { content_id: 'DY-1' });
+    ok('멈춘 drafting 을 실행 첫머리에 풀고 바로 다시 만든다', r.ok && r.data.swept >= 1 && r.data.drafted.length === 1, r.ok && { swept: r.data.swept, drafted: r.data.drafted.length });
+    eq('풀린 카드는 초안이 준비된다', cellOf(S.fx, 'DY-1', 'ig_feed_status'), 'draft_ready');
+    ok('선점 기록도 지운다(다음 실행이 또 기다리지 않게)', !S.g.env.props.get('IG_CARD_CLAIM_DY-1'), String(S.g.env.props.get('IG_CARD_CLAIM_DY-1')));
+  }
+
   /* 11. 야간 트리거 등록·해제 · 자가진단(키 미노출) */
   {
     const g = loadGas();

@@ -1593,6 +1593,30 @@ a.cmp-card:hover { border-color: var(--accent); }
 .pr-subbox audio { display: block; }
 
 /* 글자 디자인 · 구간 제목 + 미리보기 (2026-11-25, Phase 1) — 폰 360px 에서 세로로 쌓인다 */
+/* Pretendard 굵기 위계(2026-11-28) — Bold(700) 하나뿐이라 헤드라인·kicker·본문이 같은 굵기로 그려지던 것을
+   400/500/600/700 네 벌로 되돌린다. 카드(studioCanvas)도 같은 패밀리·같은 굵기를 쓴다.
+   OFL 1.1(무료 재배포) — font/OFL.txt. 파일: Pretendard v1.3.9 static woff2. */
+@font-face {
+  font-family: 'Pretendard';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('../font/Pretendard-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Pretendard';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('../font/Pretendard-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Pretendard';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('../font/Pretendard-SemiBold.woff2') format('woff2');
+}
 @font-face {
   font-family: 'Pretendard';
   font-weight: 700;

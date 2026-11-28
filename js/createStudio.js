@@ -22,10 +22,11 @@ import {
   photoPlanFor, buildBlogKit, signKit, buildFeedCards, feedCaption, hashtagsOf, buildDraftRequest,
   composeBlogWithDraft, readStudio, mergeFormat, mergeMaterialsIntoStudio,
   errorText, orderLine, FEED_CARDS,
+  photoRenderOrder, photoRenderNotes, pickBgmName, toneLabel,
   MV_DENSITIES, MV_MOODS, MV_LYRIC_MODES, MV_LENGTHS, MV_AUDIO_MAX_BYTES, MV_CHUNK_BYTES, mvLyricLines, mvOrderPayload, mvAudioFileName,
   MV_MAX_CLIPS, MV_VIDEO_EXT_RE, mvClipNames, mvMediaPlan
-} from './studioLogic.js?v=20261127c';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261127a';
+} from './studioLogic.js?v=20261128a';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, FILTER_PRESETS, CARD_THEME, CARD_WATERMARK_DEFAULT, warmCardFonts } from './studioCanvas.js?v=20261128a';
 import { saveCardsInOrder, exportHintText, exportProgressText, exportResultText, exportGapMs, isIosLike, CARD_EXPORT_GAP_MS } from './cardExport.js?v=20261127a';
 import { WATERMARK_POSITIONS } from './designModel.js?v=20261127a';
 import { applyBlogRhythm, rhythmStats, lintRhythm, RHYTHM, PRESETS as TONE_PRESETS } from './blogTone.js?v=20261127c';
@@ -1025,8 +1026,53 @@ function paintNormalVideo(host, out, ctx, ui) {
   host.appendChild(h('div', { class: 'row' }, scriptBtn, renderBtn));
   host.appendChild(h('div', { class: 'st-hint' },
     h('span', { text: '이 길이에 사진 ' + plan.target + '장 · 지금 ' + plan.count + '장 — ' + (plan.enough ? (plan.meets_target ? '충분합니다' : plan.missing + '장 더 있으면 더 좋습니다') : ('최소 ' + plan.min + '장이 필요합니다(' + (plan.min - plan.count) + '장 더)')) }),
-    h('span', { text: ' · 렌더는 1080×1920 30fps, 켄번즈(장당 3.0초 이상·자막 길이에 맞춰 늘어남), 자막 번인+내레이션 포함입니다.' })));
+    h('span', { text: ' · 렌더는 1080×1920 30fps, 켄번즈(장당 3.0초 이상·자막 길이에 맞춰 늘어남), 자막 번인 + 음악(BGM) 기본입니다. 내레이션은 직접 켜야 들어갑니다.' })));
   host.appendChild(h('p', { class: 'st-hint', text: '영상이 이미 있으면 아래 [영상 편집 단계]에서 올리고 컷·자막·마무리를 하세요. 그 화면은 그대로 살아 있습니다.' }));
+
+  /* ── 음악·내레이션 (2026-11-28) ──
+     기본값을 바꿨다: BGM 은 보관함 첫 곡을 -18dB 로 자동으로 싣고, 내레이션(TTS)은 **끄는 것이 기본**이다
+     (seeds/shorts_preset.json 'AI 내레이션 금지'). 진단 §1-2① "무음 슬라이드숍 + 안당방성"의 원인을 여기서 고친다. */
+  const vo = m.video;
+  if (typeof vo.narrate !== 'boolean') vo.narrate = false;        // 옛 저장값(없음)은 끔으로 읽는다
+  if (typeof vo.bgm !== 'string') vo.bgm = '';                    // '' = 자동(보관함 첫 곡)
+  if (vo.bgm === 'none') vo.bgm = 'none';                         // 'none' = 음악 없음(사람이 고른 값)
+  if (!Number.isFinite(Number(vo.bgm_volume_db))) vo.bgm_volume_db = -18;
+  let bgmLibrary = null;                                           // null = 아직 읽지 않음
+
+  const audioHost = h('div', { class: 'st-audio' });
+  host.appendChild(audioHost);
+  function bgmLabel() {
+    if (vo.bgm === 'none') return '음악 없음(직접 끔)';
+    if (vo.bgm) return vo.bgm;
+    const auto = pickBgmName('', bgmLibrary || []);
+    if (auto) return '자동 — ' + auto;
+    return (bgmLibrary === null) ? '자동 — 보관함을 읽는 중…' : '자동 — 보관함이 비어 있음';
+  }
+  function paintAudio() {
+    const chips = h('div', { class: 'st-chips' });
+    const ttsOn = h('button', { class: 'st-chip' + (vo.narrate ? ' on' : ''), type: 'button', text: vo.narrate ? '✓ 내레이션(TTS) 켜짐' : '내레이션(TTS) 꺼짐' });
+    ttsOn.addEventListener('click', () => { vo.narrate = !vo.narrate; saveMaterials(); paintAudio(); });
+    const bgmAuto = h('button', { class: 'st-chip' + (!vo.bgm ? ' on' : ''), type: 'button', text: '음악 자동' });
+    bgmAuto.addEventListener('click', () => { vo.bgm = ''; saveMaterials(); paintAudio(); });
+    const bgmOff = h('button', { class: 'st-chip' + (vo.bgm === 'none' ? ' on' : ''), type: 'button', text: '음악 없음' });
+    bgmOff.addEventListener('click', () => { vo.bgm = 'none'; saveMaterials(); paintAudio(); });
+    chips.appendChild(ttsOn);
+    chips.appendChild(bgmAuto);
+    chips.appendChild(bgmOff);
+    const note = h('p', { class: 'st-hint', text: 'BGM: ' + bgmLabel() + ' · 볼륨 ' + vo.bgm_volume_db + 'dB' + (vo.bgm === 'none' ? ' — 음악을 끄면 현장음·자막만 남습니다' : '') });
+    audioHost.replaceChildren(
+      h('div', { class: 'st-field-row' }, h('span', { class: 'field-label', text: '소리' }), chips),
+      note,
+      h('p', { class: 'st-hint', text: vo.narrate
+        ? '내레이션: 켜짐 — 대본 문장을 TTS 로 읽습니다(톤: ' + toneLabel(m.concept.tone) + ').'
+        : '내레이션: 꺼짐 — 자막 + 음악으로 갑니다(쇼츠 프리셋 “AI 내레이션 금지”). 필요하면 위 칩으로 켜세요.' }));
+  }
+  paintAudio();
+  (async () => {
+    try { bgmLibrary = await loadBgmLibrary(api); } catch (e) { bgmLibrary = []; }
+    paintAudio();
+  })();
+
 
   const stepsHost = h('div', { class: 'st-steps-host' });
   stepsHost.hidden = true;
@@ -1094,20 +1140,29 @@ function paintNormalVideo(host, out, ctx, ui) {
       const names = (mem.materials.photos || []).filter((p) => p.uploaded).map((p) => p.name);
       if (!names.length) throw new Error('올라간 사진이 없습니다');
       const draft = mem.draft || null;
-      const payload = {
-        type: 'content_render',
-        content_id: id,
+      const titleText = [String(m.content.region_dong || '').trim(), String(m.place.name || '').trim()].filter(Boolean).join(' ').trim();
+      const wantNarrate = vo && vo.narrate === true;
+      const wantBgm = (vo && vo.bgm === 'none') ? '' : pickBgmName(vo && vo.bgm, bgmLibrary || []);
+      // 2026-11-28 — 사진 렌더 오더를 한 곳(studioLogic.photoRenderOrder)에서 만든다.
+      //  · bgm 자동(-18dB) · title/hook/hook_sub · template(브랜드) · motion 을 실제로 싣는다
+      //  · narration 은 기본 꺼짐 · 켰을 때만(그리고 톤 칩의 톤으로) 싣는다
+      const payload = photoRenderOrder({
+        contentId: id,
         brand: ctx.state.brand,
         images: names.slice(0, 25),
-        profile: 'captions',
-        sub_style: 'auto',
-        template: 'auto',
-      };
-      if (draft && Array.isArray(draft.captions) && draft.captions.length) {
-        payload.captions = draft.captions;
-        payload.narration = draft.narration || [];
-        payload.narrate = !!(draft.narration && draft.narration.length);
-      }
+        title: titleText,
+        hook: draft && draft.hook,
+        hookSub: draft && draft.hook_sub,
+        captions: (draft && Array.isArray(draft.captions)) ? draft.captions : [],
+        narration: (draft && Array.isArray(draft.narration)) ? draft.narration : [],
+        narrate: wantNarrate,
+        tone: m.concept.tone,
+        bgm: wantBgm,
+        bgmVolumeDb: vo && vo.bgm_volume_db
+      });
+      const notes = photoRenderNotes(payload, { bgm: vo && vo.bgm === 'none' ? 'none' : wantBgm, bgmLibrary: bgmLibrary || [] });
+      const warnings = notes.filter((n) => n.level === 'warn');
+      if (warnings.length) toast(warnings[0].text, 'err');
       mem.outHost = out;
       await sendOrder(ctx, 'render-video', payload, renderBtn, async () => {
         try {
@@ -1578,28 +1633,37 @@ function paintFeed(actions, out, ctx, ui) {
   async function paintCards() {
     grid.replaceChildren();
     const theme = CARD_THEME[ctx.state.brand] || CARD_THEME.daejeon_youth;
-    for (const card of cards) {
+    await warmCardFonts();          // 폰트가 오기 전에 그리면 콜백 글꼴로 곱는다(2026-11-28)
+    for (let ci = 0; ci < cards.length; ci += 1) {
+      const card = cards[ci];
       const photo = (m.photos || []).find((p) => p.name === card.photo);
       const bank = photo ? mem.photos[photo.id] : null;
       const url = bank && bank.previewUrl ? bank.previewUrl : '';
       const img = url ? await loadImageSafe(url) : null;
-      const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
+      const canvas = drawCard(card, img, cardDrawOpts(ctx, ci, cards.length));
       const holder = h('div', { class: 'st-card' },
         canvas || h('div', { class: 'st-card-fallback', text: '카드를 그리지 못했습니다' }),
         h('span', { class: 'st-card-cap', text: '0' + card.no + ' ' + card.kicker + ' — ' + card.headline }),
-        h('button', { class: 'ghost-btn sm st-card-save', type: 'button', text: '저장', onclick: () => saveOneCard(card) }));
+        h('button', { class: 'ghost-btn sm st-card-save', type: 'button', text: '저장', onclick: () => saveOneCard(card, ci) }));
       grid.appendChild(holder);
     }
+  }
+  /** 카드 그리기 공통 옵션 — 타입·번호·전체 장수를 함께 넘겨 4타입 배치와 '01/06' 카운터를 맞춘다. */
+  function cardDrawOpts(ctx2, ci, total) {
+    return {
+      theme: CARD_THEME[ctx2.state.brand] || CARD_THEME.daejeon_youth,
+      filter: mem.feedFilter, brandName: ctx2.BRANDS[ctx2.state.brand].name,
+      watermark: mem.watermark, index: ci, total: total, type: (cards[ci] && cards[ci].type) || ''
+    };
   }
   paintCards();
 
   /** 카드 한 장만 저장 — 여러 장 저장이 막힐 때 쓰는 폴백. */
-  async function saveOneCard(card) {
-    const theme = CARD_THEME[ctx.state.brand] || CARD_THEME.daejeon_youth;
+  async function saveOneCard(card, ci) {
     const photo = (m.photos || []).find((p) => p.name === card.photo);
     const bank = photo ? mem.photos[photo.id] : null;
     const img = bank && bank.previewUrl ? await loadImageSafe(bank.previewUrl) : null;
-    const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
+    const canvas = drawCard(card, img, cardDrawOpts(ctx, cards.indexOf(card) >= 0 ? cards.indexOf(card) : (ci || 0), cards.length));
     const blob = canvas ? await canvasToPng(canvas) : null;
     const name = cardFileName(m.place.name, card.no);
     if (blob && downloadBlob(blob, name)) toast(name + ' 저장을 시작했습니다', 'ok');
@@ -1622,7 +1686,8 @@ function paintFeed(actions, out, ctx, ui) {
           const photo = (m.photos || []).find((p) => p.name === card.photo);
           const bank = photo ? mem.photos[photo.id] : null;
           const img = bank && bank.previewUrl ? await loadImageSafe(bank.previewUrl) : null;
-          const canvas = drawCard(card, img, { theme: theme, filter: mem.feedFilter, brandName: ctx.BRANDS[ctx.state.brand].name, watermark: mem.watermark });
+          const ci = Math.max(0, cards.indexOf(card));
+          const canvas = drawCard(card, img, cardDrawOpts(ctx, ci, cards.length));
           return canvas ? canvasToPng(canvas) : null;
         },
         save: (blob, name) => downloadBlob(blob, name),

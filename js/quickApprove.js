@@ -19,8 +19,40 @@
 
 import { api } from './api.js';
 import { friendlyError } from './uiState.js?v=20261126a';
-import { drawCard, canvasToPng, downloadBlob, cardFileName, cardsFromSlides, cardPreset, CARD_THEME, CARD_WATERMARK_DEFAULT } from './studioCanvas.js?v=20261127a';
+import { drawCard, canvasToPng, downloadBlob, cardFileName, cardsFromSlides, cardPreset, CARD_THEME, CARD_WATERMARK_DEFAULT, loadImage, warmCardFonts } from './studioCanvas.js?v=20261128a';
 import { saveCardsInOrder, exportHintText, exportProgressText, exportResultText, exportGapMs, isIosLike, CARD_EXPORT_GAP_MS } from './cardExport.js?v=20261127a';
+
+export const QA_CARD_PHOTO_MAX = 8;         // 카드에 자동으로 앉히는 사진 장수 상한
+const QA_UPLOAD_FETCH_MAX = 4 * 1024 * 1024;   // 한 장 4MB까지(브라우저가 올리기 전에 줄여 둔 사진)
+
+/** 파일 이름 → 사진 MIME. 모르면 image/jpeg. */
+export function photoMimeOf(name) {
+  const n = String(name || '').toLowerCase();
+  if (/\.png$/.test(n)) return 'image/png';
+  if (/\.webp$/.test(n)) return 'image/webp';
+  return 'image/jpeg';
+}
+
+/** base64 → 바이트. 조각을 이어 붙일 때 글자 경계에서 깨지지 않게 조각마다 돈다. */
+export function base64ToBytes(b64) {
+  const s = String(b64 || '');
+  if (!s) return new Uint8Array(0);
+  try {
+    const bin = (typeof atob === 'function') ? atob(s) : Buffer.from(s, 'base64').toString('binary');
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch (e) { return new Uint8Array(0); }
+}
+
+/** 카드 사진 배정 — 사진이 모자라면 처음으로 돌아가 다시 쓴다(같은 장이 연속으로는 안 나오게). */
+export function photoForCard(index, total, count) {
+  if (!count || count <= 0) return -1;
+  const i = Math.max(0, Number(index) || 0);
+  const n = Math.max(1, Number(total) || 1);
+  if (n === 1) return 0;
+  return i % count;
+}
 
 const BRAND_EMOJI = { daejeon_youth: '🍺 대전 청년', ppiyak_kimmary: '🐱 김메리' };
 const BRAND_NAME = { daejeon_youth: '대전 청년', ppiyak_kimmary: '삐약 김메리' };
@@ -50,6 +82,7 @@ export class QuickApproveView {
     this.toast = opts.toast || function () {};
     this._keyHandler = null;
     this.igCache = {};              // content_id → { loading, feed, error } — 초안 요약(드라이브 payload) 캐시
+    this.igPhotos = {};             // content_id → { loading, images, failed } — 승인 탭 카드 배경 사진 캐시(2026-11-28)
   }
 
   async mount() {
@@ -301,8 +334,87 @@ export class QuickApproveView {
     if (tagsEl) tagsEl.textContent = bits.join(' · ');
   }
 
-  /** 3:4 · 4:5 미리보기 — 초안 슬라이드를 그 비율의 카드로 그려 보여 준다. */
+  /**
+   * 카드에 딸린 사진(카드 드라이브 폴더의 photo 업로드)을 브라우저 이미지로 읽는다. (2026-11-28)
+   *  드라이브는 비공개라 <img src> 로 못 부른다(CSP img-src 'self') — upload_video_fetch 조각을 받아 Blob URL 로 만든다.
+   *  실패해도 화면은 산다(사진 없이 4타입 단색 폴백으로 그린다).
+   */
+  async loadCardPhotos(item) {
+    const id = item.content_id;
+    const cached = this.igPhotos[id];
+    if (cached && !cached.loading) return cached;
+    const state = { loading: true, images: [], failed: false };
+    this.igPhotos[id] = state;
+    let images = [];
+    try {
+      const res = await api.post('upload_video_list', { content_id: id });
+      const items = (res && res.data && Array.isArray(res.data.items)) ? res.data.items : [];
+      const photos = items
+        .filter((it) => it && it.kind === 'photo' && it.complete !== false && Number(it.size || 0) <= QA_UPLOAD_FETCH_MAX)
+        .sort((a, b) => (String(a.name) < String(b.name) ? -1 : (String(a.name) > String(b.name) ? 1 : 0)))
+        .slice(0, QA_CARD_PHOTO_MAX);
+      for (let i = 0; i < photos.length; i += 1) {
+        const img = await this.fetchCardPhoto(id, photos[i]);
+        if (img) images.push(img);
+      }
+    } catch (err) {
+      state.failed = true;
+      images = [];
+    }
+    state.images = images;
+    state.loading = false;
+    return state;
+  }
+
+  /** 사진 한 장(조각 여러 개면 이어 붙인다) → 그릴 수 있는 Image. 실패하면 null. */
+  async fetchCardPhoto(contentId, up) {
+    const parts = Math.max(1, Math.min(800, Number(up && up.parts) || 1));
+    const chunks = [];
+    for (let i = 0; i < parts; i += 1) {
+      const res = await api.post('upload_video_fetch', { content_id: contentId, name: up.name, parts: parts, index: i });
+      const bytes = base64ToBytes(res && res.data && res.data.data);
+      if (!bytes.length) return null;
+      chunks.push(bytes);
+    }
+    try {
+      if (typeof Blob === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return null;
+      const url = URL.createObjectURL(new Blob(chunks, { type: photoMimeOf(up.name) }));
+      const img = await loadImage(url);
+      try { URL.revokeObjectURL(url); } catch (e) { /* 이미 그렸다 */ }
+      return img;
+    } catch (e) { return null; }
+  }
+
+  /** 3:4 · 4:5 미리보기 — 초안 슬라이드를 그 비율의 카드로 그려 보여 준다.
+   *  사진은 먼저 캐시된 것만으로 바로 그리고, 아직이면 읽어 온 뒤 한 번 다시 그린다(2026-11-28). */
   paintPreview(host, item, feed, aspect) {
+    const cached = this.igPhotos[item.content_id];
+    this.renderPreviewCards(host, item, feed, aspect, (cached && cached.images) || []);
+    // 폰트가 늦게 오면 한 번 다시 그린다(머리 없는 브라우저·느린 회선에서 첫 그림이 콜백 글꼴이 된다)
+    if (typeof document !== 'undefined' && document.fonts) {
+      warmCardFonts().then(() => {
+        if (!host.isConnected) return;
+        const st = this.igPhotos[item.content_id];
+        this.renderPreviewCards(host, item, feed, aspect, (st && st.images) || []);
+      }).catch(() => {});
+    }
+    if (!cached || cached.loading) {
+      this.loadCardPhotos(item).then((st) => {
+        if (!host.isConnected) return;
+        const line = host.querySelector ? host.querySelector('.qa-ig-photos') : null;
+        if (line && line.isConnected !== false) line.textContent = this.photoLineText(st);
+        if (st && st.images && st.images.length) this.renderPreviewCards(host, item, feed, aspect, st.images);
+      }).catch(() => {});
+    }
+  }
+
+  photoLineText(st) {
+    const n = (st && st.images) ? st.images.length : 0;
+    if (n) return `카드 사진 ${n}장을 4타입 레이아웃에 앉혔습니다 — 저장하면 이 카드 그대로 내려받힙니다.`;
+    return (st && st.failed) ? '카드 사진을 읽지 못해 글자 카드로 그립니다(저장은 그대로 됩니다).' : '카드에 올린 사진이 없어 글자 카드로 그립니다.';
+  }
+
+  renderPreviewCards(host, item, feed, aspect, images) {
     host.replaceChildren();
     const preset = cardPreset(aspect);
     const cards = cardsFromSlides(feed.slides);
@@ -320,11 +432,13 @@ export class QuickApproveView {
     host.appendChild(head);
     // 아이폰·사파리는 여러 장 저장을 막을 수 있다 — 시작 전에 폴백을 알려 준다.
     host.appendChild(el('p', 'qa-meta qa-ig-hint', exportHintText(cards.length, { ios: isIosLike(uaText()) })));
+    host.appendChild(el('p', 'qa-meta qa-ig-photos', this.photoLineText(this.igPhotos[item.content_id] || { images: images })));
 
     const grid = el('div', 'qa-ig-cards');
-    cards.forEach((c) => {
-      const canvas = drawCard(c, null, {
-        theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+    cards.forEach((c, i) => {
+      const pi = photoForCard(i, cards.length, images.length);
+      const canvas = drawCard(c, pi >= 0 ? images[pi] : null, {
+        theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT, index: i, total: cards.length, type: c.type
       });
       const holder = el('div', 'qa-ig-card');
       holder.appendChild(canvas || el('div', 'qa-ig-card-fallback', '카드를 그리지 못했어요'));
@@ -332,7 +446,7 @@ export class QuickApproveView {
       // 폴백 — 한 장씩 저장. 여러 장이 막히는 브라우저에서도 이 버튼은 남는다.
       const one = el('button', 'ghost-btn sm qa-ig-save', '저장');
       one.type = 'button';
-      one.addEventListener('click', () => this.saveOne(c, item, preset, theme));
+      one.addEventListener('click', () => this.saveOne(c, item, preset, theme, i, cards.length));
       holder.appendChild(one);
       grid.appendChild(holder);
     });
@@ -340,9 +454,13 @@ export class QuickApproveView {
   }
 
   /** 카드 한 장만 저장 — 여러 장이 막힐 때 쓰는 폴백. */
-  async saveOne(card, item, preset, theme) {
-    const canvas = drawCard(card, null, {
-      theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+  async saveOne(card, item, preset, theme, index, total) {
+    const st = this.igPhotos[item.content_id];
+    const images = (st && st.images) || [];
+    const i = Number.isFinite(Number(index)) ? Number(index) : 0;
+    const pi = photoForCard(i, Number(total) || 1, images.length);
+    const canvas = drawCard(card, pi >= 0 ? images[pi] : null, {
+      theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT, index: i, total: Number(total) || 1, type: card.type
     });
     const blob = canvas ? await canvasToPng(canvas) : null;
     const name = cardFileName(item.place_name, `${card.no}_${preset.id.replace(':', 'x')}`);
@@ -366,8 +484,12 @@ export class QuickApproveView {
           name: cardFileName(item.place_name, `${c.no}_${preset.id.replace(':', 'x')}`)
         })),
         render: (c) => {
-          const canvas = drawCard(c, null, {
-            theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT
+          const i = cards.indexOf(c);
+          const st = this.igPhotos[item.content_id];
+          const images = (st && st.images) || [];
+          const pi = photoForCard(i >= 0 ? i : 0, cards.length, images.length);
+          const canvas = drawCard(c, pi >= 0 ? images[pi] : null, {
+            theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT, index: i >= 0 ? i : 0, total: cards.length
           });
           return canvas ? canvasToPng(canvas) : null;
         },
