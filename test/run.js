@@ -4173,6 +4173,21 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
     eq('사진 배정은 카드 순서대로 돌려 쓴다', [0, 1, 2, 3].map((i) => QA3.photoForCard(i, 4, 2)).join(','), '0,1,0,1');
     eq('사진이 없으면 -1(단색 폴백)', QA3.photoForCard(0, 4, 0), -1);
 
+    /* ── 2026-11-28 P0 회귀 — 전체 저장이 복제본을 넘겨 cards.indexOf(c)=-1 이 되고 모든 카드가 0번 사진을 받았다. */
+    const saveSrcCards = [{ no: 1, headline: 'a' }, { no: 2, headline: 'b' }, { no: 3, headline: 'c' }];
+    const saveList = QA3.cardsForSave(saveSrcCards, (c) => '카드' + c.no + '.png');
+    eq('저장 목록은 카드마다 원본 자리(_saveIndex)를 싣는다', saveList.map((c) => c._saveIndex).join(','), '0,1,2');
+    eq('저장 목록의 파일 이름은 카드 번호로 만든다', saveList.map((c) => c.name).join(','), '카드1.png,카드2.png,카드3.png');
+    ok('원본 카드 객체는 건드리지 않는다', saveSrcCards.every((c) => !('_saveIndex' in c)));
+    ok('저장 목록은 복제본이다(카드 필드는 그대로)', saveList[1] !== saveSrcCards[1] && saveList[1].headline === 'b');
+    eq('카드마다 제 사진을 받는다(예전엔 전부 0번)', saveList.map((c) => QA3.photoForCard(QA3.saveIndexOf(c, saveList.length), saveList.length, 2)).join(','), '0,1,0');
+    eq('자리 정보가 없으면 0(안전한 기본)', QA3.saveIndexOf({}, 3), 0);
+    eq('자리가 범위를 넘으면 마지막 장으로 자른다', QA3.saveIndexOf({ _saveIndex: 9 }, 3), 2);
+    eq('자리가 숫자가 아니면 0', QA3.saveIndexOf({ _saveIndex: 'x' }, 3), 0);
+    const qaSaveSrc = fs.readFileSync(path.join(ROOT, 'js', 'quickApprove.js'), 'utf8');
+    ok('전체 저장이 복제본을 indexOf 로 찾지 않는다', !/cards\.indexOf\(c\)/.test(qaSaveSrc) && /saveIndexOf\(c, cards\.length\)/.test(qaSaveSrc));
+    ok('app.js 가 quickApprove 새 버전을 부른다(캐시)', /quickApprove\.js\?v=20261128c/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')));
+
     const realPost3 = apimod3.api.post;
     const asked3 = [];
     const prevBlob3 = global.Blob; const prevUrl3 = global.URL; const prevImage3 = global.Image;

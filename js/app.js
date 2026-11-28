@@ -8,7 +8,7 @@
 
 import { api, ApiError, loadConfig, saveConfig, clearToken } from './api.js';
 import { friendlyError, errorPanel, withBusy } from './uiState.js?v=20261126a';
-import { QuickApproveView } from './quickApprove.js?v=20261127b';
+import { QuickApproveView } from './quickApprove.js?v=20261128c';
 import { renderSeriesView } from './seriesView.js?v=20261126c';
 import { renderPerfView, loadMetrics, kstToday } from './perfView.js?v=20261127c';
 import { renderPostView } from './postView.js?v=20261127c';
