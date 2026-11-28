@@ -54,6 +54,27 @@ export function photoForCard(index, total, count) {
   return i % count;
 }
 
+/**
+ * 전체 저장 목록 — cardExport 는 카드를 복제해 넘기므로 원본 배열에서의 자리를 잊는다(2026-11-28 P0).
+ *  복제본에 원본 자리(_saveIndex)를 실어 두고, 사진 배정은 그 자리로 한다. 원본 카드는 건드리지 않는다.
+ *  nameOf(card, i) 로 파일 이름을 만든다(없으면 카드가 가진 name 그대로).
+ */
+export function cardsForSave(cards, nameOf) {
+  const list = Array.isArray(cards) ? cards : [];
+  return list.map((c, i) => Object.assign({}, c, {
+    _saveIndex: i,
+    name: typeof nameOf === 'function' ? String(nameOf(c, i) || '') : String((c && c.name) || '')
+  }));
+}
+
+/** 저장 목록 항목의 원본 자리 — 없거나 이상하면 0, 범위 밖이면 마지막 장으로 자른다(안전한 기본). */
+export function saveIndexOf(card, total) {
+  const n = Number(card && card._saveIndex);
+  if (!Number.isInteger(n) || n < 0) return 0;
+  const t = Number(total);
+  return (Number.isFinite(t) && t > 0) ? Math.min(n, t - 1) : n;
+}
+
 const BRAND_EMOJI = { daejeon_youth: '🍺 대전 청년', ppiyak_kimmary: '🐱 김메리' };
 const BRAND_NAME = { daejeon_youth: '대전 청년', ppiyak_kimmary: '삐약 김메리' };
 
@@ -480,16 +501,15 @@ export class QuickApproveView {
     let res = null;
     try {
       res = await saveCardsInOrder({
-        cards: cards.map((c) => Object.assign({}, c, {
-          name: cardFileName(item.place_name, `${c.no}_${preset.id.replace(':', 'x')}`)
-        })),
+        cards: cardsForSave(cards, (c) => cardFileName(item.place_name, `${c.no}_${preset.id.replace(':', 'x')}`)),
         render: (c) => {
-          const i = cards.indexOf(c);
+          // 복제본이라 indexOf 로는 자리를 못 찾는다 — 저장 목록에 실어 둔 원본 자리로 사진을 고른다(2026-11-28 P0)
+          const i = saveIndexOf(c, cards.length);
           const st = this.igPhotos[item.content_id];
           const images = (st && st.images) || [];
-          const pi = photoForCard(i >= 0 ? i : 0, cards.length, images.length);
+          const pi = photoForCard(i, cards.length, images.length);
           const canvas = drawCard(c, pi >= 0 ? images[pi] : null, {
-            theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT, index: i >= 0 ? i : 0, total: cards.length
+            theme: theme, aspect: preset.id, brandName: brandNameOf(item.brand), watermark: CARD_WATERMARK_DEFAULT, index: i, total: cards.length
           });
           return canvas ? canvasToPng(canvas) : null;
         },
