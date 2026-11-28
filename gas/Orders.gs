@@ -246,6 +246,7 @@ function hubRenderCues_(raw, label, withTone) {
 
 const RENDER_STAGES = ['transcribe', 'finish'];
 const RENDER_BGM_RE = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ -]{0,79}\.(mp3|wav|m4a|aac)$/i;
+const RENDER_BGM_MAX_DUCK = 24;   // bgm.duck_db 상한 — 노트북 lib/render.js validate 와 같은 값(말이 나올 때 더 낮출 양)
 /* 뮤직비디오 모드(2026-11-21, Phase 1) — 사진 + 내 음원/보관 BGM + 가사 + 비트 컷.
    허브 js/studioLogic.js · 노트북 lib/mv.js 와 같은 값이다. */
 const RENDER_MV_DENSITIES = ['fast_2beat', 'normal_4beat', 'slow_1bar'];
@@ -361,6 +362,29 @@ function hubRenderMvPayload_(payload, contentId, brand) {
   return out;
 }
 
+/**
+ * BGM 한 곡 — 이름·기준 음량·덕킹만 실는다(파일은 노트북이 허브 _bgm 보관함에서 받아 간다).
+ *   경계는 노트북 lib/render.js validate 와 같다: volume_db -40~0, duck_db 0~24.
+ *   1단계 사진 숏폼(bgm)과 3단계 마무리(stage:'finish')가 같은 규칙을 쓰게 한 곳에 둔다.
+ */
+function hubRenderBgm_(raw, bad) {
+  const b = raw && typeof raw === 'object' ? raw : {};
+  const bn = String(b.name || '');
+  if (!RENDER_BGM_RE.test(bn) || bn.indexOf('..') !== -1) throw bad('bgm.name 은 BGM 파일 이름(mp3·wav·m4a·aac)만 넣을 수 있습니다.');
+  const out = { name: bn };
+  if (b.volume_db !== undefined && b.volume_db !== null && b.volume_db !== '') {
+    const vv = Number(b.volume_db);
+    if (!isFinite(vv) || vv < -40 || vv > 0) throw bad('bgm.volume_db 는 -40~0 사이 숫자여야 합니다.');
+    out.volume_db = Math.round(vv * 10) / 10;
+  }
+  if (b.duck_db !== undefined && b.duck_db !== null && b.duck_db !== '') {
+    const dd = Number(b.duck_db);
+    if (!isFinite(dd) || dd < 0 || dd > RENDER_BGM_MAX_DUCK) throw bad('bgm.duck_db 는 0~' + RENDER_BGM_MAX_DUCK + ' 사이 숫자여야 합니다(말이 나올 때 더 낮출 양).');
+    out.duck_db = Math.round(dd * 10) / 10;
+  }
+  return out;
+}
+
 /** 렌더 오더 payload 를 검사해 큐에 보낼 모양(고정 키 5개 이하)으로 돌려준다. 어긋나면 ERR_VALIDATION_FAILED. */
 function hubRenderPayload_(payload) {
   const bad = function (msg) { return createAppError_('ERR_VALIDATION_FAILED', msg); };
@@ -383,15 +407,7 @@ function hubRenderPayload_(payload) {
       so.burn = payload.burn === undefined ? true : payload.burn === true;
       so.ai_notice = payload.ai_notice === true;
       if (payload.bgm !== undefined && payload.bgm !== null && payload.bgm !== '') {
-        const b = payload.bgm && typeof payload.bgm === 'object' ? payload.bgm : {};
-        const bn = String(b.name || '');
-        if (!RENDER_BGM_RE.test(bn) || bn.indexOf('..') !== -1) throw bad('bgm.name 은 BGM 파일 이름(mp3·wav·m4a·aac)만 넣을 수 있습니다.');
-        so.bgm = { name: bn };
-        if (b.volume_db !== undefined && b.volume_db !== null && b.volume_db !== '') {
-          const vv = Number(b.volume_db);
-          if (!isFinite(vv) || vv < -40 || vv > 0) throw bad('bgm.volume_db 는 -40~0 사이 숫자여야 합니다.');
-          so.bgm.volume_db = vv;
-        }
+        so.bgm = hubRenderBgm_(payload.bgm, bad);
       }
       if (payload.cover !== undefined && payload.cover !== null && payload.cover !== '') {
         const ct = Number(payload.cover && payload.cover.t);
@@ -451,6 +467,12 @@ function hubRenderPayload_(payload) {
     const v = Number(payload.xfade);
     if (!isFinite(v) || v < 0 || v > 2) throw bad('xfade 는 0~2초 사이 숫자여야 합니다.');
     out.xfade = Math.round(v * 100) / 100;
+  }
+  /* 사진 숏폼 BGM(2026-11-28) — js/studioLogic.js photoRenderOrder 가 {name, volume_db, duck_db} 를 싣는다.
+     이 함수가 payload 를 고정 키로 다시 만드는 구조라 여기서 싣지 않으면 곡 선택이 조용히 사라져
+     '무음 슬라이드쇼'가 된다(템플릿 글자·모션도 그랬다). 없으면 키도 만들지 않는다(구버전 카드 그대로). */
+  if (payload.bgm !== undefined && payload.bgm !== null && payload.bgm !== '') {
+    out.bgm = hubRenderBgm_(payload.bgm, bad);
   }
   // ── 완제품 옵션 — 자막 번인·내레이션(2026-11-20) ──
   const captions = hubRenderCues_(payload.captions, 'captions', false);

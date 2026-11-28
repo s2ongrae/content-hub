@@ -432,6 +432,40 @@ console.log('\n[8h-mv] 뮤직비디오 payload (2026-11-21 Phase 1)');
   })()));
 }
 
+console.log('\n[8h-bgm] 사진 숏폼 BGM (2026-11-28)');
+{
+  /* 2026-11-28 P0 — js/studioLogic.js photoRenderOrder 가 싣는 bgm({name, volume_db, duck_db})을
+     hubRenderPayload_ 가 버려 '무음 슬라이드쇼'가 나왔다. 템플릿 글자·모션도 같은 구조로 사라졌었다. */
+  const photoShort = {
+    type: 'content_render', content_id: 'CH-20261128-PS1', brand: 'daejeon_youth',
+    images: ['a.jpg', 'b.jpg'], profile: 'captions', sub_style: 'auto', template: 'daejeon_youth', motion: 'auto',
+    title: '봉명동 미미삼겹', hook: '대기 30분의 비밀', hook_sub: '이유 있음',
+    bgm: { name: 'calm-piano.mp3', volume_db: -18, duck_db: 8 },
+    captions: [[0, 2, '첫 문장'], [2, 4, '둘째 문장']]
+  };
+  const pS = A.ctx.hubRenderPayload_(photoShort);
+  ok('사진 숏폼: bgm 세 칸이 payload 에 실린다(무음 방지)', !!pS.bgm && pS.bgm.name === 'calm-piano.mp3' && pS.bgm.volume_db === -18 && pS.bgm.duck_db === 8, pS.bgm);
+  ok('사진 숏폼: 제목·훅·보조 글자가 실린다', pS.title === '봉명동 미미삼겹' && pS.hook === '대기 30분의 비밀' && pS.hook_sub === '이유 있음', pS);
+  ok('사진 숏폼: 사진·템플릿·모션도 그대로(1단계 오더)', pS.images.length === 2 && pS.template === 'daejeon_youth' && pS.motion === 'auto' && pS.stage === undefined);
+  ok('bgm 이 없으면 키도 만들지 않는다(구버전 카드 그대로)', A.ctx.hubRenderPayload_(Object.assign({}, photoShort, { bgm: undefined })).bgm === undefined);
+  ok('곡 이름만 보내도 통과(음량·덕킹은 노트북 기본값)', (function () {
+    const r = A.ctx.hubRenderPayload_(Object.assign({}, photoShort, { bgm: { name: 'a.mp3' } }));
+    return r.bgm.name === 'a.mp3' && r.bgm.volume_db === undefined && r.bgm.duck_db === undefined;
+  })());
+  const bgmBad = (b) => { try { A.ctx.hubRenderPayload_(Object.assign({}, photoShort, { bgm: b })); return false; } catch (e) { return e.code === 'ERR_VALIDATION_FAILED'; } };
+  ok('거부: 곡 이름 경로·확장자·음량 범위·덕킹 범위·객체 아님',
+    bgmBad({ name: '../a.mp3' }) && bgmBad({ name: 'a.exe' }) && bgmBad({ name: 'a.mp3', volume_db: 3 }) && bgmBad({ name: 'a.mp3', duck_db: 30 }) && bgmBad('a.mp3'));
+  ok('음량·덕킹은 소수 1자리로 반올림', (function () {
+    const r = A.ctx.hubRenderPayload_(Object.assign({}, photoShort, { bgm: { name: 'a.mp3', volume_db: -18.44, duck_db: 7.66 } }));
+    return r.bgm.volume_db === -18.4 && r.bgm.duck_db === 7.7;
+  })());
+  ok('3단계 마무리(stage:finish)도 같은 bgm 규칙 — 덕킹까지 실린다', (function () {
+    const r = A.ctx.hubRenderPayload_({ content_id: 'CH-PS3', brand: 'daejeon_youth', stage: 'finish', bgm: { name: 'calm-piano.mp3', volume_db: -20, duck_db: 9 } });
+    return r.stage === 'finish' && r.bgm.name === 'calm-piano.mp3' && r.bgm.volume_db === -20 && r.bgm.duck_db === 9;
+  })());
+  ok('bgm 이 붙고도 큐 한도(4,000자) 안', JSON.stringify(pS).length < 4000, JSON.stringify(pS).length);
+}
+
 console.log('\n[8h-lock] 무음 보조 글자·첫 프레임 잠금 (2026-11-21)');
 {
   const baseLock = { content_id: 'CH-20261121-LOCK', brand: 'daejeon_youth', inputs: ['a.mp4', 'b.mp4'] };
